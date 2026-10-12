@@ -7,5 +7,27 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "dev:https": "sh scripts/dev-https.sh",
+    "build": "tsdown",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@fastify/static": "10.1.5",
+    "fastify": "5.12.5",
+    "pg": "8.23.1",
+    "pino": "10.4.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@remote-control/log": "workspace:*",
+    "@remote-control/protocol": "workspace:*",
+    "@types/pg": "^8.23.1",
+    "tsdown": "^0.23.0"
   }
 }

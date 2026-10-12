@@ -1,0 +1,17 @@
+# Keep the build context to what the image needs; dependencies and outputs are rebuilt.
+**/node_modules
+**/dist
+**/coverage
+**/*.tsbuildinfo
+**/.certs
+.git
+.github
+.env
+.env.*
+docs
+tools/lint-fixtures
+# Local AI harness files never enter an image.
+CLAUDE.md
+CLAUDE.local.md
+WORKLOG.md
+.claude

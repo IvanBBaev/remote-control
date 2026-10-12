@@ -15,6 +15,8 @@ export default defineConfig({
         // 07 §5.13: the protocol package is the trust boundary and stays fully covered.
         'packages/protocol/src/**': { lines: 100, functions: 100, branches: 100, statements: 100 },
         'packages/crypto/src/**': { lines: 100, functions: 100, branches: 100, statements: 100 },
+        // D18: relay lines 90 / branches 85.
+        'apps/relay/src/**': { lines: 90, branches: 85 },
       },
     },
     projects: [

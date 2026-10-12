@@ -1,0 +1,44 @@
+# Local stack: Postgres + the relay image, mirroring the Railway service (06 §5.1).
+#   docker compose up --build   →  http://localhost:3000/health
+services:
+  postgres:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_USER: rc
+      POSTGRES_PASSWORD: rc
+      POSTGRES_DB: rc
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U rc -d rc']
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  relay:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: '3000'
+      RC_DATABASE_URL: postgres://rc:rc@postgres:5432/rc
+      RC_LOG_LEVEL: info
+    ports:
+      - '3000:3000'
+    # Matches Railway's drainingSeconds 30: SIGTERM, then up to 30 s before SIGKILL (D15).
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:
