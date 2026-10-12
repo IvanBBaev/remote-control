@@ -538,7 +538,7 @@ AC: 100 % coverage; all vectors and properties green in Node; the same vector sp
 is wired to run in the browser on `main` (M0-25 adds the job).
 
 #### M0-07 — `packages/fake-claude-code`
-Size M · Deps M0-01, M0-05 · Status todo · Sources 07 W3–W4, 04 §2, 04 W7
+Size M · Deps M0-01, M0-05 · Status done 28b7ee9 (ubuntu/Windows runs pending M0-25) · Sources 07 W3–W4, 04 §2, 04 W7
 Scope: a `fake-claude` executable (`private: true`) that reads
 `$HOME/.claude/settings.json` from a temp HOME, resolves matchers, runs `command` hooks
 with the documented stdin payloads from 04 §2 (PermissionRequest, PreToolUse
