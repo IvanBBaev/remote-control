@@ -10,6 +10,7 @@ import { createPgDb } from './adapters/pg-db.js';
 import { createScryptSecretHasher } from './adapters/scrypt-secret-hasher.js';
 import { createSimpleWebAuthn } from './adapters/simple-webauthn.js';
 import { createDrizzlePushSubscriptionStore } from './adapters/drizzle-push-subscription-store.js';
+import { createSentryReporter } from './adapters/sentry-reporter.js';
 import { createWebPushSender } from './adapters/web-push-sender.js';
 import { createDrizzleDeviceDirectory } from './adapters/drizzle-device-directory.js';
 import { createDrizzleDeviceRegistry } from './adapters/drizzle-device-registry.js';
@@ -30,6 +31,7 @@ import type { AdminStatsStore } from './ports/audit-log.js';
 import type { DatabaseHealth } from './ports/database-health.js';
 import type { Db } from './ports/db.js';
 import type { DeviceDirectory } from './ports/device-directory.js';
+import { noopErrorReporter, type ErrorReporter } from './ports/error-reporter.js';
 import type { HubPort } from './ports/hub.js';
 import type { PushSubscriptionStore } from './ports/push-subscription-store.js';
 
@@ -42,6 +44,8 @@ export interface Container {
   readonly database: DatabaseHealth;
   readonly drain: DrainState;
   readonly random: Random;
+  /** Sentry error reports (D16); a no-op without `RC_SENTRY_DSN`. */
+  readonly errors: ErrorReporter;
   /** Accounts and passkeys (D8); `undefined` without a database. */
   readonly accounts: AccountService | undefined;
   /** The WebSocket hub (D15); `undefined` without a database. */
@@ -117,6 +121,17 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
   if (db !== undefined && push === undefined) {
     logger.info({ event: 'push_disabled' }, 'web push disabled (RC_VAPID_* not set)');
   }
+  const errors =
+    config.sentry === undefined
+      ? noopErrorReporter
+      : createSentryReporter({
+          dsn: config.sentry,
+          release: config.commit ?? undefined,
+          environment: config.nodeEnv,
+          clock,
+          random,
+          logger,
+        });
   return {
     logger,
     clock,
@@ -124,6 +139,7 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
     database: db ?? disabledDatabaseHealth,
     drain: new DrainState(),
     random,
+    errors,
     accounts:
       store &&
       new AccountService({

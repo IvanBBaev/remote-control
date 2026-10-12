@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { parseSentryDsn, type SentryDsn } from './core/sentry-dsn.js';
+
 /** Empty strings in the environment mean "unset" (Railway and compose both produce them). */
 const optional = <T extends z.ZodType>(schema: T) =>
   z.preprocess((value) => (value === '' ? undefined : value), schema.optional());
@@ -42,6 +44,10 @@ const EnvSchema = z
     /** Bearer token for `GET /api/admin/counters` (M1-13); unset = the route does not exist. */
     RC_ADMIN_TOKEN: optional(
       z.string().regex(/^[\x21-\x7e]{32,256}$/, 'must be 32–256 printable ASCII characters'),
+    ),
+    /** Sentry project DSN (D16); unset disables error reporting. */
+    RC_SENTRY_DSN: optional(
+      z.string().refine((value) => parseSentryDsn(value) !== null, 'must be an https Sentry DSN'),
     ),
   })
   .superRefine((env, ctx) => {
@@ -131,6 +137,8 @@ export interface Config {
     | undefined;
   /** Owner token for the admin counters (M1-13); `undefined` disables them. */
   readonly adminToken: string | undefined;
+  /** Error reporting (D16); `undefined` disables it. */
+  readonly sentry: SentryDsn | undefined;
 }
 
 /** Thrown when the environment is invalid; the message names variables, never values. */
@@ -171,5 +179,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
           }
         : undefined,
     adminToken: e.RC_ADMIN_TOKEN,
+    sentry:
+      e.RC_SENTRY_DSN === undefined ? undefined : (parseSentryDsn(e.RC_SENTRY_DSN) ?? undefined),
   };
 }

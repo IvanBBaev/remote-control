@@ -6,8 +6,10 @@ import type { DestinationStream } from 'pino';
 import { buildApp } from './app.js';
 import { loadConfig } from './config.js';
 import { createContainer, type ContainerOptions } from './container.js';
+import { installCrashHandlers, type CrashSource } from './crash-handlers.js';
 import { DEFAULT_PUBLIC_DIR, PACKAGE_JSON } from './package-paths.js';
 import type { Db } from './ports/db.js';
+import type { ErrorReporter } from './ports/error-reporter.js';
 import { installShutdown, type ShutdownSignal, type SignalSource } from './shutdown.js';
 
 export interface StartOptions {
@@ -17,13 +19,19 @@ export interface StartOptions {
   readonly destination?: DestinationStream;
   /** Overrides the `pg` database built from the config (tests pass a PGlite `Db`). */
   readonly db?: Db;
+  /** Uncaught exceptions and unhandled rejections to report and exit on (`process`). */
+  readonly crashes?: CrashSource;
 }
 
 export interface RunningServer {
   readonly app: FastifyInstance;
   /** Starts the same drain sequence a SIGTERM would. */
   readonly shutdown: (signal: ShutdownSignal) => Promise<void>;
+  readonly errors: ErrorReporter;
 }
+
+/** Shutdown waits this long for queued error reports. */
+const ERRORS_FLUSH_TIMEOUT_MS = 2_000;
 
 function packageVersion(): string {
   const parsed = JSON.parse(readFileSync(PACKAGE_JSON, 'utf8')) as { version?: unknown };
@@ -42,6 +50,14 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
     ...(options.db === undefined ? {} : { db: options.db }),
   };
   const container = createContainer(config, containerOptions);
+  if (options.crashes !== undefined) {
+    installCrashHandlers({
+      source: options.crashes,
+      errors: container.errors,
+      logger: container.logger,
+      exit: options.exit,
+    });
+  }
   if (container.db !== undefined) {
     try {
       const report = await container.db.migrate();
@@ -68,11 +84,13 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
     relay: container.relay,
     push: container.push,
     admin: container.admin,
+    errors: container.errors,
   });
   app.addHook('onClose', async () => {
     // Background pushes and audit writes finish before the pool closes (pushes write audit rows).
     await container.push?.notifier.idle();
     await container.audit?.idle();
+    await container.errors.flush(ERRORS_FLUSH_TIMEOUT_MS);
     await container.database.close();
   });
 
@@ -84,5 +102,5 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
     signals: options.signals,
     exit: options.exit,
   });
-  return { app, shutdown };
+  return { app, shutdown, errors: container.errors };
 }

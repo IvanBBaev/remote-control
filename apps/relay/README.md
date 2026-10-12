@@ -13,7 +13,7 @@ origin. It sees metadata only (invariants I1–I4). Ports & adapters layout:
 | `src/container.ts`              | Wires adapters from config.                                          |
 | `src/app.ts`                    | `buildApp(deps)` — the testable Fastify factory.                     |
 | `src/main.ts` / `src/server.ts` | Composition root and process entry.                                  |
-| `src/admin.ts`                  | Operator CLI (`dist/admin.js invite`, `vapid-keys`).                 |
+| `src/admin.ts`                  | Operator CLI (`dist/admin.js invite`, `vapid-keys`, `sentry-test`).  |
 | `src/testing/`                  | Test helpers (software WebAuthn authenticator).                      |
 
 ## Endpoints
@@ -122,6 +122,25 @@ curl -s -H "Authorization: Bearer $RC_ADMIN_TOKEN" https://<relay>/api/admin/cou
 ```
 
 It is limited to 10 requests per minute per IP; a wrong token is a 401 and is never logged.
+
+## Error reporting (M0-26, D16)
+
+With `RC_SENTRY_DSN` set, every 5xx handler error (`event:http_error`) and every
+uncaught exception or unhandled rejection (level `fatal`, then exit 1 after at most
+2 s of flushing) is sent to Sentry. There is no Sentry SDK: the SDK instruments
+`http` and attaches requests and breadcrumbs, all of which would need scrubbing. The
+relay builds the event from an allow-list (`src/core/error-event.ts`) — exception
+types, messages passed through `scrubMessage` (URLs, e-mail addresses, quoted strings
+and token-like runs replaced), stack frames, and the tags `event`, `route`, `method`,
+`req_id` — and posts it to the DSN's envelope endpoint. No request, user, extra or
+context data is ever sent (D19). At most 20 reports per minute; send failures and drops
+are logged (`sentry_send_failed`, `sentry_rate_limited`) and never affect requests.
+
+```sh
+railway run node dist/admin.js sentry-test               # one test error with a planted canary
+```
+
+Operations (alerts, rollback, restore, rotation, cost): [`docs/ops/runbook.md`](../../docs/ops/runbook.md).
 
 ## Configuration
 

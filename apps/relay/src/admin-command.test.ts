@@ -1,8 +1,15 @@
 import type { Random } from '@remote-control/protocol';
 import { describe, expect, it, vi } from 'vitest';
 
-import { ADMIN_USAGE, runAdminCommand, type AdminCommandOptions } from './admin-command.js';
+import {
+  ADMIN_USAGE,
+  runAdminCommand,
+  SENTRY_TEST_CANARY,
+  type AdminCommandOptions,
+} from './admin-command.js';
+import { buildErrorEvent } from './core/error-event.js';
 import type { AccountStore } from './ports/account-store.js';
+import type { ErrorContext, ErrorReporter } from './ports/error-reporter.js';
 
 const DATABASE_URL = 'postgres://rc:pw@127.0.0.1:1/rc';
 const NOW = Date.UTC(2026, 9, 1);
@@ -113,5 +120,41 @@ describe('runAdminCommand', () => {
     expect(stderr).toEqual([
       'minting invite codes failed (is the database migrated and reachable?)',
     ]);
+  });
+
+  it('sends one scrubbed test error to Sentry (M0-26)', async () => {
+    const unset = run(['sentry-test'], { env: {} });
+    expect(await unset.result).toBe(1);
+    expect(unset.stderr).toEqual(['RC_SENTRY_DSN is not set']);
+    expect(ADMIN_USAGE).toContain('sentry-test');
+
+    const captured: [unknown, ErrorContext][] = [];
+    let flushed = true;
+    const errors: ErrorReporter = {
+      capture: (error, context) => captured.push([error, context]),
+      flush: () => Promise.resolve(flushed),
+    };
+    const sent = run(['sentry-test'], { errors });
+    expect(await sent.result).toBe(0);
+    expect(sent.openStore).not.toHaveBeenCalled();
+    expect(captured).toHaveLength(1);
+    const [error, context] = captured[0] ?? [];
+    expect(String((error as Error).message)).toContain(SENTRY_TEST_CANARY);
+    expect(context).toEqual({ event: 'sentry_test' });
+    const event = JSON.stringify(
+      buildErrorEvent(error, context ?? { event: '' }, {
+        eventId: '0'.repeat(32),
+        timestampMs: NOW,
+        release: undefined,
+        environment: 'test',
+      }),
+    );
+    expect(event).not.toContain(SENTRY_TEST_CANARY.slice('payload='.length));
+    expect(event).toContain('forced crash');
+
+    flushed = false;
+    const slow = run(['sentry-test'], { errors });
+    expect(await slow.result).toBe(1);
+    expect(slow.stderr).toEqual(['sending the test error timed out']);
   });
 });

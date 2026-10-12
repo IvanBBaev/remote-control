@@ -17,6 +17,7 @@ describe('loadConfig', () => {
       origin: 'http://localhost:3000',
       trustProxyHops: 0,
       push: undefined,
+      sentry: undefined,
     });
   });
 
@@ -160,5 +161,16 @@ describe('loadConfig', () => {
     }
     expect(message).toContain('RC_DATABASE_URL');
     expect(message).not.toContain(secret);
+  });
+
+  it('parses RC_SENTRY_DSN and rejects anything that is not an https DSN (M0-26)', () => {
+    expect(loadConfig({ RC_SENTRY_DSN: 'https://k@o1.ingest.sentry.io/42' }).sentry).toEqual({
+      dsn: 'https://k@o1.ingest.sentry.io/42',
+      publicKey: 'k',
+      envelopeUrl: 'https://o1.ingest.sentry.io/api/42/envelope/',
+    });
+    expect(() => loadConfig({ RC_SENTRY_DSN: 'http://k@o1.ingest.sentry.io/42' })).toThrow(
+      /RC_SENTRY_DSN/,
+    );
   });
 });

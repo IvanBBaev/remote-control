@@ -31,6 +31,7 @@ import type { RelayRouter } from './core/relay-router.js';
 import type { AdminStatsStore } from './ports/audit-log.js';
 import type { DatabaseHealth } from './ports/database-health.js';
 import type { DeviceDirectory } from './ports/device-directory.js';
+import type { ErrorReporter } from './ports/error-reporter.js';
 import type { HubPort } from './ports/hub.js';
 import type { PushSubscriptionStore } from './ports/push-subscription-store.js';
 import { registerWsRoute } from './ws/ws-route.js';
@@ -56,6 +57,8 @@ export interface AppDeps {
   readonly relay?: RelayDeps | undefined;
   /** Web Push registration (M0-12); needs `auth` and `relay`. */
   readonly push?: PushDeps | undefined;
+  /** Receives every 5xx handler error (D16); absent → errors are only logged. */
+  readonly errors?: ErrorReporter | undefined;
   /** Owner counters (M1-13); needs `relay` (online counts come from the hub). */
   readonly admin?: AdminDeps | undefined;
 }
@@ -120,6 +123,20 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       deps.logger.info({ event: 'ws_drain', sockets: closed }, 'websockets closed');
     }
   });
+
+  // Server-side failures go to Sentry with route metadata only; 4xx are client errors.
+  const errors = deps.errors;
+  if (errors !== undefined) {
+    app.addHook('onError', async (request, _reply, error) => {
+      if ((error.statusCode ?? 500) < 500) return;
+      errors.capture(error, {
+        event: 'http_error',
+        reqId: request.id,
+        method: request.method,
+        ...(request.routeOptions.url === undefined ? {} : { route: request.routeOptions.url }),
+      });
+    });
+  }
 
   const shared = { version: deps.version, commit: deps.commit };
   registerHealthRoute(app, {
