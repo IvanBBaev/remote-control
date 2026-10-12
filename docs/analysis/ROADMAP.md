@@ -600,7 +600,7 @@ AC: tests: slot expires at 5 min; second join refused; unverified decision frame
 with `error: unverified`; replayed assertion refused.
 
 #### M0-12 — Relay: Web Push adapter
-Size M · Deps M0-10 · Status todo · Sources 03 W9, 03 §5.16, 07 W19, D5
+Size M · Deps M0-10 · Status done e2da9a5 · Sources 03 W9, 03 §5.16, 07 W19, D5
 Scope: `web-push` with VAPID keys from env, subscription CRUD (`push_subscriptions`),
 metadata payload `{t:"pending", rid, dev, exp}`, `Topic` = rid, `Urgency: high`, `TTL` =
 remaining lifetime, trigger when a `cls: request` frame targets a phone with no live
