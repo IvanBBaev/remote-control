@@ -860,7 +860,7 @@ AC: screen tests; self-test journey green; the checklist text matches `remotectl
 output (shared strings in `packages/protocol`).
 
 #### M1-08 — Linux and Windows services, `uninstall`, `logs`, `update`
-Size M · Deps M0-24 · Status todo · Sources 06 W13, 06 W17, 06 Q7, D22, I4
+Size M · Deps M0-24 · Status done 53b346e (Linux/Windows real runs pending M0-25) · Sources 06 W13, 06 W17, 06 Q7, D22, I4
 Scope: `systemd --user` unit + `loginctl enable-linger`; Windows Task Scheduler ONLOGON
 task from XML (`ExecutionTimeLimit PT0S`); `uninstall` for all three; `logs` tail;
 notify-only update check (npm dist-tags, once per 24 h, no auto-update); Windows may
