@@ -770,7 +770,7 @@ AC: restore drill logged in the runbook; a forced crash appears in Sentry withou
 payload field.
 
 #### M0-27 — SECURITY.md, README v0, supply chain, npm name
-Size S · Deps M0-13 · Status todo · Sources 02 W1, 02 W13, 01 W1, 06 W16, D13
+Size S · Deps M0-13 · Status doing — repo part done d7964c3; npm placeholder publish pending owner · Sources 02 W1, 02 W13, 01 W1, 06 W16, D13
 Scope: `SECURITY.md` (threat model summary from 02 §4, what the relay stores, reporting
 channel), README v0 with the positioning and the honest comparison table vs Claude Code
 Remote Control (01 §5.1), `pnpm` `minimumReleaseAge`, `files` whitelist, provenance
