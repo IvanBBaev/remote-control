@@ -3,8 +3,12 @@ import { z } from 'zod';
 import { DeviceId, EnvelopeId, EpochMs, SessionId } from './ids.js';
 import { VERSION_TABLE } from './version.js';
 
-/** Largest accepted payload, in base64 characters (~192 KiB of ciphertext). */
-export const MAX_PAYLOAD_LENGTH = 262_144;
+/**
+ * Largest accepted payload, in base64 characters: one Noise transport frame of at most
+ * 65 535 bytes (D3) encodes to 87 380 characters, which keeps a full envelope well under
+ * the relay's 256 KiB WebSocket frame cap (D15).
+ */
+export const MAX_PAYLOAD_LENGTH = 87_380;
 
 /**
  * Data envelope (D14). Everything except `payload` is routing metadata the relay may

@@ -8,13 +8,20 @@ import { createDrizzleAccountStore } from './adapters/drizzle-account-store.js';
 import { createPgDb } from './adapters/pg-db.js';
 import { createScryptSecretHasher } from './adapters/scrypt-secret-hasher.js';
 import { createSimpleWebAuthn } from './adapters/simple-webauthn.js';
+import { createDrizzleDeviceDirectory } from './adapters/drizzle-device-directory.js';
 import { systemClock } from './adapters/system-clock.js';
+import { systemTimer } from './adapters/system-timer.js';
 import type { Config } from './config.js';
 import { AccountService } from './core/account-service.js';
 import { DrainState } from './core/drain-state.js';
+import { DEVICE_CAP } from './core/hub-limits.js';
+import { LocalHub } from './core/local-hub.js';
+import { RelayRouter } from './core/relay-router.js';
 import { MIGRATIONS_DIR } from './package-paths.js';
 import type { DatabaseHealth } from './ports/database-health.js';
 import type { Db } from './ports/db.js';
+import type { DeviceDirectory } from './ports/device-directory.js';
+import type { HubPort } from './ports/hub.js';
 
 export interface Container {
   readonly logger: Logger;
@@ -27,6 +34,10 @@ export interface Container {
   readonly random: Random;
   /** Accounts and passkeys (D8); `undefined` without a database. */
   readonly accounts: AccountService | undefined;
+  /** The WebSocket hub (D15); `undefined` without a database. */
+  readonly relay:
+    | { readonly router: RelayRouter; readonly hub: HubPort; readonly directory: DeviceDirectory }
+    | undefined;
 }
 
 /** The relying party name shown by the passkey manager. */
@@ -53,6 +64,8 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
       : createPgDb(config.databaseUrl, logger, MIGRATIONS_DIR));
   const clock = systemClock;
   const random = webCryptoRandom;
+  const directory = db && createDrizzleDeviceDirectory(db.orm);
+  const hub = new LocalHub(clock, DEVICE_CAP);
   return {
     logger,
     clock,
@@ -69,5 +82,10 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
         clock,
         random,
       }),
+    relay: directory && {
+      router: new RelayRouter({ clock, timer: systemTimer, hub, directory, logger }),
+      hub,
+      directory,
+    },
   };
 }

@@ -19,6 +19,7 @@ export default defineConfig({
     neverBundle: true,
     onlyImport: [
       '@fastify/static',
+      '@fastify/websocket',
       /^@simplewebauthn\/server(\/|$)/,
       /^drizzle-orm(\/|$)/,
       'fastify',
