@@ -508,7 +508,7 @@ AC: a test logs an object containing every redacted path and a canary string; th
 rendered line contains neither.
 
 #### M0-05 — `packages/protocol` v1
-Size M · Deps M0-01 · Status todo · Sources 03 W2, 02 W2, 01 W2, 01 W5, 07 W7
+Size M · Deps M0-01 · Status done 142a344 · Sources 03 W2, 02 W2, 01 W2, 01 W5, 07 W7
 Scope: zod 4 `.strict()` schemas for the envelope and control frames (D14); domain
 schemas with 01 W2's vocabulary (`machine`, `repository`, `session`, `request`,
 `question`, `decision`, `instruction`, `startSession`, `capabilities`); request
