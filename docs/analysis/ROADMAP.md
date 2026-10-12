@@ -623,7 +623,7 @@ AC: tests for allow-list edge cases; the argv gate fails on a planted forbidden 
 inspection test).
 
 #### M0-14 — Agent: `hook.js`, hook receiver, pending store, hooks installer
-Size M · Deps M0-13, M0-07 · Status todo · Sources 04 W1–W3, 04 §5.2, 04 §5.6, 04 §5.8, 01 W8, D10, D11
+Size M · Deps M0-13, M0-07 · Status done 2528d9d · Sources 04 W1–W3, 04 §5.2, 04 §5.6, 04 §5.8, 01 W8, D10, D11
 Scope: `hook.js` (CommonJS, no deps; stdin → POST `127.0.0.1:4327/hook` with bearer
 from `agent.json`; waits until `T − 5 s`; prints the agent's JSON verbatim; any failure
 → empty stdout, exit 0); `HookReceiver` (Fastify, loopback bind with exit on failure,
