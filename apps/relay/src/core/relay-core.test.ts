@@ -5,6 +5,7 @@ import { describe, expect, it, vi, type Mock } from 'vitest';
 import type { DeviceDirectory, DeviceIdentity, DeviceRecord } from '../ports/device-directory.js';
 import type { HubConnection } from '../ports/hub.js';
 import type { PeerSocket } from '../ports/peer-socket.js';
+import type { AuditSink } from '../ports/relay-seams.js';
 import { createFakeTime, type FakeTime } from '../testing/fake-time.js';
 import {
   ACK_WINDOW_MS,
@@ -148,7 +149,9 @@ describe('LocalHub', () => {
     expect(hub.connections(USER)).toEqual([again, phone]);
     expect(hub.connections('nobody')).toEqual([]);
     expect(hub.count(USER)).toBe(2);
+    expect([hub.online('agent'), hub.online('phone')]).toEqual([1, 1]);
     expect(hub.detach(phone)).toBe(true);
+    expect(hub.online('phone')).toBe(0);
     expect(hub.detach(again)).toBe(true);
     expect(hub.count(USER)).toBe(0);
     expect(hub.detach(again)).toBe(false);
@@ -216,6 +219,7 @@ interface Harness {
   readonly hub: LocalHub;
   readonly directory: { readonly [K in keyof DeviceDirectory]: Mock<DeviceDirectory[K]> };
   readonly logs: MemoryDestination;
+  readonly audit: { readonly decisionForwarded: Mock<AuditSink['decisionForwarded']> };
   connect(identity: DeviceIdentity): { socket: FakeSocket; events: SocketEvents };
 }
 
@@ -234,11 +238,16 @@ function harness(): Harness {
     ownerOf: vi.fn<DeviceDirectory['ownerOf']>(() => Promise.resolve(USER)),
     markSeen: vi.fn<DeviceDirectory['markSeen']>(() => Promise.resolve()),
   };
+  const audit = {
+    decisionForwarded: vi.fn<AuditSink['decisionForwarded']>(),
+    pushSent: vi.fn<AuditSink['pushSent']>(),
+  };
   const router = new RelayRouter({
     clock: time.clock,
     timer: time.timer,
     hub,
     directory,
+    audit,
     logger: createLogger({ level: 'info', destination: logs }),
   });
   return {
@@ -247,6 +256,7 @@ function harness(): Harness {
     hub,
     directory,
     logs,
+    audit,
     connect(identity) {
       const socket = new FakeSocket();
       return { socket, events: router.accept(identity, socket) };
@@ -354,6 +364,39 @@ describe('RelayRouter', () => {
     expect(conn?.send('{}')).toBe(false);
     phone.socket.bufferedAmount = 0;
     expect(conn?.send('{}')).toBe(true);
+  });
+
+  it('audits a delivered command with a decision hash, not a dropped one or one without (M1-13)', async () => {
+    const h = harness();
+    const agent = h.connect(agentIdentity);
+    const phone = h.connect(phoneIdentity);
+    agent.events.message(hello('agent'));
+    phone.events.message(hello('phone'));
+    await flush();
+    const hash = 'ab'.repeat(32);
+    const command = (n: number, decisionHash?: string) =>
+      JSON.stringify({
+        v: 1,
+        kind: 'data',
+        id: envelopeId(n),
+        from: PHONE,
+        to: AGENT,
+        session: null,
+        cls: 'command',
+        seq: n,
+        ts: 0,
+        expiresAt: null,
+        payload: 'AAAA',
+        ...(decisionHash === undefined ? {} : { decisionHash }),
+      });
+    phone.events.message(command(1, hash));
+    phone.events.message(command(2));
+    await flush();
+    agent.socket.bufferedAmount = 2 * 1024 * 1024;
+    phone.events.message(command(3, hash));
+    await flush();
+    expect(h.audit.decisionForwarded.mock.calls).toEqual([[phoneIdentity, hash]]);
+    expect(h.router.stats.backpressureDrops).toBe(1);
   });
 
   it('drains: 1012 everywhere, no presence broadcast, last_seen_at stamped', async () => {

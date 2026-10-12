@@ -116,6 +116,7 @@ function device(id: string, kind: DeviceRecord['kind'], extra: Partial<DeviceRec
 }
 
 function setup(options: { limits?: PushLimits; result?: PushResult } = {}) {
+  const pushSent = vi.fn<(userId: string, phoneDeviceId: string) => void>();
   const time = createFakeTime();
   const logs = createMemoryDestination();
   const logger = createLogger({ level: 'debug', destination: logs });
@@ -148,6 +149,7 @@ function setup(options: { limits?: PushLimits; result?: PushResult } = {}) {
     store,
     push: { send },
     logger,
+    audit: { pushSent },
     ...(options.limits === undefined ? {} : { limits: options.limits }),
   });
   const request = (n: number, extra: Partial<UndeliveredEnvelope> = {}): UndeliveredEnvelope => ({
@@ -170,10 +172,25 @@ function setup(options: { limits?: PushLimits; result?: PushResult } = {}) {
     send,
     notifier,
     request,
+    pushSent,
   };
 }
 
 describe('PushNotifier (M0-12, D4, D5)', () => {
+  it('writes one push_sent audit row per notified phone, none when nothing was sent (M1-13)', async () => {
+    const sent = setup();
+    sent.subscriptions.push({ ...sent.subscriptions[0]!, id: 'sub-2' });
+    sent.send.mockResolvedValueOnce({ kind: 'gone' });
+    sent.notifier.undelivered(sent.request(1));
+    await sent.notifier.idle();
+    expect(sent.pushSent.mock.calls).toEqual([[USER, PHONE]]);
+
+    const failed = setup({ result: { kind: 'failed', status: 500 } });
+    failed.notifier.undelivered(failed.request(1));
+    await failed.notifier.idle();
+    expect(failed.pushSent).not.toHaveBeenCalled();
+  });
+
   it('pushes metadata only to every subscription of an offline phone', async () => {
     const { notifier, send, subscriptions, request, logs, time } = setup();
     subscriptions.push({

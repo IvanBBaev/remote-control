@@ -106,6 +106,23 @@ node dist/admin.js vapid-keys                            # prints RC_VAPID_PUBLI
 pnpm --filter @remote-control/relay admin vapid-keys     # local
 ```
 
+## Audit log and admin counters
+
+The relay writes an `audit_log` row (event, user, device, time — never a body) for
+register, login, recovery, enrolment, token rotation, pairing, session revoke, every
+forwarded decision (`decision_forwarded`, with the 32-byte decision hash only) and every
+push sent (`push_sent`). Writes from the routing path are best-effort and never block it.
+
+`GET /api/admin/counters` (owner only) returns counts: users, live devices by kind,
+devices online now, and pushes per UTC day for the last 7 days. It exists only when
+`RC_ADMIN_TOKEN` is set (32–256 printable ASCII characters) and a database is configured:
+
+```sh
+curl -s -H "Authorization: Bearer $RC_ADMIN_TOKEN" https://<relay>/api/admin/counters
+```
+
+It is limited to 10 requests per minute per IP; a wrong token is a 401 and is never logged.
+
 ## Configuration
 
 See [`.env.example`](../../.env.example). `RC_*` wins over the Railway-provided

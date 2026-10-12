@@ -67,8 +67,14 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
     auth: container.accounts && { service: container.accounts, origin: config.origin },
     relay: container.relay,
     push: container.push,
+    admin: container.admin,
   });
-  app.addHook('onClose', () => container.database.close());
+  app.addHook('onClose', async () => {
+    // Background pushes and audit writes finish before the pool closes (pushes write audit rows).
+    await container.push?.notifier.idle();
+    await container.audit?.idle();
+    await container.database.close();
+  });
 
   await app.listen({ host: config.host, port: config.port });
   const shutdown = installShutdown({

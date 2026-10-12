@@ -120,6 +120,12 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ RC_VAPID_PRIVATE: keys.RC_VAPID_PRIVATE })).toThrow(/set together/);
   });
 
+  it('reads the optional admin token (M1-13)', () => {
+    expect(loadConfig({}).adminToken).toBeUndefined();
+    const token = 'A1-'.repeat(12);
+    expect(loadConfig({ RC_ADMIN_TOKEN: token }).adminToken).toBe(token);
+  });
+
   it('requires a database URL in production', () => {
     expect(() => loadConfig({ NODE_ENV: 'production' })).toThrow(ConfigError);
     expect(() => loadConfig({ NODE_ENV: 'production' })).toThrow(/RC_DATABASE_URL is required/);
@@ -138,6 +144,8 @@ describe('loadConfig', () => {
     ['RC_VAPID_PUBLIC', 'not-a-key'],
     ['RC_VAPID_PRIVATE', 'short'],
     ['RC_VAPID_SUBJECT', 'http://example.com'],
+    ['RC_ADMIN_TOKEN', 'too-short'],
+    ['RC_ADMIN_TOKEN', `${'a'.repeat(40)} with spaces`],
   ])('rejects %s=%s', (name, value) => {
     expect(() => loadConfig({ [name]: value })).toThrow(new RegExp(`^Invalid relay.*${name}`));
   });

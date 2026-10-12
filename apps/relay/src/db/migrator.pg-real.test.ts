@@ -107,7 +107,7 @@ describe.skipIf(url === undefined)('migrations on real Postgres', () => {
       await new Promise((resolve) => setTimeout(resolve, 300));
       expect(settled).toBe(false);
       await holder.query(`SELECT pg_advisory_unlock(${MIGRATION_LOCK_KEY})`);
-      expect(await waiting).toEqual({ applied: 2, total: 2 });
+      expect(await waiting).toEqual({ applied: 3, total: 3 });
     });
   });
 

@@ -39,6 +39,10 @@ const EnvSchema = z
     RC_VAPID_SUBJECT: optional(
       z.string().regex(/^(mailto:\S+|https:\/\/\S+)$/, 'must be a mailto: or https: URL'),
     ),
+    /** Bearer token for `GET /api/admin/counters` (M1-13); unset = the route does not exist. */
+    RC_ADMIN_TOKEN: optional(
+      z.string().regex(/^[\x21-\x7e]{32,256}$/, 'must be 32–256 printable ASCII characters'),
+    ),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === 'production' && !env.RC_DATABASE_URL && !env.DATABASE_URL) {
@@ -125,6 +129,8 @@ export interface Config {
   readonly push:
     | { readonly publicKey: string; readonly privateKey: string; readonly subject: string }
     | undefined;
+  /** Owner token for the admin counters (M1-13); `undefined` disables them. */
+  readonly adminToken: string | undefined;
 }
 
 /** Thrown when the environment is invalid; the message names variables, never values. */
@@ -164,5 +170,6 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
             subject: e.RC_VAPID_SUBJECT ?? new URL(e.RC_ORIGIN!).origin,
           }
         : undefined,
+    adminToken: e.RC_ADMIN_TOKEN,
   };
 }

@@ -1,5 +1,6 @@
 import type { Clock } from '@remote-control/protocol';
 
+import type { DeviceKind } from '../ports/device-directory.js';
 import type { AttachResult, HubConnection, HubPort } from '../ports/hub.js';
 
 /** Presence change times kept for `/api/state?since=`; oldest are dropped beyond this. */
@@ -51,6 +52,14 @@ export class LocalHub implements HubPort {
 
   count(userId: string): number {
     return this.#users.get(userId)?.size ?? 0;
+  }
+
+  online(kind: DeviceKind): number {
+    let total = 0;
+    for (const devices of this.#users.values()) {
+      for (const connection of devices.values()) if (connection.identity.kind === kind) total += 1;
+    }
+    return total;
   }
 
   presenceChangedAt(deviceId: string): number | undefined {

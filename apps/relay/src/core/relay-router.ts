@@ -17,7 +17,9 @@ import type { HubConnection, HubPort } from '../ports/hub.js';
 import type { PeerSocket } from '../ports/peer-socket.js';
 import {
   admitAllCommands,
+  ignoreAudit,
   ignorePendingRequests,
+  type AuditSink,
   type CommandGate,
   type PendingRequestSink,
 } from '../ports/relay-seams.js';
@@ -48,6 +50,7 @@ export interface RelayRouterDeps {
   readonly logger: Logger;
   readonly commandGate?: CommandGate;
   readonly pending?: PendingRequestSink;
+  readonly audit?: AuditSink;
 }
 
 /** Counters for metrics and tests; headers only (I3). */
@@ -81,11 +84,13 @@ export class RelayRouter {
   readonly #acks: AckTracker;
   readonly #gate: CommandGate;
   readonly #pending: PendingRequestSink;
+  readonly #audit: AuditSink;
   #draining = false;
 
   constructor(readonly deps: RelayRouterDeps) {
     this.#gate = deps.commandGate ?? admitAllCommands;
     this.#pending = deps.pending ?? ignorePendingRequests;
+    this.#audit = deps.audit ?? ignoreAudit;
     this.#acks = new AckTracker(deps.timer, (delivery) => this.#pending.unacked(delivery));
   }
 
@@ -255,6 +260,8 @@ export class RelayRouter {
     if (!target.send(text)) {
       this.stats.backpressureDrops += 1;
       sender.error('rate_limited', envelope.id, 'recipient is not reading');
+    } else if (envelope.cls === 'command' && envelope.decisionHash !== undefined) {
+      this.#audit.decisionForwarded(sender.identity, envelope.decisionHash);
     }
     this.#acks.track({
       envelopeId: envelope.id,

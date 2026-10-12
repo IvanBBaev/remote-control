@@ -1,4 +1,4 @@
-import type { DeviceIdentity } from './device-directory.js';
+import type { DeviceIdentity, DeviceKind } from './device-directory.js';
 
 /** One live, authenticated device socket as the hub sees it. */
 export interface HubConnection {
@@ -27,6 +27,8 @@ export interface HubPort {
   connections(userId: string): readonly HubConnection[];
   /** Live devices of the user. */
   count(userId: string): number;
+  /** Live devices of `kind` across all users (admin counters, M1-13). */
+  online(kind: DeviceKind): number;
   /** When the device last came online or went offline (relay clock), if known. */
   presenceChangedAt(deviceId: string): number | undefined;
   /** Forgets every connection and closes it with `code` (shutdown). */

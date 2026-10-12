@@ -1,10 +1,16 @@
 import { PGlite } from '@electric-sql/pglite';
 import { sha256, utf8, webCryptoRandom } from '@remote-control/crypto';
-import { createLogger, createMemoryDestination, type MemoryDestination } from '@remote-control/log';
+import {
+  assertNoCanary,
+  createLogger,
+  createMemoryDestination,
+  type MemoryDestination,
+} from '@remote-control/log';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createDrizzleAccountStore } from '../adapters/drizzle-account-store.js';
+import { createDrizzleAuditLog } from '../adapters/drizzle-audit-log.js';
 import { createDrizzleDeviceDirectory } from '../adapters/drizzle-device-directory.js';
 import { createDrizzlePushSubscriptionStore } from '../adapters/drizzle-push-subscription-store.js';
 import { createPgliteDb } from '../adapters/pglite-db.js';
@@ -13,6 +19,7 @@ import { createSimpleWebAuthn } from '../adapters/simple-webauthn.js';
 import { createWebPushSender, generateVapidKeys } from '../adapters/web-push-sender.js';
 import { buildApp } from '../app.js';
 import { AccountService } from '../core/account-service.js';
+import { AuditRecorder } from '../core/audit-recorder.js';
 import { DrainState } from '../core/drain-state.js';
 import { DEVICE_CAP } from '../core/hub-limits.js';
 import { LocalHub } from '../core/local-hub.js';
@@ -26,11 +33,13 @@ import type { PushSubscriptionStore } from '../ports/push-subscription-store.js'
 import { FakePushService } from '../testing/fake-push-service.js';
 import { createFakeTime, type FakeTime } from '../testing/fake-time.js';
 import { WsPeer } from '../testing/ws-peer.js';
+import { COUNTER_DAYS, DEFAULT_ADMIN_LIMIT } from './admin-routes.js';
 import { MAX_SUBSCRIPTIONS_PER_DEVICE } from './push-routes.js';
 
 const ORIGIN = 'https://rc.example.test';
 const DAY = 24 * 60 * 60 * 1000;
 const vapid = { ...generateVapidKeys(), subject: 'mailto:owner@example.test' };
+const ADMIN_TOKEN = 'admin-canary-token-0123456789abcdef0123456789';
 
 const client = new PGlite();
 let db: Db;
@@ -59,6 +68,7 @@ interface Relay {
   readonly time: FakeTime;
   readonly logs: MemoryDestination;
   readonly notifier: PushNotifier;
+  readonly audit: AuditRecorder;
 }
 
 const running: Relay[] = [];
@@ -66,19 +76,22 @@ afterEach(async () => {
   await Promise.all(running.splice(0).map((relay) => relay.app.close()));
 });
 
-/** A relay wired like `container.ts`: real router, notifier, web-push sender. */
-async function startRelay(): Promise<Relay> {
+/** A relay wired like `container.ts`: real router, notifier, web-push sender, audit log. */
+async function startRelay(options: { admin?: boolean } = {}): Promise<Relay> {
   const time = createFakeTime();
   const logs = createMemoryDestination();
   const logger = createLogger({ level: 'info', destination: logs });
   const directory = createDrizzleDeviceDirectory(db.orm);
   const hub = new LocalHub(time.clock, DEVICE_CAP);
+  const auditLog = createDrizzleAuditLog(db.orm);
+  const audit = new AuditRecorder({ clock: time.clock, store: auditLog, logger });
   const notifier = new PushNotifier({
     clock: time.clock,
     directory,
     store,
     push: createWebPushSender(vapid),
     logger,
+    audit,
   });
   const router = new RelayRouter({
     clock: time.clock,
@@ -87,6 +100,7 @@ async function startRelay(): Promise<Relay> {
     directory,
     logger,
     pending: notifier,
+    audit,
   });
   const accounts = new AccountService({
     store: createDrizzleAccountStore(db.orm),
@@ -111,11 +125,12 @@ async function startRelay(): Promise<Relay> {
       publicKey: vapid.publicKey,
       allowEndpoint: (url) => url.startsWith(service.origin),
     },
+    ...(options.admin === true && { admin: { token: ADMIN_TOKEN, stats: auditLog } }),
   });
   await app.listen({ host: '127.0.0.1', port: 0 });
   const address = app.server.address();
   if (address === null || typeof address === 'string') throw new Error('no port');
-  const relay = { app, url: `ws://127.0.0.1:${address.port}/ws`, time, logs, notifier };
+  const relay = { app, url: `ws://127.0.0.1:${address.port}/ws`, time, logs, notifier, audit };
   running.push(relay);
   return relay;
 }
@@ -516,5 +531,183 @@ describe('request → push end to end (M0-12, D4, D5)', () => {
     agentPeer.send(request(agent.deviceId, phone.deviceId, 4));
     await vi.waitFor(() => expect(pushesTo(target.endpoint)).toHaveLength(1));
     await vi.waitFor(async () => expect(await store.listForDevice(phone.deviceId)).toEqual([]));
+  });
+});
+
+describe('audit log and admin counters (M1-13, 03 W12, D19)', () => {
+  const admin = (relay: Relay, authorization?: string) =>
+    relay.app.inject({
+      method: 'GET',
+      url: '/api/admin/counters',
+      headers: authorization === undefined ? {} : { authorization },
+    });
+
+  interface Counters {
+    readonly users: number;
+    readonly devices: { readonly phone: number; readonly agent: number };
+    readonly online: { readonly phone: number; readonly agent: number };
+    readonly pushesPerDay: readonly { readonly day: string; readonly count: number }[];
+  }
+  const counters = async (relay: Relay) => {
+    const reply = await admin(relay, `Bearer ${ADMIN_TOKEN}`);
+    expect(reply.statusCode).toBe(200);
+    expect(reply.headers['cache-control']).toBe('no-store');
+    return reply.json<Counters>();
+  };
+  const today = (list: Counters['pushesPerDay'], day: string) =>
+    list.find((entry) => entry.day === day)?.count ?? 0;
+
+  it('privacy gate: audit rows carry the decision hash only, never payloads, names or endpoints', async () => {
+    const relay = await startRelay({ admin: true });
+    const before = await counters(relay);
+    const userId = await addUser();
+    const now = relay.time.clock.now();
+    const agentName = 'canary-agent-name-5d1c';
+    const agent = await addAgent(userId, now, agentName);
+    const phone = await addPhone(userId, now);
+    const target = await service.subscribe();
+    await relay.app.inject({
+      method: 'PUT',
+      url: '/api/push/subscription',
+      headers: phone.headers,
+      payload: toJson(target),
+    });
+    const agentPeer = await WsPeer.open(relay.url, agent.headers);
+    await agentPeer.hello('agent');
+
+    // A request to the offline phone: one push, one push_sent row.
+    const requestPayload = Buffer.from('canary-request-body-9e2a').toString('base64');
+    agentPeer.send({ ...request(agent.deviceId, phone.deviceId, 1), payload: requestPayload });
+    await vi.waitFor(() =>
+      expect(service.received.filter((push) => push.endpoint === target.endpoint)).toHaveLength(1),
+    );
+    await relay.notifier.idle();
+
+    // The phone comes online and forwards a decision: one decision_forwarded row.
+    const wsHeaders = Object.fromEntries(
+      Object.entries(phone.headers).filter(([name]) => name !== 'x-rc-client'),
+    );
+    const phonePeer = await WsPeer.open(relay.url, wsHeaders);
+    await phonePeer.hello('phone');
+    const hash = 'c0ffee'.repeat(10) + 'beef';
+    const commandPayload = Buffer.from('canary-command-body-41b7').toString('base64');
+    phonePeer.send({
+      ...request(phone.deviceId, agent.deviceId, 2),
+      cls: 'command',
+      payload: commandPayload,
+      decisionHash: hash,
+    });
+    await agentPeer.next('data', (frame) => frame.id === envelopeId(2));
+    await relay.audit.idle();
+
+    const rows = (
+      await client.query<Record<string, unknown>>(
+        'SELECT * FROM audit_log WHERE user_id = $1 ORDER BY id',
+        [userId],
+      )
+    ).rows.map((row) =>
+      JSON.stringify(row, (_key, value: unknown) =>
+        value instanceof Uint8Array ? Buffer.from(value).toString('hex') : value,
+      ),
+    );
+    const events = rows.map((row) => JSON.parse(row) as Record<string, unknown>);
+    expect(events.filter((row) => row.event === 'push_sent')).toEqual([
+      expect.objectContaining({ device_id: phone.deviceId, decision_hash: null }),
+    ]);
+    expect(events.filter((row) => row.event === 'decision_forwarded')).toEqual([
+      expect.objectContaining({ device_id: phone.deviceId, decision_hash: hash }),
+    ]);
+    const secrets = [
+      requestPayload,
+      commandPayload,
+      'canary-request-body-9e2a',
+      'canary-command-body-41b7',
+      agentName,
+      target.endpoint,
+      target.p256dh,
+      target.auth,
+      agent.headers.authorization.slice('Bearer '.length),
+    ];
+    assertNoCanary(rows, secrets);
+    assertNoCanary(relay.logs.lines(), [...secrets, ADMIN_TOKEN]);
+
+    // Counters: deltas, since the database is shared by the whole file.
+    const after = await counters(relay);
+    expect(after.users - before.users).toBe(1);
+    expect(after.devices.phone - before.devices.phone).toBe(1);
+    expect(after.devices.agent - before.devices.agent).toBe(1);
+    expect(after.online).toEqual({ phone: 1, agent: 1 });
+    const day = new Date(now).toISOString().slice(0, 10);
+    expect(today(after.pushesPerDay, day) - today(before.pushesPerDay, day)).toBe(1);
+    assertNoCanary(JSON.stringify(after), secrets);
+    phonePeer.close();
+    agentPeer.close();
+  });
+
+  it('counts pushes per UTC day over the last week only', async () => {
+    const relay = await startRelay({ admin: true });
+    const userId = await addUser();
+    const phone = await addDevice(userId, 'phone', 'P', 0);
+    const now = relay.time.clock.now();
+    const DAY_MS = 86_400_000;
+    const start = Math.floor(now / DAY_MS) * DAY_MS;
+    const before = (await counters(relay)).pushesPerDay;
+    await createDrizzleAuditLog(db.orm).append(
+      [start - COUNTER_DAYS * DAY_MS, start - DAY_MS, start - 1, start, start + 5].map((at) => ({
+        userId,
+        deviceId: phone,
+        event: 'push_sent' as const,
+        at,
+      })),
+    );
+    const after = (await counters(relay)).pushesPerDay;
+    const day = (at: number) => new Date(at).toISOString().slice(0, 10);
+    expect(after.map((entry) => entry.day)).toEqual([...after.map((entry) => entry.day)].sort());
+    expect(today(after, day(start)) - today(before, day(start))).toBe(2);
+    expect(today(after, day(start - 1)) - today(before, day(start - 1))).toBe(2);
+    expect(after.some((entry) => entry.day === day(start - COUNTER_DAYS * DAY_MS))).toBe(false);
+  });
+
+  it('refuses a missing or wrong token without logging it and rate-limits per IP', async () => {
+    const relay = await startRelay({ admin: true });
+    for (const authorization of [
+      undefined,
+      'Bearer wrong-token',
+      `Basic ${ADMIN_TOKEN}`,
+      `Bearer ${'x'.repeat(300)}`,
+    ]) {
+      const reply = await admin(relay, authorization);
+      expect(reply.statusCode).toBe(401);
+      expect(reply.json()).toEqual({ error: 'unauthenticated' });
+    }
+    expect(relay.logs.lines().join('\n')).toContain('"event":"admin_auth"');
+    assertNoCanary(relay.logs.lines(), ['wrong-token', ADMIN_TOKEN]);
+    for (let n = 4; n < DEFAULT_ADMIN_LIMIT.max; n += 1) await admin(relay);
+    const limited = await admin(relay, `Bearer ${ADMIN_TOKEN}`);
+    expect(limited.statusCode).toBe(429);
+    relay.time.advance(DEFAULT_ADMIN_LIMIT.windowMs);
+    expect((await admin(relay, `Bearer ${ADMIN_TOKEN}`)).statusCode).toBe(200);
+  });
+
+  it('has no admin route without RC_ADMIN_TOKEN', async () => {
+    const relay = await startRelay();
+    expect((await admin(relay, `Bearer ${ADMIN_TOKEN}`)).statusCode).toBe(404);
+  });
+
+  it('logs a failed audit write by event and error class only', async () => {
+    const logs = createMemoryDestination();
+    const recorder = new AuditRecorder({
+      clock: createFakeTime().clock,
+      store: { append: () => Promise.reject(new TypeError('canary-db-detail')) },
+      logger: createLogger({ level: 'info', destination: logs }),
+    });
+    recorder.pushSent('user', 'phone');
+    await recorder.idle();
+    const lines = logs.lines().join('\n');
+    expect(lines).toContain('"event":"audit_write_failed"');
+    expect(lines).toContain('"audit_event":"push_sent"');
+    expect(lines).toContain('"err":"TypeError"');
+    assertNoCanary(logs.lines(), ['canary-db-detail']);
+    await createDrizzleAuditLog(db.orm).append([]);
   });
 });

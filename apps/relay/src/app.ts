@@ -1,3 +1,4 @@
+import { sha256, utf8 } from '@remote-control/crypto';
 import type { Clock } from '@remote-control/protocol';
 import fastify, { LogController, type FastifyInstance } from 'fastify';
 import type { Logger } from 'pino';
@@ -13,6 +14,7 @@ import {
   type AuthRateLimits,
 } from './http/auth-routes.js';
 import { DEFAULT_DECISION_RATE_LIMIT, registerDecisionRoutes } from './http/decision-routes.js';
+import { registerAdminRoutes } from './http/admin-routes.js';
 import { deviceAuth } from './http/device-auth.js';
 import { registerHealthRoute } from './http/health-route.js';
 import { registerOriginGuard } from './http/origin-guard-hook.js';
@@ -26,6 +28,7 @@ import { registerStateRoute } from './http/state-route.js';
 import { registerStaticSite } from './http/static-site.js';
 import { registerVersionRoute } from './http/version-route.js';
 import type { RelayRouter } from './core/relay-router.js';
+import type { AdminStatsStore } from './ports/audit-log.js';
 import type { DatabaseHealth } from './ports/database-health.js';
 import type { DeviceDirectory } from './ports/device-directory.js';
 import type { HubPort } from './ports/hub.js';
@@ -53,6 +56,14 @@ export interface AppDeps {
   readonly relay?: RelayDeps | undefined;
   /** Web Push registration (M0-12); needs `auth` and `relay`. */
   readonly push?: PushDeps | undefined;
+  /** Owner counters (M1-13); needs `relay` (online counts come from the hub). */
+  readonly admin?: AdminDeps | undefined;
+}
+
+export interface AdminDeps {
+  /** `RC_ADMIN_TOKEN`; only its SHA-256 is kept by the route. */
+  readonly token: string;
+  readonly stats: AdminStatsStore;
 }
 
 export interface PushDeps {
@@ -143,6 +154,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         clock: deps.clock,
         origin: deps.auth.origin,
       });
+      if (deps.admin !== undefined) {
+        registerAdminRoutes(app, {
+          tokenHash: await sha256(utf8(deps.admin.token)),
+          stats: deps.admin.stats,
+          hub: deps.relay.hub,
+          clock: deps.clock,
+          limiter: new FixedWindowRateLimiter(deps.clock),
+        });
+      }
       if (deps.push !== undefined) {
         registerPushRoutes(app, {
           ...deps.push,

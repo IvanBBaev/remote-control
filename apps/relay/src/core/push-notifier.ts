@@ -4,7 +4,7 @@ import type { Logger } from 'pino';
 import type { DeviceDirectory } from '../ports/device-directory.js';
 import type { PushPort } from '../ports/push.js';
 import type { PushSubscriptionStore } from '../ports/push-subscription-store.js';
-import type { PendingRequestSink, UndeliveredEnvelope } from '../ports/relay-seams.js';
+import type { AuditSink, PendingRequestSink, UndeliveredEnvelope } from '../ports/relay-seams.js';
 import type { TrackedDelivery } from './ack-tracker.js';
 import { encodePendingPayload, pushTopic, pushTtlSeconds } from './push-payload.js';
 import { FixedWindowRateLimiter, type RateLimit } from './rate-limiter.js';
@@ -28,6 +28,8 @@ export interface PushNotifierDeps {
   readonly push: PushPort;
   readonly logger: Logger;
   readonly limits?: PushLimits;
+  /** Writes one `push_sent` audit row per notified phone (M1-13). */
+  readonly audit?: Pick<AuditSink, 'pushSent'>;
 }
 
 interface PendingRequest {
@@ -115,6 +117,7 @@ export class PushNotifier implements PendingRequestSink {
       ttlSeconds,
       urgency: 'high',
     } as const;
+    let sent = false;
     await Promise.all(
       subscriptions.map(async (subscription) => {
         const result = await this.deps.push.send(subscription, message);
@@ -125,6 +128,7 @@ export class PushNotifier implements PendingRequestSink {
           result: result.kind,
         };
         if (result.kind === 'sent') {
+          sent = true;
           this.deps.logger.info(fields, 'push sent');
         } else if (result.kind === 'gone') {
           await this.deps.store.remove(subscription.id);
@@ -135,6 +139,7 @@ export class PushNotifier implements PendingRequestSink {
         }
       }),
     );
+    if (sent) this.deps.audit?.pushSent(request.userId, request.to);
   }
 }
 

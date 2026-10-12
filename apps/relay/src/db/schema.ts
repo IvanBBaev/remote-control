@@ -240,7 +240,8 @@ export const pairingSlots = pgTable(
 /**
  * Security events: event, user, device, time — no bodies, no free-form metadata
  * column (02 §5.6, D19). `device_id` has no foreign key so rows outlive a revoked or
- * deleted device for the 90-day retention (02 §5.9).
+ * deleted device for the 90-day retention (02 §5.9). `decision_hash` is set only on
+ * `decision_forwarded`: the 32-byte hash the phone verified (D7), never the decision.
  */
 export const auditLog = pgTable(
   'audit_log',
@@ -249,10 +250,12 @@ export const auditLog = pgTable(
     userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
     deviceId: uuid('device_id'),
     event: text('event').notNull(),
+    decisionHash: bytea('decision_hash'),
     at: at('at').notNull().defaultNow(),
   },
   (table) => [
     index('audit_log_user_id_at_idx').on(table.userId, table.at.desc()),
     index('audit_log_at_idx').on(table.at),
+    index('audit_log_event_at_idx').on(table.event, table.at),
   ],
 );

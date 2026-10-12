@@ -39,3 +39,20 @@ export const ignorePendingRequests: PendingRequestSink = {
   undelivered: () => undefined,
   unacked: () => undefined,
 };
+
+/**
+ * Where the router and the push notifier write audit rows (M1-13, 03 W12). Calls are
+ * fire-and-forget so the routing path never waits for the database; the production
+ * sink is `core/audit-recorder.ts`. Arguments are routing metadata only (I3).
+ */
+export interface AuditSink {
+  /** A `cls: command` carrying `decisionHash` (hex) reached the recipient's socket. */
+  decisionForwarded(sender: DeviceIdentity, decisionHash: string): void;
+  /** At least one push service accepted a push for this phone. */
+  pushSent(userId: string, phoneDeviceId: string): void;
+}
+
+export const ignoreAudit: AuditSink = {
+  decisionForwarded: () => undefined,
+  pushSent: () => undefined,
+};

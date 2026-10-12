@@ -5,6 +5,7 @@ import type { DestinationStream, Logger } from 'pino';
 
 import { disabledDatabaseHealth } from './adapters/disabled-database-health.js';
 import { createDrizzleAccountStore } from './adapters/drizzle-account-store.js';
+import { createDrizzleAuditLog } from './adapters/drizzle-audit-log.js';
 import { createPgDb } from './adapters/pg-db.js';
 import { createScryptSecretHasher } from './adapters/scrypt-secret-hasher.js';
 import { createSimpleWebAuthn } from './adapters/simple-webauthn.js';
@@ -16,6 +17,7 @@ import { systemClock } from './adapters/system-clock.js';
 import { systemTimer } from './adapters/system-timer.js';
 import type { Config } from './config.js';
 import { AccountService } from './core/account-service.js';
+import { AuditRecorder } from './core/audit-recorder.js';
 import { DecisionVerifier } from './core/decision-verifier.js';
 import { DrainState } from './core/drain-state.js';
 import { DEVICE_CAP } from './core/hub-limits.js';
@@ -24,6 +26,7 @@ import { PairingService } from './core/pairing-service.js';
 import { PushNotifier } from './core/push-notifier.js';
 import { RelayRouter } from './core/relay-router.js';
 import { MIGRATIONS_DIR } from './package-paths.js';
+import type { AdminStatsStore } from './ports/audit-log.js';
 import type { DatabaseHealth } from './ports/database-health.js';
 import type { Db } from './ports/db.js';
 import type { DeviceDirectory } from './ports/device-directory.js';
@@ -59,6 +62,10 @@ export interface Container {
         readonly publicKey: string;
       }
     | undefined;
+  /** Audit rows written by routing and push (M1-13); `undefined` without a database. */
+  readonly audit: AuditRecorder | undefined;
+  /** `GET /api/admin/counters` (M1-13); `undefined` without a database or `RC_ADMIN_TOKEN`. */
+  readonly admin: { readonly token: string; readonly stats: AdminStatsStore } | undefined;
 }
 
 /** The relying party name shown by the passkey manager. */
@@ -90,6 +97,8 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
   const store = db && createDrizzleAccountStore(db.orm);
   const webauthn = createSimpleWebAuthn({ id: config.rpId, origin: config.origin, name: RP_NAME });
   const decisions = store && new DecisionVerifier({ store, webauthn, clock });
+  const auditLog = db && createDrizzleAuditLog(db.orm);
+  const audit = auditLog && new AuditRecorder({ clock, store: auditLog, logger });
   const pushStore = db && config.push && createDrizzlePushSubscriptionStore(db.orm);
   const push = directory &&
     pushStore &&
@@ -100,6 +109,7 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
         store: pushStore,
         push: createWebPushSender(config.push),
         logger,
+        ...(audit && { audit }),
       }),
       store: pushStore,
       publicKey: config.push.publicKey,
@@ -134,6 +144,7 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
           logger,
           commandGate: decisions,
           ...(push && { pending: push.notifier }),
+          ...(audit && { audit }),
         }),
         hub,
         directory,
@@ -146,5 +157,10 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
         decisions,
       },
     push,
+    audit,
+    admin:
+      auditLog && config.adminToken !== undefined
+        ? { token: config.adminToken, stats: auditLog }
+        : undefined,
   };
 }
