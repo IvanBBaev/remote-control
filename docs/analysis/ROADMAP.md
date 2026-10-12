@@ -474,7 +474,7 @@ AC: `pnpm check` green locally; `ci` green on a PR; a test using `Date.now()` di
 fails lint.
 
 #### M0-02 — Domain, Railway project, Dockerfile, relay skeleton, first deploy
-Size M · Deps M0-01 · Status todo · Sources 03 W3, 03 W13, 06 W4–W9, 06 W19, 06 R10
+Size M · Deps M0-01 · Status doing — code done 01a8408; domain, Railway and first deploy pending owner (Q2) · Sources 03 W3, 03 W13, 06 W4–W9, 06 W19, 06 R10
 Scope: **owner buys the domain** (§6 Q2) and adds it to Railway (CNAME + TXT); Railway
 project (Hobby, `europe-west4-drams3a`, Postgres, `relay` service) described in
 `.railway/railway.ts` per D16; multi-stage Dockerfile (`node:22-bookworm-slim` by digest,
