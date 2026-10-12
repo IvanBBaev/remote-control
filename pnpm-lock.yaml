@@ -51,7 +51,11 @@ importers:
 
   apps/web: {}
 
-  packages/crypto: {}
+  packages/crypto:
+    dependencies:
+      '@remote-control/protocol':
+        specifier: workspace:*
+        version: link:../protocol
 
   packages/fake-claude-code:
     dependencies:
