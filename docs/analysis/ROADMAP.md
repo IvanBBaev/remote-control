@@ -763,7 +763,7 @@ AC: lowering any threshold fails `ci`; a PR cannot merge without `ci` + `agent-o
 `pg-real` green on `main`.
 
 #### M0-26 — Operations baseline
-Size S · Deps M0-02 · Status todo · Sources 06 W10, 06 W12, 06 W20, 06 §5.5–5.7
+Size S · Deps M0-02 · Status doing — code done bb2c9e5; Railway backups + restore drill, UptimeRobot, usage alert, Sentry project + DSN pending owner · Sources 06 W10, 06 W12, 06 W20, 06 §5.5–5.7
 Scope: Railway backups on + one restore drill; UptimeRobot on `/health` → e-mail; Railway
 usage alert $8 / hard limit $15; Sentry (free) on the relay with payload scrubbing;
 `docs/ops/runbook.md` (deploy, rollback, restore, rotate VAPID/agent tokens, cost check).
