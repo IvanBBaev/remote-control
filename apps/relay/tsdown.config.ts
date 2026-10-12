@@ -1,9 +1,9 @@
 import { defineConfig } from 'tsdown';
 
-// One ESM file for the image: workspace packages (TypeScript sources) are bundled in,
+// Two ESM entries for the image (`server.js`, and `migrate.js` for the pre-deploy): workspace packages (TypeScript sources) are bundled in,
 // npm runtime dependencies stay external and come from `pnpm deploy --prod`.
 export default defineConfig({
-  entry: { server: 'src/server.ts' },
+  entry: { server: 'src/server.ts', migrate: 'src/db/migrate.ts' },
   platform: 'node',
   target: 'node22',
   format: 'esm',
@@ -17,6 +17,6 @@ export default defineConfig({
   deps: {
     alwaysBundle: [/^@remote-control\//],
     neverBundle: true,
-    onlyImport: ['@fastify/static', 'fastify', 'pg', 'pino', 'zod'],
+    onlyImport: ['@fastify/static', /^drizzle-orm(\/|$)/, 'fastify', 'pg', 'pino', 'zod'],
   },
 });

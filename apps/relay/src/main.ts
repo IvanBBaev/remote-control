@@ -1,26 +1,22 @@
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 
 import type { FastifyInstance } from 'fastify';
 import type { DestinationStream } from 'pino';
 
 import { buildApp } from './app.js';
 import { loadConfig } from './config.js';
-import { createContainer } from './container.js';
+import { createContainer, type ContainerOptions } from './container.js';
+import { DEFAULT_PUBLIC_DIR, PACKAGE_JSON } from './package-paths.js';
+import type { Db } from './ports/db.js';
 import { installShutdown, type ShutdownSignal, type SignalSource } from './shutdown.js';
-
-/**
- * Both `src/main.ts` (dev, tsx) and the bundled `dist/server.js` sit one level below
- * the package root, so these resolve the same way in dev, tests and the image.
- */
-const PACKAGE_JSON = new URL('../package.json', import.meta.url);
-const DEFAULT_PUBLIC_DIR = fileURLToPath(new URL('../../web/dist', import.meta.url));
 
 export interface StartOptions {
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly signals: SignalSource;
   readonly exit: (code: number) => void;
   readonly destination?: DestinationStream;
+  /** Overrides the `pg` database built from the config (tests pass a PGlite `Db`). */
+  readonly db?: Db;
 }
 
 export interface RunningServer {
@@ -34,13 +30,27 @@ function packageVersion(): string {
   return typeof parsed.version === 'string' ? parsed.version : '0.0.0';
 }
 
-/** Composition root: config → container → app → listen → shutdown handlers. */
+/**
+ * Composition root: config → container → migrate → app → listen → shutdown handlers.
+ * Migrations also run as the Railway pre-deploy command; at boot they are a no-op
+ * then, and the advisory lock serialises an overlapping replica (D17).
+ */
 export async function startServer(options: StartOptions): Promise<RunningServer> {
   const config = loadConfig(options.env);
-  const container = createContainer(
-    config,
-    options.destination === undefined ? {} : { destination: options.destination },
-  );
+  const containerOptions: ContainerOptions = {
+    ...(options.destination === undefined ? {} : { destination: options.destination }),
+    ...(options.db === undefined ? {} : { db: options.db }),
+  };
+  const container = createContainer(config, containerOptions);
+  if (container.db !== undefined) {
+    try {
+      const report = await container.db.migrate();
+      container.logger.info({ event: 'migrations_applied', ...report }, 'database is up to date');
+    } catch (error) {
+      await container.db.close();
+      throw error;
+    }
+  }
   const app = await buildApp({
     logger: container.logger,
     clock: container.clock,

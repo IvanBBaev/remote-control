@@ -36,6 +36,7 @@ export default tseslint.config(
             'packages/*/bin/*.mjs',
             'apps/*/tsdown.config.ts',
             'apps/agent/scripts/*.mjs',
+            'apps/*/drizzle.config.ts',
           ],
         },
         tsconfigRootDir: import.meta.dirname,

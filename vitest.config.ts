@@ -27,7 +27,17 @@ export default defineConfig({
           name: 'node',
           environment: 'node',
           include: ['{apps,packages}/*/src/**/*.test.ts', 'tools/**/*.test.ts'],
-          exclude: ['apps/web/**', '**/node_modules/**'],
+          exclude: ['apps/web/**', '**/node_modules/**', '**/*.pg-real.test.ts'],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          // Real Postgres (M0-08); every suite skips unless RC_TEST_DATABASE_URL is set.
+          name: 'pg-real',
+          environment: 'node',
+          include: ['apps/relay/src/**/*.pg-real.test.ts'],
+          testTimeout: 30_000,
         },
       },
       {

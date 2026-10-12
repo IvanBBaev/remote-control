@@ -9,25 +9,32 @@
     ".": "./src/index.ts"
   },
   "files": [
-    "dist"
+    "dist",
+    "drizzle"
   ],
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "dev:https": "sh scripts/dev-https.sh",
     "build": "tsdown",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "db:generate": "drizzle-kit generate",
+    "migrate": "node dist/migrate.js",
+    "test:pg-real": "vitest run --root ../.. --project pg-real --coverage.enabled=false"
   },
   "dependencies": {
     "@fastify/static": "10.1.5",
+    "drizzle-orm": "0.45.3",
     "fastify": "5.12.5",
     "pg": "8.23.1",
     "pino": "10.4.0",
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@remote-control/log": "workspace:*",
     "@remote-control/protocol": "workspace:*",
     "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11",
     "tsdown": "^0.23.0"
   }
 }

@@ -6,6 +6,7 @@ import { createContainer } from '../container.js';
 import { disabledDatabaseHealth } from './disabled-database-health.js';
 import { PgDatabaseHealth, type Queryable } from './pg-database-health.js';
 import { createPgPool } from './pg-pool.js';
+import type { Db } from '../ports/db.js';
 import { systemClock } from './system-clock.js';
 
 describe('PgDatabaseHealth', () => {
@@ -52,12 +53,21 @@ describe('createContainer', () => {
     expect(container.drain.isDraining()).toBe(false);
   });
 
-  it('wires the pg probe when a database URL is configured', async () => {
+  it('prefers an injected database', () => {
+    const db = { orm: {}, migrate: vi.fn(), check: vi.fn(), close: vi.fn() } as unknown as Db;
+    const container = createContainer(loadConfig({ RC_LOG_LEVEL: 'silent' }), { db });
+    expect(container.db).toBe(db);
+    expect(container.database).toBe(db);
+  });
+
+  it('wires the pg database when a database URL is configured', async () => {
     const container = createContainer(
       loadConfig({ RC_DATABASE_URL: 'postgres://rc@127.0.0.1:1/rc' }),
       { destination: createMemoryDestination() },
     );
-    expect(container.database).toBeInstanceOf(PgDatabaseHealth);
+    expect(container.db).toBeDefined();
+    expect(container.database).toBe(container.db);
+    expect(await container.database.check()).toBe('error');
     await container.database.close();
   });
 });
