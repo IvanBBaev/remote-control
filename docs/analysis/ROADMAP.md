@@ -461,7 +461,7 @@ a WP without a listed test still runs under the coverage thresholds of D18.
 ### M0 — Walking skeleton
 
 #### M0-01 — Monorepo scaffold and CI skeleton
-Size M · Deps — · Status todo · Sources 03 W1, 06 W1–W2, 07 W1–W2
+Size M · Deps — · Status done a97d807 (CI-on-PR pending first push) · Sources 03 W1, 06 W1–W2, 07 W1–W2
 Scope: pnpm workspace with `packageManager`, `engines >=22`, `.nvmrc`;
 `tsconfig.base.json` (from agenthropic) + project references; empty packages per D2 with
 one passing test each; eslint (typescript-eslint `recommendedTypeChecked`, `no-restricted-
