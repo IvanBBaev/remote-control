@@ -641,7 +641,7 @@ agenthropic entry round-trips byte-identical except our entries; `remove` after
 `install` restores the fixture.
 
 #### M0-15 — Agent: Claude Code adapter v0 (PermissionRequest)
-Size S · Deps M0-14 · Status todo · Sources 04 W4, 04 W6, 04 §5.7, D12
+Size S · Deps M0-14 · Status done c37edb8 · Sources 04 W4, 04 W6, 04 §5.7, D12
 Scope: `AgentAdapter` port (04 §5.7) + `claude-code` adapter: `onHook` for
 `PermissionRequest` → `request` (with `permission_suggestions` → `alwaysSupported`),
 `SessionStart`/`SessionEnd` → registry seed; `decide` for `allow` / `deny` (`message`,
