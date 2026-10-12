@@ -2,3 +2,10 @@ pnpm-lock.yaml
 docs/analysis/
 coverage/
 dist/
+
+# Local-only AI harness files (git-excluded, never formatted)
+CLAUDE.md
+CLAUDE.local.md
+WORKLOG.md
+.claude/
+docs/ai/
