@@ -522,7 +522,7 @@ rejected); state-machine test enumerates every legal and illegal transition; the
 decision hash matches.
 
 #### M0-06 — `packages/crypto`
-Size L · Deps M0-01, M0-05 · Status todo · Sources 02 W3–W5, 02 §7, 07 W8–W9, D3
+Size L · Deps M0-01, M0-05 · Status done a381684 (browser run pending M0-25) · Sources 02 W3–W5, 02 §7, 07 W8–W9, D3
 Scope: WebCrypto-only primitives (X25519, HKDF-SHA-256, AES-256-GCM, SHA-256) with a
 capability probe; Noise `KK` and `XXpsk0` state machines over `25519_AESGCM_SHA256`;
 transport session (per-direction CipherState, strict counter nonce, AAD = canonical
