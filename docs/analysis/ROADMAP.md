@@ -609,7 +609,7 @@ socket or unacked after 3 s, 404/410 → subscription deleted, rate cap per devi
 AC: unit + fake-service tests for every bullet; payload size test < 200 bytes.
 
 #### M0-13 — Agent: package, CLI, config, keys, argv gate
-Size M · Deps M0-01, M0-04, M0-06 · Status todo · Sources 06 W14, 06 W18, 02 W11–W12, 03 W10, D13, D22
+Size M · Deps M0-01, M0-04, M0-06 · Status done 667a429 · Sources 06 W14, 06 W18, 02 W11–W12, 03 W10, D13, D22
 Scope: `apps/agent` as npm `remotectl` (bin, shebang, tsdown single-file ESM, zero
 runtime deps, `files` whitelist, no `postinstall`); commands `run`, `status`, `pair`,
 `devices`, `hooks install|remove|status`, `logs` (install/uninstall land in M0-24/M1-08);
