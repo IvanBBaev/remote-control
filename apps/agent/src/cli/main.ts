@@ -18,6 +18,7 @@ import { loadConfig, type LoadConfigResult } from '../core/load-config.js';
 import { createPendingStore } from '../core/pending-store.js';
 import { resolveRepository } from '../core/resolve-repository.js';
 import type { Container } from '../container.js';
+import { installService, serviceStatusLine, uninstallService } from './service.js';
 
 export const EXIT_OK = 0;
 export const EXIT_ERROR = 1;
@@ -37,6 +38,8 @@ export const HELP_TEXT = `Usage: remotectl <command> [options]
 
 Commands:
   run                      Start the agent in the foreground
+  install [--dry-run]      Run the agent as a login service (macOS launchd)
+  uninstall                Stop and remove the login service
   status                   Show configuration, allowed repositories and keys
   pair                     Pair a phone with this agent
   devices                  List paired phones
@@ -68,6 +71,8 @@ const COMMANDS: Readonly<Record<string, Command>> = {
   devices: devicesCommand,
   hooks: hooksCommand,
   logs: logsCommand,
+  install: installCommand,
+  uninstall: uninstallCommand,
 };
 
 /** Runs one CLI invocation and returns the process exit code. */
@@ -278,6 +283,7 @@ async function statusCommand(args: readonly string[], c: Container): Promise<num
     `device key:      ${key === undefined ? '(not created yet)' : toBase64Url(key.keyPair.publicKey)}`,
   );
   out(`paired devices:  ${(await c.keyStore.listPeers()).length}`);
+  out(`service:         ${await serviceStatusLine(c)}`);
   return exitCode;
 }
 
@@ -434,4 +440,14 @@ async function logsCommand(
     }
   }
   return EXIT_OK;
+}
+
+function installCommand(args: readonly string[], c: Container): Promise<number> {
+  const { values } = parse(args, { options: { 'dry-run': { type: 'boolean' } } });
+  return installService(c, { dryRun: values['dry-run'] === true });
+}
+
+function uninstallCommand(args: readonly string[], c: Container): Promise<number> {
+  noArguments(args);
+  return uninstallService(c);
 }

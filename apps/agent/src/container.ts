@@ -12,6 +12,7 @@ import {
   startHookReceiver,
 } from './adapters/hook-receiver.js';
 import { LOG_FILE, fileSize, newestLogFile, readRange } from './adapters/log-files.js';
+import { systemLaunchctl } from './adapters/launchd/launchctl.js';
 import { createNodeFileSystem, nodePaths } from './adapters/node-file-system.js';
 import { systemClock } from './adapters/system-clock.js';
 import { systemRandom } from './adapters/system-random.js';
@@ -24,6 +25,8 @@ import type { LogReader } from './ports/log-reader.js';
 import type { Output } from './ports/output.js';
 import type { PathPort } from './ports/path-port.js';
 import type { Random } from './ports/random.js';
+import type { Launchctl } from './ports/launchctl.js';
+import type { ServiceHost } from './ports/service-host.js';
 import type { Timer } from './ports/timer.js';
 import { AGENT_VERSION } from './version.js';
 
@@ -63,6 +66,9 @@ export interface Container {
   openLog(): Promise<AgentLog>;
   /** Waits `ms`; rejects with an `AbortError` when `signal` fires. */
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
+  /** Host facts for `install` / `uninstall` (M0-24). */
+  readonly service: ServiceHost;
+  readonly launchctl: Launchctl;
 }
 
 export interface ContainerOptions {
@@ -78,6 +84,10 @@ export interface ContainerOptions {
   readonly hookSource?: string;
   /** Default: `process.execPath`. */
   readonly execPath?: string;
+  /** Service installer facts (M0-24); default to the running process. */
+  readonly uid?: number;
+  readonly scriptPath?: string;
+  readonly launchctl?: Launchctl;
 }
 
 /** Wires the ports to their Node adapters. Host facts are injected (tests use temp dirs). */
@@ -130,5 +140,14 @@ export function createContainer(options: ContainerOptions): Container {
       };
     },
     sleep: (ms, signal) => delay(ms, undefined, { signal }),
+    service: {
+      homedir: options.homedir,
+      tmpdir: options.tmpdir,
+      uid: options.uid ?? process.getuid?.(),
+      execPath: options.execPath ?? process.execPath,
+      scriptPath: options.scriptPath ?? process.argv[1],
+      pathEnv: options.env['PATH'],
+    },
+    launchctl: options.launchctl ?? systemLaunchctl,
   };
 }

@@ -13,4 +13,6 @@ export interface FileSystem {
   permissions(path: string): Promise<number | undefined>;
   /** Sets the POSIX permission bits. */
   chmod(path: string, mode: number): Promise<void>;
+  /** Deletes a file; resolves `true` when it existed, `false` when it did not. */
+  remove(path: string): Promise<boolean>;
 }

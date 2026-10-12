@@ -81,6 +81,8 @@ describe('runCli', () => {
       expect(await h.run(['--help'])).toBe(EXIT_OK);
       for (const command of [
         'run',
+        'install',
+        'uninstall',
         'status',
         'pair',
         'devices',

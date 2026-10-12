@@ -11,6 +11,7 @@ const run = promisify(execFile);
 const SCRIPT = fileURLToPath(new URL('../scripts/check-argv-policy.mjs', import.meta.url));
 const SOURCE = fileURLToPath(new URL('.', import.meta.url));
 const SPAWN = join('adapters', 'claude-code', 'spawn.ts');
+const LAUNCHCTL = join('adapters', 'launchd', 'launchctl.ts');
 
 interface GateResult {
   readonly code: number;
@@ -35,11 +36,13 @@ async function gate(dir?: string): Promise<GateResult> {
 describe('argv policy gate', () => {
   let dir: string;
   let spawnSource: string;
+  let launchctlSource: string;
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'remotectl-gate-'));
     await cp(SOURCE, dir, { recursive: true });
     spawnSource = await readFile(join(dir, SPAWN), 'utf8');
+    launchctlSource = await readFile(join(dir, LAUNCHCTL), 'utf8');
   });
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
@@ -138,5 +141,63 @@ describe('argv policy gate', () => {
   it('fails when the shell is enabled', async () => {
     await plant(SPAWN, spawnSource.replace('shell: false', 'shell: true'));
     await expectViolation(/spawn\.ts:\d+: .*shell/);
+  });
+
+  describe('launchctl module (M0-24)', () => {
+    it('still rejects child_process in any other module, even next to launchctl.ts', async () => {
+      await plant(
+        join('adapters', 'launchd', 'other.ts'),
+        "import { spawn } from 'node:child_process';\nexport { spawn };\n",
+      );
+      await expectViolation(/adapters\/launchd\/other\.ts:1: imports node:child_process/);
+    });
+
+    it('allows launchctl.ts only at its exact path', async () => {
+      await plant(join('core', 'launchctl.ts'), launchctlSource);
+      await expectViolation(/core\/launchctl\.ts:\d+: imports node:child_process/);
+    });
+
+    it('fails when the executable is not the literal /bin/launchctl', async () => {
+      await plant(
+        LAUNCHCTL,
+        launchctlSource.replace(
+          "spawn('/bin/launchctl', argv",
+          "spawn(process.env['X'] ?? '', argv",
+        ),
+      );
+      await expectViolation(/launchctl\.ts:\d+: spawn command must be the literal/);
+    });
+
+    it('fails when the shell is enabled', async () => {
+      await plant(LAUNCHCTL, launchctlSource.replace('shell: false', 'shell: true'));
+      await expectViolation(/launchctl\.ts:\d+: .*shell/);
+    });
+
+    it('fails when it imports more than spawn', async () => {
+      await plant(LAUNCHCTL, launchctlSource.replace('import { spawn }', 'import { exec, spawn }'));
+      await expectViolation(/launchctl\.ts:\d+: child_process import "exec"/);
+    });
+
+    it('fails on a non-literal argv', async () => {
+      await plant(
+        LAUNCHCTL,
+        launchctlSource.replace(
+          "return ['print', checkServiceTarget(serviceTarget)];",
+          "const extra = ['print'];\n  return [...extra, checkServiceTarget(serviceTarget)];",
+        ),
+      );
+      await expectViolation(/launchctl\.ts:\d+: printArgv must be a single/);
+    });
+
+    it('fails when argv does not come from an *Argv builder', async () => {
+      await plant(
+        LAUNCHCTL,
+        launchctlSource.replace(
+          'const argv = printArgv(serviceTarget);',
+          "const argv = ['print', serviceTarget];",
+        ),
+      );
+      await expectViolation(/launchctl\.ts:\d+: `argv` must be the result/);
+    });
   });
 });

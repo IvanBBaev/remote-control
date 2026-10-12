@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 // Static argv/policy gate for the agent (D13, 02 W11). Fails the build when:
-//   1. a module other than `claude-code/spawn.ts` imports child_process;
-//   2. the spawn module imports anything but `spawn`, builds argv other than as a literal
-//      array returned by an `...Argv` function, or enables a shell;
+//   1. a module other than the process modules imports child_process. The process
+//      modules are `adapters/claude-code/spawn.ts` (starts `claude`) and
+//      `adapters/launchd/launchctl.ts` (runs `/bin/launchctl` for the service, M0-24, D22);
+//   2. a process module imports anything but `spawn`, builds argv other than as a literal
+//      array returned by an `...Argv` function, or enables a shell; `launchctl.ts` must
+//      also name its executable as the literal `/bin/launchctl`;
 //   3. any agent source contains a forbidden permission token, or `updatedInput` outside
 //      `claude-code/decide.ts` (D11).
 // Usage: node scripts/check-argv-policy.mjs [sourceDir]   (default: ../src)
@@ -13,7 +16,16 @@ import { fileURLToPath } from 'node:url';
 
 import ts from 'typescript';
 
-const SPAWN_MODULE = 'claude-code/spawn.ts';
+const SPAWN_MODULE = 'adapters/claude-code/spawn.ts';
+const LAUNCHCTL_MODULE = 'adapters/launchd/launchctl.ts';
+/**
+ * Modules (paths relative to the source root, exact match) allowed to import
+ * child_process, with the executable each must name when it is fixed.
+ */
+const PROCESS_MODULES = new Map([
+  [SPAWN_MODULE, { command: undefined }],
+  [LAUNCHCTL_MODULE, { command: '/bin/launchctl' }],
+]);
 const DECIDE_MODULE = 'claude-code/decide.ts';
 const CHILD_PROCESS = new Set(['child_process', 'node:child_process']);
 const FORBIDDEN_TOKENS = [
@@ -66,7 +78,7 @@ function line(source, node) {
   return source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
 }
 
-function checkSpawnModule(source, report) {
+function checkSpawnModule(source, report, rule) {
   const argvFunctions = new Set();
   const visit = (node) => {
     if (ts.isImportDeclaration(node) && CHILD_PROCESS.has(node.moduleSpecifier.text)) {
@@ -105,7 +117,13 @@ function checkSpawnModule(source, report) {
       ts.isIdentifier(node.expression) &&
       node.expression.text === 'spawn'
     ) {
-      const [, args, options] = node.arguments;
+      const [command, args, options] = node.arguments;
+      if (
+        rule.command !== undefined &&
+        (!command || !ts.isStringLiteral(command) || command.text !== rule.command)
+      ) {
+        report(line(source, node), `spawn command must be the literal "${rule.command}"`);
+      }
       if (!args || !ts.isIdentifier(args) || args.text !== 'argv') {
         report(
           line(source, node),
@@ -149,14 +167,17 @@ export function checkArgvPolicy(sourceDir) {
     const text = readFileSync(file, 'utf8');
     const report = (lineNo, message) => violations.push(`${rel}:${lineNo}: ${message}`);
     const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
-    const isSpawnModule = rel === SPAWN_MODULE || rel.endsWith(`/${SPAWN_MODULE}`);
+    const processRule = PROCESS_MODULES.get(rel);
     for (const { name, node } of moduleSpecifiers(source)) {
       if (name === '<dynamic>') report(line(source, node), 'dynamic import/require specifier');
-      if (CHILD_PROCESS.has(name) && !isSpawnModule) {
-        report(line(source, node), `imports ${name} (only ${SPAWN_MODULE} may)`);
+      if (CHILD_PROCESS.has(name) && processRule === undefined) {
+        report(
+          line(source, node),
+          `imports ${name} (only ${SPAWN_MODULE} and ${LAUNCHCTL_MODULE} may)`,
+        );
       }
     }
-    if (isSpawnModule) checkSpawnModule(source, report);
+    if (processRule !== undefined) checkSpawnModule(source, report, processRule);
     text.split('\n').forEach((content, index) => {
       for (const token of FORBIDDEN_TOKENS) {
         if (content.includes(token)) report(index + 1, `forbidden token ${token}`);

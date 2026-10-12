@@ -62,4 +62,13 @@ describe('createNodeFileSystem', () => {
     await expect(fs.writeTextAtomic(join(dir, 'target'), 'x', 0o600)).rejects.toBeDefined();
     expect(await readdir(dir)).toEqual(['target']);
   });
+
+  it('removes a file and reports whether it existed', async () => {
+    const path = join(dir, 'f');
+    await writeFile(path, 'x');
+    expect(await fs.remove(path)).toBe(true);
+    expect(await fs.remove(path)).toBe(false);
+    expect(await fs.remove(join(dir, 'nope', 'deeper'))).toBe(false);
+    await expect(fs.remove(dir)).rejects.toBeDefined();
+  });
 });

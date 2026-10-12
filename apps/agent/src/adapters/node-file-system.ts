@@ -1,4 +1,14 @@
-import { chmod, mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 
 import { toHex } from '@remote-control/protocol';
@@ -66,6 +76,15 @@ export function createNodeFileSystem(random: Random): FileSystem {
     },
     async chmod(path, mode) {
       await chmod(path, mode);
+    },
+    async remove(path) {
+      try {
+        await unlink(path);
+        return true;
+      } catch (error) {
+        if (isNotFound(error)) return false;
+        throw error;
+      }
     },
   };
 }
