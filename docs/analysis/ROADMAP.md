@@ -564,7 +564,7 @@ asserts no column named `payload`, `body`, `ciphertext` or `content` exists; boo
 two concurrent migrators runs each migration once.
 
 #### M0-09 — Relay: accounts, passkeys, invite codes
-Size M · Deps M0-08 · Status todo · Sources 02 W7, 02 W10, 02 §5.5, 03 W5, D8
+Size M · Deps M0-08 · Status done 7a4568f · Sources 02 W7, 02 W10, 02 §5.5, 03 W5, D8
 Scope: `@simplewebauthn/server` registration (invite code required, `residentKey:
 required`, UV required, `rp.id` = domain) and login (conditional UI), one-time recovery
 code (hash stored), `__Host-` cookie (`SameSite=Strict`, 7 d idle / 30 d absolute),
