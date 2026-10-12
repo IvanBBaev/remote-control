@@ -1,0 +1,121 @@
+{
+  "Notification": [
+    [
+      "cwd",
+      "hook_event_name",
+      "message",
+      "notification_type",
+      "session_id",
+      "title",
+      "transcript_path"
+    ]
+  ],
+  "PermissionRequest": [
+    [
+      "cwd",
+      "hook_event_name",
+      "permission_mode",
+      "permission_suggestions",
+      "session_id",
+      "tool_input",
+      "tool_name",
+      "transcript_path"
+    ],
+    [
+      "cwd",
+      "hook_event_name",
+      "permission_mode",
+      "session_id",
+      "tool_input",
+      "tool_name",
+      "transcript_path"
+    ]
+  ],
+  "PostToolUse": [
+    [
+      "cwd",
+      "duration_ms",
+      "hook_event_name",
+      "permission_mode",
+      "prompt_id",
+      "session_id",
+      "tool_input",
+      "tool_name",
+      "tool_response",
+      "tool_use_id",
+      "transcript_path"
+    ]
+  ],
+  "PreCompact": [
+    [
+      "custom_instructions",
+      "cwd",
+      "hook_event_name",
+      "permission_mode",
+      "session_id",
+      "transcript_path",
+      "trigger"
+    ]
+  ],
+  "PreToolUse": [
+    [
+      "cwd",
+      "hook_event_name",
+      "permission_mode",
+      "prompt_id",
+      "session_id",
+      "tool_input",
+      "tool_name",
+      "tool_use_id",
+      "transcript_path"
+    ]
+  ],
+  "SessionEnd": [
+    ["cwd", "hook_event_name", "permission_mode", "reason", "session_id", "transcript_path"]
+  ],
+  "SessionStart": [
+    ["cwd", "hook_event_name", "permission_mode", "session_id", "source", "transcript_path"]
+  ],
+  "Stop": [
+    [
+      "background_tasks",
+      "cwd",
+      "hook_event_name",
+      "last_assistant_message",
+      "permission_mode",
+      "prompt_id",
+      "session_crons",
+      "session_id",
+      "stop_hook_active",
+      "transcript_path"
+    ]
+  ],
+  "SubagentStop": [
+    [
+      "agent_id",
+      "agent_transcript_path",
+      "agent_type",
+      "background_tasks",
+      "cwd",
+      "hook_event_name",
+      "last_assistant_message",
+      "permission_mode",
+      "prompt_id",
+      "session_crons",
+      "session_id",
+      "stop_hook_active",
+      "transcript_path"
+    ]
+  ],
+  "UserPromptSubmit": [
+    [
+      "cwd",
+      "hook_event_name",
+      "permission_mode",
+      "prompt",
+      "prompt_id",
+      "session_id",
+      "transcript_path"
+    ]
+  ]
+}

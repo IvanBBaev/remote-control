@@ -29,7 +29,7 @@ export default tseslint.config(
   {
     languageOptions: {
       parserOptions: {
-        projectService: { allowDefaultProject: ['*.mjs', '*.ts'] },
+        projectService: { allowDefaultProject: ['*.mjs', '*.ts', 'packages/*/bin/*.mjs'] },
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -49,8 +49,11 @@ export default tseslint.config(
     rules: { 'no-restricted-properties': 'off', 'no-restricted-imports': 'off' },
   },
   {
-    files: ['*.mjs'],
+    files: ['*.mjs', 'packages/*/bin/*.mjs'],
     extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: {
+      globals: { process: 'readonly', Buffer: 'readonly', URL: 'readonly' },
+    },
   },
   prettierConfig,
 );

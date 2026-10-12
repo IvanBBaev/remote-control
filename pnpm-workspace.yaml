@@ -2,5 +2,10 @@ packages:
   - apps/*
   - packages/*
 
+# esbuild (via tsx) ships its binary as a platform optional dependency; its install
+# script only re-verifies it, so it stays disabled.
+allowBuilds:
+  esbuild: false
+
 # Supply-chain guard (ROADMAP §5): never install a version younger than 7 days.
 minimumReleaseAge: 10080

@@ -7,5 +7,14 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "bin": {
+    "fake-claude": "./bin/fake-claude.mjs"
+  },
+  "scripts": {
+    "fixtures:anonymise": "tsx src/anonymise-cli.ts"
+  },
+  "dependencies": {
+    "@remote-control/protocol": "workspace:*"
   }
 }

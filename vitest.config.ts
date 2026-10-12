@@ -11,6 +11,7 @@ export default defineConfig({
       // Per-package thresholds; packages without an entry are reported, not gated.
       thresholds: {
         'packages/log/src/**': { lines: 100 },
+        'packages/fake-claude-code/src/**': { lines: 90 },
         // 07 §5.13: the protocol package is the trust boundary and stays fully covered.
         'packages/protocol/src/**': { lines: 100, functions: 100, branches: 100, statements: 100 },
       },
