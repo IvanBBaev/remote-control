@@ -574,7 +574,7 @@ AC: integration tests with a software authenticator cover register, login, wrong
 replayed challenge, expired cookie, invalid invite; cookie attributes asserted.
 
 #### M0-10 — Relay: WebSocket hub, presence, limits, shutdown
-Size L · Deps M0-05, M0-09 · Status todo · Sources 03 W5–W6, 03 W8, 02 W10, 06 W8, D15
+Size L · Deps M0-05, M0-09 · Status done 7e52ec8 · Sources 03 W5–W6, 03 W8, 02 W10, 06 W8, D15
 Scope: `/ws` upgrade authenticated before accept (cookie for phones, bearer agent token
 for agents), `hello`/`hello_ok` with version negotiation and presence snapshot, `LocalHub`
 behind `HubPort`, per-user routing with tenant isolation, `ack` + in-memory ack timers,
