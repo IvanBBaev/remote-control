@@ -902,7 +902,7 @@ AC: all specs green < 5 min with 2 workers on `main`; report artifact uploaded; 
 label runs them on a PR.
 
 #### M1-13 — Audit log and admin counters
-Size S · Deps M0-10 · Status todo · Sources 03 W12, 02 §5.6
+Size S · Deps M0-10 · Status done 5363b77 (device revoke rows land with M1-10) · Sources 03 W12, 02 §5.6
 Scope: `audit_log` writes for pair, revoke, login, decision-forwarded (hash only),
 push-sent; `GET /api/admin/counters` (owner only: users, devices, online agents, pushes
 per day) — no bodies anywhere.
