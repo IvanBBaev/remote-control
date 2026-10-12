@@ -1,0 +1,32 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./apps/relay"
+    },
+    {
+      "path": "./apps/agent"
+    },
+    {
+      "path": "./apps/web"
+    },
+    {
+      "path": "./packages/protocol"
+    },
+    {
+      "path": "./packages/crypto"
+    },
+    {
+      "path": "./packages/log"
+    },
+    {
+      "path": "./packages/fake-claude-code"
+    },
+    {
+      "path": "./packages/test-harness"
+    },
+    {
+      "path": "./tools"
+    }
+  ]
+}

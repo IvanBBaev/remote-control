@@ -1,0 +1,11 @@
+{
+  "name": "@remote-control/fake-claude-code",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Test double for the Claude Code CLI that fires hooks per the documented contract.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@remote-control/crypto",
+  "version": "0.0.0",
+  "private": true,
+  "description": "WebCrypto-only Noise KK / XXpsk0 sessions, HKDF and AES-GCM.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@remote-control/relay",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Relay service: accounts, pairing, WebSocket hub and Web Push. Sees metadata only.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

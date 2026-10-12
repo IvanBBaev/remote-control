@@ -1,0 +1,11 @@
+{
+  "name": "@remote-control/test-harness",
+  "version": "0.0.0",
+  "private": true,
+  "description": "In-process relay, agent and headless phone for journey tests.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "remotectl",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Home agent: bridges local AI coding agents to the phone over an end-to-end encrypted channel.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

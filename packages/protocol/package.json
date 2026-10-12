@@ -1,0 +1,11 @@
+{
+  "name": "@remote-control/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Wire protocol: envelope, domain schemas, request lifecycle and versioning.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@remote-control/log",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared pino configuration and redaction list.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

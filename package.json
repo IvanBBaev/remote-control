@@ -1,0 +1,38 @@
+{
+  "name": "remote-control",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Approve, answer and start AI coding agent sessions from your phone, end-to-end encrypted through a metadata-only relay.",
+  "license": "MIT",
+  "author": "Ivan Baev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IvanBBaev/remote-control.git"
+  },
+  "type": "module",
+  "packageManager": "pnpm@11.11.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "build": "pnpm -r --if-present run build",
+    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.5",
+    "@vitest/coverage-v8": "^5.0.3",
+    "eslint": "^10.12.0",
+    "eslint-config-prettier": "^10.1.8",
+    "jsdom": "^30.1.2",
+    "prettier": "^3.9.9",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.1",
+    "vitest": "^5.0.3"
+  }
+}
