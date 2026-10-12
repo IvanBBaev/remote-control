@@ -412,8 +412,9 @@ npm name `remotectl` (free; reserve with `0.0.1` in week 1), bin `remotectl`, co
 `env-paths('remotectl', {suffix: ''})`: device keys and `peers.json` (0600) in `data`,
 config in `config`, logs in `log` (pino-roll 10 MB × 5). Services: launchd user agent
 (`KeepAlive`), `systemd --user` + `loginctl enable-linger`, Task Scheduler ONLOGON task
-from XML with `ExecutionTimeLimit PT0S`. `install` detects an npx cache path and does a
-global install first. The daemon never exits on relay disconnect (jittered backoff
+from XML with `ExecutionTimeLimit PT0S`. `install` detects an npx cache path and refuses
+with the global-install command instead (ADR 0002 supersedes the original "global
+install first"). The daemon never exits on relay disconnect (jittered backoff
 1 → 60 s); exit is reserved for fatal config errors. 02's `~/.config/remote-control/`
 path loses to env-paths. Sources: `06 §5.3–5.4`, `02 §5.3`.
 
@@ -742,7 +743,7 @@ AC: `docs/verification/claude-code-hooks.md` with version, timings, outcomes; an
 deviation from D10/D11 becomes an ADR before the next WP.
 
 #### M0-24 — Agent: macOS launchd service
-Size S · Deps M0-13 · Status doing — code done f9d3685; npx-cache global install deviates from D22, ADR 0002 pending owner · Sources 06 W13 (macOS part), 06 §5.4, D22
+Size S · Deps M0-13 · Status done f9d3685 (npx-cache install refuses per ADR 0002) · Sources 06 W13 (macOS part), 06 §5.4, D22
 Scope: `remotectl install|uninstall` on macOS: `dev.remotectl.agent.plist` with
 `KeepAlive`, `RunAtLoad`, log paths; npx-cache detection → global install first;
 `status` reads launchctl state.

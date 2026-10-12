@@ -1,6 +1,6 @@
 # ADR 0002 — `install` from the npx cache refuses instead of installing globally
 
-Status: proposed (pending owner), M0-24
+Status: accepted (owner, 2026-10-12), M0-24
 Deviates from: D22 ("`install` detects an npx cache path and does a global install first")
 
 ## Context
