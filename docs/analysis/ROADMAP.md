@@ -552,7 +552,7 @@ AC: conformance suite ≥ 15 cases green on ubuntu, macOS, Windows (M0-25 wires 
 matrix); anonymiser test rejects a payload with a canary path.
 
 #### M0-08 — Relay: Postgres schema and migrator
-Size M · Deps M0-02 · Status todo · Sources 03 W4, 06 W9, 02 §5.6, D17
+Size M · Deps M0-02 · Status done be2f007 (started on the M0-02 code part) · Sources 03 W4, 06 W9, 02 §5.6, D17
 Scope: drizzle schema per 02 §5.6 — `users`, `passkeys`, `recovery_codes`, `devices`,
 `pairings`, `push_subscriptions`, `sessions` (metadata only: ids, timestamps, state),
 `agent_tokens`, `pairing_slots`, `audit_log`; **no table with a payload column**;
