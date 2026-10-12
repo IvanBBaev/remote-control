@@ -7,5 +7,9 @@
     "types": ["node"]
   },
   "include": ["src"],
-  "references": [{ "path": "../../packages/protocol" }, { "path": "../../packages/log" }]
+  "references": [
+    { "path": "../../packages/protocol" },
+    { "path": "../../packages/log" },
+    { "path": "../../packages/crypto" }
+  ]
 }

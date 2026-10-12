@@ -67,7 +67,11 @@ export const passkeys = pgTable(
   ],
 );
 
-/** The single-use recovery code shown once at registration; only its scrypt hash is kept. */
+/**
+ * The single-use recovery code shown once at registration; only its scrypt hash is kept.
+ * The code is `locator + secret`: the random locator finds the row (a salted scrypt hash
+ * cannot be looked up), the 128-bit secret is what the hash protects (02 §5.5).
+ */
 export const recoveryCodes = pgTable(
   'recovery_codes',
   {
@@ -75,12 +79,31 @@ export const recoveryCodes = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    /** Random, non-secret row locator (the first part of the code). */
+    locator: text('locator').notNull().unique(),
     /** Encoded scrypt hash (parameters, salt and digest). */
     codeHash: text('code_hash').notNull(),
     createdAt: createdAt(),
     usedAt: at('used_at'),
   },
   (table) => [index('recovery_codes_user_id_idx').on(table.userId)],
+);
+
+/**
+ * Invite codes minted by the admin CLI (D8, 02 §5.7): registration requires one at
+ * launch. Only the SHA-256 hash of the 128-bit code is stored; a code is single-use.
+ */
+export const inviteCodes = pgTable(
+  'invite_codes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    codeHash: bytea('code_hash').notNull().unique(),
+    createdAt: createdAt(),
+    expiresAt: at('expires_at').notNull(),
+    usedAt: at('used_at'),
+    usedByUserId: uuid('used_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  },
+  (table) => [index('invite_codes_expires_at_idx').on(table.expiresAt)],
 );
 
 /** Phones and agents (machines) of a user (02 §5.6). */

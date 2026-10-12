@@ -63,6 +63,8 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
       cert: readFileSync(config.tls.certFile),
       key: readFileSync(config.tls.keyFile),
     },
+    trustProxyHops: config.trustProxyHops,
+    auth: container.accounts && { service: container.accounts, origin: config.origin },
   });
   app.addHook('onClose', () => container.database.close());
 

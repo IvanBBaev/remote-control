@@ -19,10 +19,12 @@
     "start": "node dist/server.js",
     "db:generate": "drizzle-kit generate",
     "migrate": "node dist/migrate.js",
+    "admin": "node dist/admin.js",
     "test:pg-real": "vitest run --root ../.. --project pg-real --coverage.enabled=false"
   },
   "dependencies": {
     "@fastify/static": "10.1.5",
+    "@simplewebauthn/server": "14.0.3",
     "drizzle-orm": "0.45.3",
     "fastify": "5.12.5",
     "pg": "8.23.1",
@@ -31,6 +33,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "@remote-control/crypto": "workspace:*",
     "@remote-control/log": "workspace:*",
     "@remote-control/protocol": "workspace:*",
     "@types/pg": "^8.23.1",

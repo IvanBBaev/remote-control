@@ -61,11 +61,11 @@ describe.skipIf(url === undefined)('migrations on real Postgres', () => {
           migratePostgres(connectionString, { migrationsFolder: fixture.folder }),
         ),
       );
-      expect(reports.map((report) => report.applied).sort()).toEqual([0, 0, 2]);
-      expect(reports.every((report) => report.total === 2)).toBe(true);
+      expect(reports.map((report) => report.applied).sort()).toEqual([0, 0, 3]);
+      expect(reports.every((report) => report.total === 3)).toBe(true);
       const hashes = await recordedHashes();
-      expect(hashes).toHaveLength(2);
-      expect(new Set(hashes).size).toBe(2);
+      expect(hashes).toHaveLength(3);
+      expect(new Set(hashes).size).toBe(3);
     } finally {
       fixture.remove();
     }
@@ -86,7 +86,7 @@ describe.skipIf(url === undefined)('migrations on real Postgres', () => {
       for (const { app } of servers) {
         expect((await app.inject('/health')).json()).toMatchObject({ db: 'ok' });
       }
-      expect(await recordedHashes()).toHaveLength(1);
+      expect(await recordedHashes()).toHaveLength(2);
     } finally {
       await Promise.all(servers.map(({ app }) => app.close()));
     }
@@ -107,7 +107,7 @@ describe.skipIf(url === undefined)('migrations on real Postgres', () => {
       await new Promise((resolve) => setTimeout(resolve, 300));
       expect(settled).toBe(false);
       await holder.query(`SELECT pg_advisory_unlock(${MIGRATION_LOCK_KEY})`);
-      expect(await waiting).toEqual({ applied: 1, total: 1 });
+      expect(await waiting).toEqual({ applied: 2, total: 2 });
     });
   });
 

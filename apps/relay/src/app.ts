@@ -2,8 +2,16 @@ import type { Clock } from '@remote-control/protocol';
 import fastify, { LogController, type FastifyInstance } from 'fastify';
 import type { Logger } from 'pino';
 
+import type { AccountService } from './core/account-service.js';
 import type { DrainState } from './core/drain-state.js';
+import { FixedWindowRateLimiter } from './core/rate-limiter.js';
+import {
+  DEFAULT_AUTH_RATE_LIMITS,
+  registerAuthRoutes,
+  type AuthRateLimits,
+} from './http/auth-routes.js';
 import { registerHealthRoute } from './http/health-route.js';
+import { registerOriginGuard } from './http/origin-guard-hook.js';
 import { registerStaticSite } from './http/static-site.js';
 import { registerVersionRoute } from './http/version-route.js';
 import type { DatabaseHealth } from './ports/database-health.js';
@@ -21,6 +29,17 @@ export interface AppDeps {
   readonly publicDir: string | undefined;
   /** PEM certificate and key for local HTTPS (`pnpm dev:https`). */
   readonly tls?: { readonly cert: Buffer; readonly key: Buffer } | undefined;
+  /** Reverse proxies in front of the relay whose `X-Forwarded-For` is trusted (`request.ip`). */
+  readonly trustProxyHops?: number;
+  /** Accounts (D8); absent without a database, and then `/api/auth/*` does not exist. */
+  readonly auth?: AuthDeps | undefined;
+}
+
+export interface AuthDeps {
+  readonly service: AccountService;
+  /** The PWA origin (`RC_ORIGIN`) every state-changing request must come from. */
+  readonly origin: string;
+  readonly limits?: AuthRateLimits;
 }
 
 /**
@@ -28,11 +47,14 @@ export interface AppDeps {
  * dependency comes in through `deps`; `container.ts` wires the real adapters.
  */
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
+  const hops = deps.trustProxyHops ?? 0;
   const common = {
     loggerInstance: deps.logger,
     // Railway's edge sets this per request; it becomes `req_id` in every log line (D19).
     requestIdHeader: 'x-railway-request-id',
     logController: new LogController({ requestIdLogLabel: 'req_id' }),
+    // Trust the nearest `hops` proxies (Railway's edge) for `request.ip`, nothing beyond.
+    trustProxy: hops > 0 ? (_address: string, hop: number) => hop < hops : false,
   };
   // The HTTPS variant has a different server type parameter; routes do not care.
   const app = (deps.tls
@@ -55,6 +77,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     startedAt: deps.clock.now(),
   });
   registerVersionRoute(app, shared);
+  if (deps.auth !== undefined) {
+    registerOriginGuard(app, deps.auth.origin);
+    registerAuthRoutes(app, {
+      service: deps.auth.service,
+      limiter: new FixedWindowRateLimiter(deps.clock),
+      limits: deps.auth.limits ?? DEFAULT_AUTH_RATE_LIMITS,
+    });
+  }
   await registerStaticSite(app, deps.publicDir);
 
   return app;

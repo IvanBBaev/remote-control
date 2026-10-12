@@ -28,6 +28,9 @@ fi
 PORT_VALUE="${RC_PORT:-3443}"
 echo "Relay over HTTPS: https://localhost:$PORT_VALUE${LAN_IP:+ and https://$LAN_IP:$PORT_VALUE}"
 
+# WebAuthn needs the RP ID to be a host name (not an IP) and the exact page origin.
+RC_RP_ID="${RC_RP_ID:-localhost}" \
+RC_ORIGIN="${RC_ORIGIN:-https://localhost:$PORT_VALUE}" \
 RC_HOST="${RC_HOST:-0.0.0.0}" \
 RC_PORT="$PORT_VALUE" \
 RC_TLS_CERT_FILE="$CERT_FILE" \

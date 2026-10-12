@@ -54,7 +54,7 @@ describe('startServer', () => {
     });
     expect((await app.inject('/health')).json()).toMatchObject({ db: 'ok' });
     const applied = destination.lines().find((line) => line.includes('"migrations_applied"'));
-    expect(applied).toContain('"applied":1');
+    expect(applied).toContain('"applied":2');
     const users = await client.query('SELECT 1 FROM users');
     expect(users.rows).toEqual([]);
     await app.close();

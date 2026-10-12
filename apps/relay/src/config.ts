@@ -22,6 +22,12 @@ const EnvSchema = z
     RC_TLS_CERT_FILE: optional(z.string().min(1)),
     RC_TLS_KEY_FILE: optional(z.string().min(1)),
     RAILWAY_GIT_COMMIT_SHA: optional(z.string().min(1)),
+    /** WebAuthn relying-party id: the production domain (D9, §6 Q2). */
+    RC_RP_ID: optional(z.string().regex(/^[a-z0-9.-]+$/, 'must be a lower-case host name')),
+    /** The PWA's origin; the only origin accepted for WebAuthn and state-changing requests. */
+    RC_ORIGIN: optional(z.url({ protocol: /^https?$/, error: 'must be an http(s) origin' })),
+    /** Reverse proxies in front of the relay whose X-Forwarded-For entry is trusted. */
+    RC_TRUST_PROXY_HOPS: optional(z.coerce.number().int().min(0).max(5)),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === 'production' && !env.RC_DATABASE_URL && !env.DATABASE_URL) {
@@ -30,6 +36,30 @@ const EnvSchema = z
         path: ['RC_DATABASE_URL'],
         message: 'is required in production (or DATABASE_URL)',
       });
+    }
+    if (env.NODE_ENV === 'production') {
+      for (const name of ['RC_RP_ID', 'RC_ORIGIN'] as const) {
+        if (env[name] === undefined) {
+          ctx.addIssue({ code: 'custom', path: [name], message: 'is required in production' });
+        }
+      }
+      if (env.RC_ORIGIN?.startsWith('http:')) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['RC_ORIGIN'],
+          message: 'must be https in production (the __Host- cookie is Secure)',
+        });
+      }
+    }
+    if (env.RC_ORIGIN !== undefined && env.RC_RP_ID !== undefined) {
+      const host = new URL(env.RC_ORIGIN).hostname;
+      if (host !== env.RC_RP_ID && !host.endsWith(`.${env.RC_RP_ID}`)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['RC_RP_ID'],
+          message: "must be RC_ORIGIN's host or a parent domain of it",
+        });
+      }
     }
     if ((env.RC_TLS_CERT_FILE === undefined) !== (env.RC_TLS_KEY_FILE === undefined)) {
       ctx.addIssue({
@@ -56,6 +86,12 @@ export interface Config {
   readonly tls: { readonly certFile: string; readonly keyFile: string } | undefined;
   /** Git commit of the running build, from Railway. */
   readonly commit: string | null;
+  /** WebAuthn RP ID (`localhost` outside production). */
+  readonly rpId: string;
+  /** The single accepted origin, without a trailing slash (`http://localhost:3000` outside production). */
+  readonly origin: string;
+  /** Fastify `trustProxy` hop count: 1 on Railway (its edge appends the client IP). */
+  readonly trustProxyHops: number;
 }
 
 /** Thrown when the environment is invalid; the message names variables, never values. */
@@ -83,5 +119,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
         ? { certFile: e.RC_TLS_CERT_FILE, keyFile: e.RC_TLS_KEY_FILE }
         : undefined,
     commit: e.RAILWAY_GIT_COMMIT_SHA ?? null,
+    rpId: e.RC_RP_ID ?? 'localhost',
+    origin: e.RC_ORIGIN === undefined ? 'http://localhost:3000' : new URL(e.RC_ORIGIN).origin,
+    trustProxyHops: e.RC_TRUST_PROXY_HOPS ?? (e.NODE_ENV === 'production' ? 1 : 0),
   };
 }

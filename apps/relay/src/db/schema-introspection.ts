@@ -1,4 +1,4 @@
-/** The ten tables of 02 §5.6. */
+/** The ten tables of 02 §5.6, plus `invite_codes` (02 §5.7, M0-09). */
 export const RELAY_TABLES = [
   'users',
   'passkeys',
@@ -10,6 +10,7 @@ export const RELAY_TABLES = [
   'agent_tokens',
   'pairing_slots',
   'audit_log',
+  'invite_codes',
 ] as const;
 
 /** Column names that would suggest a stored payload (invariant I3). */

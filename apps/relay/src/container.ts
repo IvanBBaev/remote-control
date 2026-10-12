@@ -1,11 +1,16 @@
+import { webCryptoRandom } from '@remote-control/crypto';
 import { createLogger } from '@remote-control/log';
-import type { Clock } from '@remote-control/protocol';
+import type { Clock, Random } from '@remote-control/protocol';
 import type { DestinationStream, Logger } from 'pino';
 
 import { disabledDatabaseHealth } from './adapters/disabled-database-health.js';
+import { createDrizzleAccountStore } from './adapters/drizzle-account-store.js';
 import { createPgDb } from './adapters/pg-db.js';
+import { createScryptSecretHasher } from './adapters/scrypt-secret-hasher.js';
+import { createSimpleWebAuthn } from './adapters/simple-webauthn.js';
 import { systemClock } from './adapters/system-clock.js';
 import type { Config } from './config.js';
+import { AccountService } from './core/account-service.js';
 import { DrainState } from './core/drain-state.js';
 import { MIGRATIONS_DIR } from './package-paths.js';
 import type { DatabaseHealth } from './ports/database-health.js';
@@ -19,7 +24,13 @@ export interface Container {
   /** `/health`'s view of `db` (`disabled` without one). */
   readonly database: DatabaseHealth;
   readonly drain: DrainState;
+  readonly random: Random;
+  /** Accounts and passkeys (D8); `undefined` without a database. */
+  readonly accounts: AccountService | undefined;
 }
+
+/** The relying party name shown by the passkey manager. */
+const RP_NAME = 'remote-control';
 
 export interface ContainerOptions {
   /** Log destination; default stdout. Tests pass a memory destination. */
@@ -40,11 +51,23 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
     (config.databaseUrl === undefined
       ? undefined
       : createPgDb(config.databaseUrl, logger, MIGRATIONS_DIR));
+  const clock = systemClock;
+  const random = webCryptoRandom;
   return {
     logger,
-    clock: systemClock,
+    clock,
     db,
     database: db ?? disabledDatabaseHealth,
     drain: new DrainState(),
+    random,
+    accounts:
+      db &&
+      new AccountService({
+        store: createDrizzleAccountStore(db.orm),
+        webauthn: createSimpleWebAuthn({ id: config.rpId, origin: config.origin, name: RP_NAME }),
+        hasher: createScryptSecretHasher(random),
+        clock,
+        random,
+      }),
   };
 }
