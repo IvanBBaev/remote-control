@@ -587,7 +587,7 @@ frame → 1009; flood → 1008; silent peer terminated at 35 s with FakeClock; d
 every socket with 1012 and the process exits.
 
 #### M0-11 — Relay: pairing slots, agent tokens, decision verification
-Size M · Deps M0-10 · Status todo · Sources 02 W6, 02 W8, 02 §5.3–5.4, D6, D7
+Size M · Deps M0-10 · Status done d300194 · Sources 02 W6, 02 W8, 02 §5.3–5.4, D6, D7
 Scope: `POST /api/pairings` (agent opens a 5-min single-use slot), phone joins by code
 hash, relay passes XXpsk0 frames opaquely and binds the resulting `agent_device_id ↔
 phone_device_id` pairing; agent token issuance at enrolment (`rc-enroll:` pasted token,
