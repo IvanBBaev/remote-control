@@ -742,7 +742,7 @@ AC: `docs/verification/claude-code-hooks.md` with version, timings, outcomes; an
 deviation from D10/D11 becomes an ADR before the next WP.
 
 #### M0-24 — Agent: macOS launchd service
-Size S · Deps M0-13 · Status todo · Sources 06 W13 (macOS part), 06 §5.4, D22
+Size S · Deps M0-13 · Status doing — code done f9d3685; npx-cache global install deviates from D22, ADR 0002 pending owner · Sources 06 W13 (macOS part), 06 §5.4, D22
 Scope: `remotectl install|uninstall` on macOS: `dev.remotectl.agent.plist` with
 `KeepAlive`, `RunAtLoad`, log paths; npx-cache detection → global install first;
 `status` reads launchctl state.
