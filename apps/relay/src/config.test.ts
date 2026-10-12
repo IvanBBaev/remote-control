@@ -16,6 +16,7 @@ describe('loadConfig', () => {
       rpId: 'localhost',
       origin: 'http://localhost:3000',
       trustProxyHops: 0,
+      push: undefined,
     });
   });
 
@@ -104,6 +105,21 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ RC_TLS_CERT_FILE: 'c.pem' })).toThrow(/set together/);
   });
 
+  it('reads the VAPID keys, defaulting the subject to an https origin (M0-12)', () => {
+    const keys = { RC_VAPID_PUBLIC: `B${'A'.repeat(86)}`, RC_VAPID_PRIVATE: 'a'.repeat(43) };
+    expect(loadConfig({ ...keys, RC_ORIGIN: 'https://rc.example.com/' }).push).toEqual({
+      publicKey: keys.RC_VAPID_PUBLIC,
+      privateKey: keys.RC_VAPID_PRIVATE,
+      subject: 'https://rc.example.com',
+    });
+    expect(loadConfig({ ...keys, RC_VAPID_SUBJECT: 'mailto:ops@example.com' }).push?.subject).toBe(
+      'mailto:ops@example.com',
+    );
+    expect(() => loadConfig(keys)).toThrow(/RC_VAPID_SUBJECT/);
+    expect(() => loadConfig({ RC_VAPID_PUBLIC: keys.RC_VAPID_PUBLIC })).toThrow(/set together/);
+    expect(() => loadConfig({ RC_VAPID_PRIVATE: keys.RC_VAPID_PRIVATE })).toThrow(/set together/);
+  });
+
   it('requires a database URL in production', () => {
     expect(() => loadConfig({ NODE_ENV: 'production' })).toThrow(ConfigError);
     expect(() => loadConfig({ NODE_ENV: 'production' })).toThrow(/RC_DATABASE_URL is required/);
@@ -119,6 +135,9 @@ describe('loadConfig', () => {
     ['RC_RP_ID', 'Upper.Example'],
     ['RC_ORIGIN', 'ftp://example.com'],
     ['RC_TRUST_PROXY_HOPS', '9'],
+    ['RC_VAPID_PUBLIC', 'not-a-key'],
+    ['RC_VAPID_PRIVATE', 'short'],
+    ['RC_VAPID_SUBJECT', 'http://example.com'],
   ])('rejects %s=%s', (name, value) => {
     expect(() => loadConfig({ [name]: value })).toThrow(new RegExp(`^Invalid relay.*${name}`));
   });

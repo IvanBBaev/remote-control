@@ -66,6 +66,7 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
     trustProxyHops: config.trustProxyHops,
     auth: container.accounts && { service: container.accounts, origin: config.origin },
     relay: container.relay,
+    push: container.push,
   });
   app.addHook('onClose', () => container.database.close());
 

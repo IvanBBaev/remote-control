@@ -21,6 +21,7 @@ import {
   registerPairingRoutes,
   type PairingRateLimits,
 } from './http/pairing-routes.js';
+import { registerPushRoutes } from './http/push-routes.js';
 import { registerStateRoute } from './http/state-route.js';
 import { registerStaticSite } from './http/static-site.js';
 import { registerVersionRoute } from './http/version-route.js';
@@ -28,6 +29,7 @@ import type { RelayRouter } from './core/relay-router.js';
 import type { DatabaseHealth } from './ports/database-health.js';
 import type { DeviceDirectory } from './ports/device-directory.js';
 import type { HubPort } from './ports/hub.js';
+import type { PushSubscriptionStore } from './ports/push-subscription-store.js';
 import { registerWsRoute } from './ws/ws-route.js';
 
 export interface AppDeps {
@@ -49,6 +51,16 @@ export interface AppDeps {
   readonly auth?: AuthDeps | undefined;
   /** The WebSocket hub (D15); needs `auth` (phones log in with the session cookie). */
   readonly relay?: RelayDeps | undefined;
+  /** Web Push registration (M0-12); needs `auth` and `relay`. */
+  readonly push?: PushDeps | undefined;
+}
+
+export interface PushDeps {
+  readonly store: PushSubscriptionStore;
+  /** VAPID public key handed to the PWA. */
+  readonly publicKey: string;
+  /** Which endpoints may be stored; default: the known browser push services. */
+  readonly allowEndpoint?: (endpoint: string) => boolean;
 }
 
 export interface RelayDeps {
@@ -131,6 +143,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         clock: deps.clock,
         origin: deps.auth.origin,
       });
+      if (deps.push !== undefined) {
+        registerPushRoutes(app, {
+          ...deps.push,
+          accounts: deps.auth.service,
+          directory: deps.relay.directory,
+          clock: deps.clock,
+          limiter: new FixedWindowRateLimiter(deps.clock),
+        });
+      }
     }
   }
   await registerStaticSite(app, deps.publicDir);

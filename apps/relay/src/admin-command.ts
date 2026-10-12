@@ -7,6 +7,7 @@ import type { Clock, Random } from '@remote-control/protocol';
 import { createDrizzleAccountStore } from './adapters/drizzle-account-store.js';
 import { createPgDb } from './adapters/pg-db.js';
 import { systemClock } from './adapters/system-clock.js';
+import { generateVapidKeys } from './adapters/web-push-sender.js';
 import { loadConfig } from './config.js';
 import { mintInvites } from './core/invites.js';
 import { MIGRATIONS_DIR } from './package-paths.js';
@@ -16,7 +17,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_TTL_DAYS = 90;
 
 export const ADMIN_USAGE = `usage: node dist/admin.js invite [--count N] [--ttl-days N]
-  invite      mint single-use invite codes (default 1, valid 7 days, at most 90)`;
+       node dist/admin.js vapid-keys
+  invite      mint single-use invite codes (default 1, valid 7 days, at most 90)
+  vapid-keys  print a new Web Push VAPID key pair as RC_VAPID_PUBLIC / RC_VAPID_PRIVATE`;
 
 export interface AdminStore {
   readonly store: AccountStore;
@@ -66,6 +69,13 @@ export async function runAdminCommand(options: AdminCommandOptions): Promise<num
     return 2;
   }
   const [command, ...extra] = parsed.positionals;
+  if (command === 'vapid-keys' && extra.length === 0 && Object.keys(parsed.values).length === 0) {
+    // Secrets go to stdout only, for the operator to paste into Railway (D19).
+    const keys = generateVapidKeys();
+    options.stdout(`RC_VAPID_PUBLIC=${keys.publicKey}`);
+    options.stdout(`RC_VAPID_PRIVATE=${keys.privateKey}`);
+    return 0;
+  }
   const count = positiveInt(parsed.values.count, 1, 100);
   const ttlDays = positiveInt(parsed.values['ttl-days'], 7, MAX_TTL_DAYS);
   if (command !== 'invite' || extra.length > 0 || count === null || ttlDays === null) {

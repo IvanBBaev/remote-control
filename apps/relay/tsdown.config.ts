@@ -25,6 +25,7 @@ export default defineConfig({
       'fastify',
       'pg',
       'pino',
+      'web-push',
       'zod',
     ],
   },

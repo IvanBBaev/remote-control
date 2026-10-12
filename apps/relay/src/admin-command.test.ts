@@ -70,6 +70,19 @@ describe('runAdminCommand', () => {
     expect(openStore).not.toHaveBeenCalled();
   });
 
+  it('prints a fresh VAPID key pair without opening the database (M0-12)', async () => {
+    const { result, stdout, stderr, openStore } = run(['vapid-keys'], { env: {} });
+    expect(await result).toBe(0);
+    expect(stdout).toHaveLength(2);
+    expect(stdout[0]).toMatch(/^RC_VAPID_PUBLIC=B[A-Za-z0-9_-]{86}$/);
+    expect(stdout[1]).toMatch(/^RC_VAPID_PRIVATE=[A-Za-z0-9_-]{43}$/);
+    expect(stderr).toEqual([]);
+    expect(openStore).not.toHaveBeenCalled();
+    expect(ADMIN_USAGE).toContain('vapid-keys');
+    const extra = run(['vapid-keys', 'now']);
+    expect(await extra.result).toBe(2);
+  });
+
   it('exits 1 without a database URL or with an invalid configuration', async () => {
     const missing = run(['invite'], { env: {} });
     expect(await missing.result).toBe(1);

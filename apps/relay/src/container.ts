@@ -8,6 +8,8 @@ import { createDrizzleAccountStore } from './adapters/drizzle-account-store.js';
 import { createPgDb } from './adapters/pg-db.js';
 import { createScryptSecretHasher } from './adapters/scrypt-secret-hasher.js';
 import { createSimpleWebAuthn } from './adapters/simple-webauthn.js';
+import { createDrizzlePushSubscriptionStore } from './adapters/drizzle-push-subscription-store.js';
+import { createWebPushSender } from './adapters/web-push-sender.js';
 import { createDrizzleDeviceDirectory } from './adapters/drizzle-device-directory.js';
 import { createDrizzleDeviceRegistry } from './adapters/drizzle-device-registry.js';
 import { systemClock } from './adapters/system-clock.js';
@@ -19,12 +21,14 @@ import { DrainState } from './core/drain-state.js';
 import { DEVICE_CAP } from './core/hub-limits.js';
 import { LocalHub } from './core/local-hub.js';
 import { PairingService } from './core/pairing-service.js';
+import { PushNotifier } from './core/push-notifier.js';
 import { RelayRouter } from './core/relay-router.js';
 import { MIGRATIONS_DIR } from './package-paths.js';
 import type { DatabaseHealth } from './ports/database-health.js';
 import type { Db } from './ports/db.js';
 import type { DeviceDirectory } from './ports/device-directory.js';
 import type { HubPort } from './ports/hub.js';
+import type { PushSubscriptionStore } from './ports/push-subscription-store.js';
 
 export interface Container {
   readonly logger: Logger;
@@ -45,6 +49,14 @@ export interface Container {
         readonly directory: DeviceDirectory;
         readonly pairing: PairingService;
         readonly decisions: DecisionVerifier;
+      }
+    | undefined;
+  /** Web Push (M0-12); `undefined` without a database or VAPID keys. */
+  readonly push:
+    | {
+        readonly notifier: PushNotifier;
+        readonly store: PushSubscriptionStore;
+        readonly publicKey: string;
       }
     | undefined;
 }
@@ -78,6 +90,23 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
   const store = db && createDrizzleAccountStore(db.orm);
   const webauthn = createSimpleWebAuthn({ id: config.rpId, origin: config.origin, name: RP_NAME });
   const decisions = store && new DecisionVerifier({ store, webauthn, clock });
+  const pushStore = db && config.push && createDrizzlePushSubscriptionStore(db.orm);
+  const push = directory &&
+    pushStore &&
+    config.push && {
+      notifier: new PushNotifier({
+        clock,
+        directory,
+        store: pushStore,
+        push: createWebPushSender(config.push),
+        logger,
+      }),
+      store: pushStore,
+      publicKey: config.push.publicKey,
+    };
+  if (db !== undefined && push === undefined) {
+    logger.info({ event: 'push_disabled' }, 'web push disabled (RC_VAPID_* not set)');
+  }
   return {
     logger,
     clock,
@@ -104,6 +133,7 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
           directory,
           logger,
           commandGate: decisions,
+          ...(push && { pending: push.notifier }),
         }),
         hub,
         directory,
@@ -115,5 +145,6 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
         }),
         decisions,
       },
+    push,
   };
 }

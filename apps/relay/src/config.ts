@@ -28,6 +28,17 @@ const EnvSchema = z
     RC_ORIGIN: optional(z.url({ protocol: /^https?$/, error: 'must be an http(s) origin' })),
     /** Reverse proxies in front of the relay whose X-Forwarded-For entry is trusted. */
     RC_TRUST_PROXY_HOPS: optional(z.coerce.number().int().min(0).max(5)),
+    /** Web Push VAPID key pair (M0-12), base64url; `node dist/admin.js vapid-keys` makes one. */
+    RC_VAPID_PUBLIC: optional(
+      z.string().regex(/^B[A-Za-z0-9_-]{86}$/, 'must be a base64url P-256 public key'),
+    ),
+    RC_VAPID_PRIVATE: optional(
+      z.string().regex(/^[A-Za-z0-9_-]{43}$/, 'must be a base64url P-256 private key'),
+    ),
+    /** VAPID contact (`mailto:` or `https:`); defaults to an https `RC_ORIGIN`. */
+    RC_VAPID_SUBJECT: optional(
+      z.string().regex(/^(mailto:\S+|https:\/\/\S+)$/, 'must be a mailto: or https: URL'),
+    ),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === 'production' && !env.RC_DATABASE_URL && !env.DATABASE_URL) {
@@ -61,6 +72,24 @@ const EnvSchema = z
         });
       }
     }
+    if ((env.RC_VAPID_PUBLIC === undefined) !== (env.RC_VAPID_PRIVATE === undefined)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['RC_VAPID_PUBLIC'],
+        message: 'RC_VAPID_PUBLIC and RC_VAPID_PRIVATE must be set together',
+      });
+    }
+    if (
+      env.RC_VAPID_PUBLIC !== undefined &&
+      env.RC_VAPID_SUBJECT === undefined &&
+      !env.RC_ORIGIN?.startsWith('https:')
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['RC_VAPID_SUBJECT'],
+        message: 'is required when RC_ORIGIN is not https',
+      });
+    }
     if ((env.RC_TLS_CERT_FILE === undefined) !== (env.RC_TLS_KEY_FILE === undefined)) {
       ctx.addIssue({
         code: 'custom',
@@ -92,6 +121,10 @@ export interface Config {
   readonly origin: string;
   /** Fastify `trustProxy` hop count: 1 on Railway (its edge appends the client IP). */
   readonly trustProxyHops: number;
+  /** Web Push VAPID keys and contact; `undefined` disables push (M0-12). */
+  readonly push:
+    | { readonly publicKey: string; readonly privateKey: string; readonly subject: string }
+    | undefined;
 }
 
 /** Thrown when the environment is invalid; the message names variables, never values. */
@@ -122,5 +155,14 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
     rpId: e.RC_RP_ID ?? 'localhost',
     origin: e.RC_ORIGIN === undefined ? 'http://localhost:3000' : new URL(e.RC_ORIGIN).origin,
     trustProxyHops: e.RC_TRUST_PROXY_HOPS ?? (e.NODE_ENV === 'production' ? 1 : 0),
+    push:
+      e.RC_VAPID_PUBLIC !== undefined && e.RC_VAPID_PRIVATE !== undefined
+        ? {
+            publicKey: e.RC_VAPID_PUBLIC,
+            privateKey: e.RC_VAPID_PRIVATE,
+            // Checked above: without RC_VAPID_SUBJECT, RC_ORIGIN is set and https.
+            subject: e.RC_VAPID_SUBJECT ?? new URL(e.RC_ORIGIN!).origin,
+          }
+        : undefined,
   };
 }

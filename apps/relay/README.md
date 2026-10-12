@@ -13,7 +13,7 @@ origin. It sees metadata only (invariants I1–I4). Ports & adapters layout:
 | `src/container.ts`              | Wires adapters from config.                                          |
 | `src/app.ts`                    | `buildApp(deps)` — the testable Fastify factory.                     |
 | `src/main.ts` / `src/server.ts` | Composition root and process entry.                                  |
-| `src/admin.ts`                  | Operator CLI (`dist/admin.js invite`).                               |
+| `src/admin.ts`                  | Operator CLI (`dist/admin.js invite`, `vapid-keys`).                 |
 | `src/testing/`                  | Test helpers (software WebAuthn authenticator).                      |
 
 ## Endpoints
@@ -71,6 +71,40 @@ pnpm --filter @remote-control/relay admin invite         # local, needs RC_DATAB
 
 Codes go to stdout once (one per line) and are never logged; the database keeps only
 their hashes. `--count` is 1–100, `--ttl-days` 1–90. Exit code 2 on a usage error.
+
+## Web Push (`/api/push/*`, M0-12, D5)
+
+When a `cls: "request"` frame targets a phone with no live socket, or the phone has not
+acked it after 3 s, the relay sends a Web Push to every subscription of that phone. The
+payload is metadata only — `{"t":"pending","rid":"<envelope id>","dev":"<agent name>","exp":<ms|null>}`,
+always under 200 bytes — encrypted with aes128gcm and signed with VAPID. Headers:
+`Topic` = the envelope id without hyphens (a re-push replaces the pending one),
+`Urgency: high`, `TTL` = the request's remaining lifetime (at most 1 h; expired requests
+are not pushed). Each request is pushed at most once; each phone gets at most 20 pushes
+per minute. A `404`/`410` from the push service deletes the subscription; other failures
+set `last_failure_at`. Sending never blocks routing, and failures are logged without
+endpoints or keys (D19).
+
+All routes need the session cookie of a phone (`403 {"error":"no_phone"}` otherwise),
+are limited to 30 calls/min per account, and state changes pass the origin guard:
+
+| Route                           | Body                        | Response                                                        |
+| ------------------------------- | --------------------------- | --------------------------------------------------------------- |
+| `GET /api/push/key`             | —                           | `{ "publicKey" }` — the `applicationServerKey`                  |
+| `PUT /api/push/subscription`    | `PushSubscription.toJSON()` | `204`; `400 bad_subscription`; `409 endpoint_taken`             |
+| `GET /api/push/subscription`    | —                           | `{ "subscriptions": [{ "id", "createdAt", "lastFailureAt" }] }` |
+| `DELETE /api/push/subscription` | `{ "endpoint" }`            | `204` (idempotent)                                              |
+
+Endpoints must be https URLs of a known push service (FCM, Mozilla, Apple, WNS). A phone
+keeps at most 5 subscriptions; a sixth replaces the oldest. Endpoints are never returned.
+
+Push is enabled by `RC_VAPID_PUBLIC` + `RC_VAPID_PRIVATE` (and `RC_VAPID_SUBJECT` unless
+`RC_ORIGIN` is https). Without them the relay boots with push disabled. Make a key pair:
+
+```sh
+node dist/admin.js vapid-keys                            # prints RC_VAPID_PUBLIC=… / RC_VAPID_PRIVATE=…
+pnpm --filter @remote-control/relay admin vapid-keys     # local
+```
 
 ## Configuration
 
