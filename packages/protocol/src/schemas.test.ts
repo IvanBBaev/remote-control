@@ -117,6 +117,7 @@ describe('01 W2 field lists', () => {
   it('the envelope has exactly the D14 fields plus its kind discriminator', () => {
     expect(keys(Envelope)).toEqual([
       'cls',
+      'decisionHash',
       'expiresAt',
       'from',
       'id',

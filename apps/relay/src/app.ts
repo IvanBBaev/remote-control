@@ -3,6 +3,8 @@ import fastify, { LogController, type FastifyInstance } from 'fastify';
 import type { Logger } from 'pino';
 
 import type { AccountService } from './core/account-service.js';
+import type { DecisionVerifier } from './core/decision-verifier.js';
+import type { PairingService } from './core/pairing-service.js';
 import type { DrainState } from './core/drain-state.js';
 import { FixedWindowRateLimiter } from './core/rate-limiter.js';
 import {
@@ -10,8 +12,15 @@ import {
   registerAuthRoutes,
   type AuthRateLimits,
 } from './http/auth-routes.js';
+import { DEFAULT_DECISION_RATE_LIMIT, registerDecisionRoutes } from './http/decision-routes.js';
+import { deviceAuth } from './http/device-auth.js';
 import { registerHealthRoute } from './http/health-route.js';
 import { registerOriginGuard } from './http/origin-guard-hook.js';
+import {
+  DEFAULT_PAIRING_RATE_LIMITS,
+  registerPairingRoutes,
+  type PairingRateLimits,
+} from './http/pairing-routes.js';
 import { registerStateRoute } from './http/state-route.js';
 import { registerStaticSite } from './http/static-site.js';
 import { registerVersionRoute } from './http/version-route.js';
@@ -46,6 +55,11 @@ export interface RelayDeps {
   readonly router: RelayRouter;
   readonly hub: HubPort;
   readonly directory: DeviceDirectory;
+  /** Enrolment and pairing slots (M0-11); absent → `/api/pairings`, `/api/agents` do not exist. */
+  readonly pairing?: PairingService | undefined;
+  /** Decision verification (M0-11); also the router's command gate in production. */
+  readonly decisions?: DecisionVerifier | undefined;
+  readonly pairingLimits?: PairingRateLimits;
 }
 
 export interface AuthDeps {
@@ -107,8 +121,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         hub: deps.relay.hub,
         clock: deps.clock,
       });
+      registerDeviceApis(app, deps.relay, deps.auth.service, deps.clock);
       await registerWsRoute(app, {
-        ...deps.relay,
+        router: deps.relay.router,
+        hub: deps.relay.hub,
+        directory: deps.relay.directory,
         accounts: deps.auth.service,
         drain: deps.drain,
         clock: deps.clock,
@@ -119,4 +136,33 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await registerStaticSite(app, deps.publicDir);
 
   return app;
+}
+
+/** `/api/devices`, `/api/agents`, `/api/pairings` and `/api/decisions` (M0-11). */
+function registerDeviceApis(
+  app: FastifyInstance,
+  relay: RelayDeps,
+  accounts: AccountService,
+  clock: Clock,
+): void {
+  const auth = deviceAuth({
+    accounts,
+    directory: relay.directory,
+    limiter: new FixedWindowRateLimiter(clock),
+    now: () => clock.now(),
+  });
+  if (relay.pairing !== undefined) {
+    registerPairingRoutes(app, {
+      pairing: relay.pairing,
+      auth,
+      limits: relay.pairingLimits ?? DEFAULT_PAIRING_RATE_LIMITS,
+    });
+  }
+  if (relay.decisions !== undefined) {
+    registerDecisionRoutes(app, {
+      verifier: relay.decisions,
+      auth,
+      limit: DEFAULT_DECISION_RATE_LIMIT,
+    });
+  }
 }

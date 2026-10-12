@@ -144,6 +144,13 @@ export function createDrizzleAccountStore(orm: RelayDatabase): AccountStore {
       });
     },
 
+    async recordPasskeyUse(credentialId, newCounter, backedUp, now) {
+      await orm
+        .update(passkeys)
+        .set({ counter: newCounter, backedUp, lastUsedAt: date(now) })
+        .where(eq(passkeys.id, credentialId));
+    },
+
     async findRecoveryCode(locator) {
       const [row] = await orm
         .select({

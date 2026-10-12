@@ -80,6 +80,8 @@ export const RelayErrorCode = z.enum([
   'expired',
   'rate_limited',
   'unsupported_version',
+  /** A `cls: command` carried a `decisionHash` the relay has not verified (D7, M0-11). */
+  'unverified',
 ]);
 export type RelayErrorCode = z.infer<typeof RelayErrorCode>;
 

@@ -4,9 +4,10 @@ import type { TrackedDelivery } from '../core/ack-tracker.js';
 import type { DeviceIdentity } from './device-directory.js';
 
 /**
- * Admission of `cls: command` envelopes (M0-11): the relay forwards a command only with a
- * verified `decision_hash`. Until M0-11 replaces it, {@link admitAllCommands} lets every
- * command through. It sees routing headers only, never the payload (I3).
+ * Admission of `cls: command` envelopes (D7): the relay forwards a command that names a
+ * `decisionHash` only when the sender verified it (`core/decision-verifier.ts`); a refused
+ * command is answered with `error: unverified`. {@link admitAllCommands} is the default for
+ * tests that do not exercise the gate. It sees routing headers only, never the payload (I3).
  */
 export interface CommandGate {
   admit(envelope: Envelope, sender: DeviceIdentity): boolean;

@@ -16,6 +16,12 @@ function header(value: string | string[] | undefined): string | undefined {
 export function registerOriginGuard(app: FastifyInstance, origin: string): void {
   app.addHook('onRequest', async (request, reply) => {
     if (SAFE_METHODS.has(request.method) || !request.url.startsWith('/api/')) return;
+    // An agent authenticates with `Authorization: Bearer` and no cookie: no ambient
+    // credential to forge, and a cross-site page cannot set that header without a
+    // preflight the relay never grants. Such a request still fails on any cookie route.
+    if (request.headers.authorization !== undefined && request.headers.cookie === undefined) {
+      return;
+    }
     const failure = checkOrigin(
       {
         origin: header(request.headers.origin),

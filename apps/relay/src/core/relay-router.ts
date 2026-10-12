@@ -190,7 +190,17 @@ export class RelayRouter {
       return;
     }
     if (envelope.cls === 'command' && !this.#gate.admit(envelope, identity)) {
-      sender.error('bad_frame', envelope.id, 'command not admitted');
+      this.deps.logger.warn(
+        {
+          event: 'command_refused',
+          reason: 'unverified',
+          user_id: identity.userId,
+          device_id: identity.deviceId,
+          envelope_id: envelope.id,
+        },
+        'command without a verified decision dropped',
+      );
+      sender.error('unverified', envelope.id, 'decision not verified');
       return;
     }
     if (envelope.to === null) {

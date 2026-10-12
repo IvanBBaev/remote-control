@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { DeviceId, EnvelopeId, EpochMs, SessionId } from './ids.js';
+import { DeviceId, EnvelopeId, EpochMs, SessionId, Sha256Hex } from './ids.js';
 import { VERSION_TABLE } from './version.js';
 
 /**
@@ -33,6 +33,12 @@ export const Envelope = z.strictObject({
   expiresAt: EpochMs.nullable(),
   /** For `cls: reply`, the id of the envelope being answered. */
   replyTo: EnvelopeId.optional(),
+  /**
+   * For `cls: command`, the hex SHA-256 of the canonical decision the phone signed (D7).
+   * The relay forwards such a command only after it verified a passkey assertion over
+   * this hash (M0-11); a command without it carries a deny or terminate decision.
+   */
+  decisionHash: Sha256Hex.optional(),
   /** Opaque AEAD ciphertext, base64. */
   payload: z.base64().max(MAX_PAYLOAD_LENGTH),
 });

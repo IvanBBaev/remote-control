@@ -511,8 +511,8 @@ describe('routing (D14, D25, 03 §5.5)', () => {
 
     phonePeer.send(envelope(phone.deviceId, agent.deviceId, 23, { cls: 'command' }));
     expect(await phonePeer.next('error')).toMatchObject({
-      code: 'bad_frame',
-      message: 'command not admitted',
+      code: 'unverified',
+      ref: envelopeId(23),
     });
     expect(admit).toHaveBeenCalledWith(
       expect.objectContaining({ id: envelopeId(23) }),
@@ -649,7 +649,7 @@ describe('drain (D15, 03 §5.13)', () => {
     expect(await agentPeer.closed).toEqual(expected);
     expect(await phonePeer.closed).toEqual(expected);
     expect(await lonely.closed).toEqual(expected);
-    expect(relay.router.openSockets).toBe(0);
+    await vi.waitFor(() => expect(relay.router.openSockets).toBe(0));
     expect(relay.logs.lines().join('\n')).toContain('"event":"ws_drain"');
   });
 });

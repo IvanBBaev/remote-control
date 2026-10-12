@@ -9,13 +9,16 @@ import { createPgDb } from './adapters/pg-db.js';
 import { createScryptSecretHasher } from './adapters/scrypt-secret-hasher.js';
 import { createSimpleWebAuthn } from './adapters/simple-webauthn.js';
 import { createDrizzleDeviceDirectory } from './adapters/drizzle-device-directory.js';
+import { createDrizzleDeviceRegistry } from './adapters/drizzle-device-registry.js';
 import { systemClock } from './adapters/system-clock.js';
 import { systemTimer } from './adapters/system-timer.js';
 import type { Config } from './config.js';
 import { AccountService } from './core/account-service.js';
+import { DecisionVerifier } from './core/decision-verifier.js';
 import { DrainState } from './core/drain-state.js';
 import { DEVICE_CAP } from './core/hub-limits.js';
 import { LocalHub } from './core/local-hub.js';
+import { PairingService } from './core/pairing-service.js';
 import { RelayRouter } from './core/relay-router.js';
 import { MIGRATIONS_DIR } from './package-paths.js';
 import type { DatabaseHealth } from './ports/database-health.js';
@@ -36,7 +39,13 @@ export interface Container {
   readonly accounts: AccountService | undefined;
   /** The WebSocket hub (D15); `undefined` without a database. */
   readonly relay:
-    | { readonly router: RelayRouter; readonly hub: HubPort; readonly directory: DeviceDirectory }
+    | {
+        readonly router: RelayRouter;
+        readonly hub: HubPort;
+        readonly directory: DeviceDirectory;
+        readonly pairing: PairingService;
+        readonly decisions: DecisionVerifier;
+      }
     | undefined;
 }
 
@@ -66,6 +75,9 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
   const random = webCryptoRandom;
   const directory = db && createDrizzleDeviceDirectory(db.orm);
   const hub = new LocalHub(clock, DEVICE_CAP);
+  const store = db && createDrizzleAccountStore(db.orm);
+  const webauthn = createSimpleWebAuthn({ id: config.rpId, origin: config.origin, name: RP_NAME });
+  const decisions = store && new DecisionVerifier({ store, webauthn, clock });
   return {
     logger,
     clock,
@@ -74,18 +86,34 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
     drain: new DrainState(),
     random,
     accounts:
-      db &&
+      store &&
       new AccountService({
-        store: createDrizzleAccountStore(db.orm),
-        webauthn: createSimpleWebAuthn({ id: config.rpId, origin: config.origin, name: RP_NAME }),
+        store,
+        webauthn,
         hasher: createScryptSecretHasher(random),
         clock,
         random,
       }),
-    relay: directory && {
-      router: new RelayRouter({ clock, timer: systemTimer, hub, directory, logger }),
-      hub,
-      directory,
-    },
+    relay: db &&
+      directory &&
+      decisions && {
+        router: new RelayRouter({
+          clock,
+          timer: systemTimer,
+          hub,
+          directory,
+          logger,
+          commandGate: decisions,
+        }),
+        hub,
+        directory,
+        pairing: new PairingService({
+          registry: createDrizzleDeviceRegistry(db.orm),
+          clock,
+          random,
+          deviceCap: DEVICE_CAP,
+        }),
+        decisions,
+      },
   };
 }

@@ -89,6 +89,13 @@ export interface AccountStore {
     userId: string,
   ): Promise<{ readonly webauthnUserId: string; readonly displayName: string | null } | undefined>;
   recordLogin(login: Login): Promise<void>;
+  /** Stores the counter and backup state after a step-up assertion (decision approval, D7). */
+  recordPasskeyUse(
+    credentialId: string,
+    newCounter: number,
+    backedUp: boolean,
+    now: number,
+  ): Promise<void>;
   findRecoveryCode(locator: string): Promise<StoredRecoveryCode | undefined>;
   /** Consumes the code, adds the passkey, rotates the code, revokes every other session; `false` if the code was used meanwhile. */
   recoverAccount(recovery: Recovery): Promise<boolean>;
