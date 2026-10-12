@@ -43,6 +43,18 @@ export const nodePaths: PathPort = {
 
 /** `FileSystem` over `node:fs/promises`. Temp-file names come from the `Random` port. */
 export function createNodeFileSystem(random: Random): FileSystem {
+  async function writeAtomic(path: string, data: string | Uint8Array, mode: number): Promise<void> {
+    const temp = join(dirname(path), `.${toHex(random.bytes(6))}.tmp`);
+    try {
+      // `wx`: never follow or reuse an existing file; `mode` applies from creation.
+      await writeFile(temp, data, { mode, flag: 'wx' });
+      await rename(temp, path);
+    } catch (error) {
+      await rm(temp, { force: true });
+      throw error;
+    }
+  }
+
   return {
     async readText(path) {
       try {
@@ -52,17 +64,16 @@ export function createNodeFileSystem(random: Random): FileSystem {
         throw error;
       }
     },
-    async writeTextAtomic(path, text, mode) {
-      const temp = join(dirname(path), `.${toHex(random.bytes(6))}.tmp`);
+    writeTextAtomic: (path, text, mode) => writeAtomic(path, text, mode),
+    async readBytes(path) {
       try {
-        // `wx`: never follow or reuse an existing file; `mode` applies from creation.
-        await writeFile(temp, text, { mode, flag: 'wx' });
-        await rename(temp, path);
+        return new Uint8Array(await readFile(path));
       } catch (error) {
-        await rm(temp, { force: true });
+        if (isNotFound(error)) return undefined;
         throw error;
       }
     },
+    writeBytesAtomic: (path, bytes, mode) => writeAtomic(path, bytes, mode),
     async ensureDir(path, mode) {
       await mkdir(path, { recursive: true, mode });
     },

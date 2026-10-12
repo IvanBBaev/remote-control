@@ -1,10 +1,11 @@
-// The second and last module in the agent allowed to import child_process (D13, D22).
+// One of the process modules allowed to import child_process (D13, D22).
 // It runs only the literal `/bin/launchctl` binary, never a shell, and every argv comes
 // from an `...Argv` builder that returns an array literal; `scripts/check-argv-policy.mjs`
 // enforces all three rules for this file.
 import { spawn } from 'node:child_process';
 
-import type { Launchctl, LaunchctlResult } from '../../ports/launchctl.js';
+import type { Launchctl } from '../../ports/launchctl.js';
+import { collect } from '../process-collect.js';
 
 const DOMAIN = /^gui\/\d+$/;
 const SERVICE_TARGET = /^gui\/\d+\/[A-Za-z0-9][A-Za-z0-9.-]{0,127}$/;
@@ -44,30 +45,6 @@ export function bootoutArgv(serviceTarget: string): string[] {
 /** `launchctl print gui/<uid>/<label>`. */
 export function printArgv(serviceTarget: string): string[] {
   return ['print', checkServiceTarget(serviceTarget)];
-}
-
-/** The subset of `ChildProcess` that `collect` reads; tests pass an `EventEmitter`. */
-export interface CollectableProcess {
-  readonly stdout: NodeJS.ReadableStream | null;
-  readonly stderr: NodeJS.ReadableStream | null;
-  once(event: 'error', listener: (error: Error) => void): unknown;
-  once(event: 'close', listener: (code: number | null, signal: string | null) => void): unknown;
-}
-
-/** Gathers a child's output and resolves with its exit code once it closes. */
-export function collect(child: CollectableProcess): Promise<LaunchctlResult> {
-  let stdout = '';
-  let stderr = '';
-  child.stdout?.setEncoding('utf8');
-  child.stderr?.setEncoding('utf8');
-  child.stdout?.on('data', (chunk: string) => (stdout += chunk));
-  child.stderr?.on('data', (chunk: string) => (stderr += chunk));
-  return new Promise((resolve, reject) => {
-    child.once('error', reject);
-    child.once('close', (code, signal) =>
-      resolve({ code: code ?? (signal === null ? 1 : 128), stdout, stderr }),
-    );
-  });
 }
 
 /** `Launchctl` over the real `/bin/launchctl` (macOS only). */

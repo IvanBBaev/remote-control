@@ -7,6 +7,10 @@ export interface FileSystem {
    * `path`, so a reader never sees a partial file and the mode is never wider in between.
    */
   writeTextAtomic(path: string, text: string, mode: number): Promise<void>;
+  /** Raw file contents, or `undefined` when the file does not exist. */
+  readBytes(path: string): Promise<Uint8Array | undefined>;
+  /** `writeTextAtomic` for raw bytes (the UTF-16 Windows service files). */
+  writeBytesAtomic(path: string, bytes: Uint8Array, mode: number): Promise<void>;
   /** Creates the directory (and its parents) if missing, with `mode` for new ones. */
   ensureDir(path: string, mode: number): Promise<void>;
   /** POSIX permission bits (`0o777` mask), or `undefined` when the file does not exist. */

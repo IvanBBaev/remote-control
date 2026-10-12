@@ -12,6 +12,8 @@ const SCRIPT = fileURLToPath(new URL('../scripts/check-argv-policy.mjs', import.
 const SOURCE = fileURLToPath(new URL('.', import.meta.url));
 const SPAWN = join('adapters', 'claude-code', 'spawn.ts');
 const LAUNCHCTL = join('adapters', 'launchd', 'launchctl.ts');
+const SYSTEMCTL = join('adapters', 'systemd', 'systemctl.ts');
+const SCHTASKS = join('adapters', 'windows', 'schtasks.ts');
 
 interface GateResult {
   readonly code: number;
@@ -37,12 +39,16 @@ describe('argv policy gate', () => {
   let dir: string;
   let spawnSource: string;
   let launchctlSource: string;
+  let systemctlSource: string;
+  let schtasksSource: string;
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'remotectl-gate-'));
     await cp(SOURCE, dir, { recursive: true });
     spawnSource = await readFile(join(dir, SPAWN), 'utf8');
     launchctlSource = await readFile(join(dir, LAUNCHCTL), 'utf8');
+    systemctlSource = await readFile(join(dir, SYSTEMCTL), 'utf8');
+    schtasksSource = await readFile(join(dir, SCHTASKS), 'utf8');
   });
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
@@ -165,7 +171,9 @@ describe('argv policy gate', () => {
           "spawn(process.env['X'] ?? '', argv",
         ),
       );
-      await expectViolation(/launchctl\.ts:\d+: spawn command must be the literal/);
+      await expectViolation(
+        /launchctl\.ts:\d+: spawn command must be the literal "\/bin\/launchctl"/,
+      );
     });
 
     it('fails when the shell is enabled', async () => {
@@ -198,6 +206,89 @@ describe('argv policy gate', () => {
         ),
       );
       await expectViolation(/launchctl\.ts:\d+: `argv` must be the result/);
+    });
+  });
+
+  describe('systemctl module (M1-08)', () => {
+    it('allows only /usr/bin/systemctl and /usr/bin/loginctl', async () => {
+      expect(systemctlSource).toContain("spawn('/usr/bin/systemctl', argv");
+      expect(systemctlSource).toContain("spawn('/usr/bin/loginctl', argv");
+      await plant(
+        SYSTEMCTL,
+        systemctlSource.replace("spawn('/usr/bin/loginctl', argv", "spawn('/bin/sh', argv"),
+      );
+      await expectViolation(
+        /systemctl\.ts:\d+: spawn command must be the literal "\/usr\/bin\/systemctl" or "\/usr\/bin\/loginctl"/,
+      );
+    });
+
+    it('fails on a non-literal executable', async () => {
+      await plant(
+        SYSTEMCTL,
+        systemctlSource.replace(
+          "spawn('/usr/bin/systemctl', argv",
+          'spawn(`/usr/bin/systemctl`, argv',
+        ),
+      );
+      await expectViolation(/systemctl\.ts:\d+: spawn command must be the literal/);
+    });
+
+    it('allows systemctl.ts only at its exact path', async () => {
+      await plant(join('core', 'systemctl.ts'), systemctlSource);
+      await expectViolation(/core\/systemctl\.ts:\d+: imports node:child_process/);
+    });
+
+    it('fails when the shell is enabled or argv is not built by an *Argv function', async () => {
+      await plant(
+        SYSTEMCTL,
+        systemctlSource
+          .replace('shell: false', 'shell: true')
+          .replace('const argv = daemonReloadArgv();', "const argv = ['--user', 'daemon-reload'];"),
+      );
+      const result = await gate(dir);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toMatch(/systemctl\.ts:\d+: spawn must pass shell: false/);
+      expect(result.stderr).toMatch(/systemctl\.ts:\d+: `argv` must be the result/);
+    });
+
+    it('fails on a spread in an *Argv builder', async () => {
+      await plant(
+        SYSTEMCTL,
+        systemctlSource.replace(
+          "return ['enable-linger'];",
+          "return ['enable-linger', ...process.argv];",
+        ),
+      );
+      await expectViolation(/systemctl\.ts:\d+: enableLingerArgv: spread in argv/);
+    });
+  });
+
+  describe('schtasks module (M1-08)', () => {
+    it('allows only C:\\Windows\\System32\\schtasks.exe', async () => {
+      expect(schtasksSource).toContain("spawn('C:\\\\Windows\\\\System32\\\\schtasks.exe', argv");
+      await plant(
+        SCHTASKS,
+        schtasksSource.replace(
+          "spawn('C:\\\\Windows\\\\System32\\\\schtasks.exe', argv",
+          "spawn('schtasks.exe', argv",
+        ),
+      );
+      await expectViolation(
+        /schtasks\.ts:\d+: spawn command must be the literal "C:\\Windows\\System32\\schtasks\.exe"/,
+      );
+    });
+
+    it('allows schtasks.ts only at its exact path', async () => {
+      await plant(join('adapters', 'windows', 'other.ts'), schtasksSource);
+      await expectViolation(/adapters\/windows\/other\.ts:\d+: imports node:child_process/);
+    });
+
+    it('fails when it imports more than spawn', async () => {
+      await plant(
+        SCHTASKS,
+        schtasksSource.replace('import { spawn }', 'import { execFile, spawn }'),
+      );
+      await expectViolation(/schtasks\.ts:\d+: child_process import "execFile"/);
     });
   });
 });

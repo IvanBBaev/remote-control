@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -14,9 +14,12 @@ import {
 import { LOG_FILE, fileSize, newestLogFile, readRange } from './adapters/log-files.js';
 import { systemLaunchctl } from './adapters/launchd/launchctl.js';
 import { createNodeFileSystem, nodePaths } from './adapters/node-file-system.js';
+import { createNpmRegistry } from './adapters/npm-registry.js';
 import { systemClock } from './adapters/system-clock.js';
 import { systemRandom } from './adapters/system-random.js';
 import { systemTimer } from './adapters/system-timer.js';
+import { systemSystemctl } from './adapters/systemd/systemctl.js';
+import { systemSchtasks } from './adapters/windows/schtasks.js';
 import type { AgentPaths } from './ports/agent-paths.js';
 import type { Clock } from './ports/clock.js';
 import type { FileSystem } from './ports/file-system.js';
@@ -26,7 +29,10 @@ import type { Output } from './ports/output.js';
 import type { PathPort } from './ports/path-port.js';
 import type { Random } from './ports/random.js';
 import type { Launchctl } from './ports/launchctl.js';
+import type { Registry } from './ports/registry.js';
+import type { Schtasks } from './ports/schtasks.js';
 import type { ServiceHost } from './ports/service-host.js';
+import type { Systemctl } from './ports/systemctl.js';
 import type { Timer } from './ports/timer.js';
 import { AGENT_VERSION } from './version.js';
 
@@ -69,6 +75,15 @@ export interface Container {
   /** Host facts for `install` / `uninstall` (M0-24). */
   readonly service: ServiceHost;
   readonly launchctl: Launchctl;
+  readonly systemctl: Systemctl;
+  readonly schtasks: Schtasks;
+  /** The npm registry for the notify-only update check (M1-08, Q7). */
+  readonly registry: Registry;
+  /**
+   * `REMOTECTL_NO_UPDATE_CHECK=1`: no automatic check in `run` and `status`. An explicit
+   * `remotectl update` still asks the registry.
+   */
+  readonly updateCheckDisabled: boolean;
 }
 
 export interface ContainerOptions {
@@ -88,6 +103,20 @@ export interface ContainerOptions {
   readonly uid?: number;
   readonly scriptPath?: string;
   readonly launchctl?: Launchctl;
+  readonly systemctl?: Systemctl;
+  readonly schtasks?: Schtasks;
+  readonly registry?: Registry;
+  /** Default: Node's file system and paths (tests of another platform inject fakes). */
+  readonly fs?: FileSystem;
+  readonly pathPort?: PathPort;
+}
+
+/** `USERDOMAIN\USERNAME` from the Windows environment, or the bare user name. */
+function windowsUser(env: ContainerOptions['env']): string | undefined {
+  const user = env['USERNAME'];
+  if (!user) return undefined;
+  const domain = env['USERDOMAIN'];
+  return domain ? `${domain}\\${user}` : user;
 }
 
 /** Wires the ports to their Node adapters. Host facts are injected (tests use temp dirs). */
@@ -95,12 +124,13 @@ export function createContainer(options: ContainerOptions): Container {
   const clock = options.clock ?? systemClock;
   const random = options.random ?? systemRandom;
   const paths = envPaths(APP_NAME, options);
-  const fs = createNodeFileSystem(random);
+  const fs = options.fs ?? createNodeFileSystem(random);
+  const pathPort = options.pathPort ?? nodePaths;
   const output = options.output;
   const keyStore = createFileKeyStore({
     dir: paths.data,
     fs,
-    paths: nodePaths,
+    paths: pathPort,
     random,
     clock,
     enforcePermissions: options.platform !== 'win32',
@@ -111,13 +141,13 @@ export function createContainer(options: ContainerOptions): Container {
     platform: options.platform,
     paths,
     fs,
-    pathPort: nodePaths,
+    pathPort,
     keyStore,
     clock,
     random,
     timer: options.timer ?? systemTimer,
     output,
-    claudeConfigDir: options.env['CLAUDE_CONFIG_DIR'] || nodePaths.join(options.homedir, '.claude'),
+    claudeConfigDir: options.env['CLAUDE_CONFIG_DIR'] || pathPort.join(options.homedir, '.claude'),
     hookSource: options.hookSource ?? fileURLToPath(new URL('./hook.cjs', import.meta.url)),
     execPath: options.execPath ?? process.execPath,
     startHookReceiver,
@@ -147,7 +177,13 @@ export function createContainer(options: ContainerOptions): Container {
       execPath: options.execPath ?? process.execPath,
       scriptPath: options.scriptPath ?? process.argv[1],
       pathEnv: options.env['PATH'],
+      xdgConfigHome: options.env['XDG_CONFIG_HOME'] || posix.join(options.homedir, '.config'),
+      windowsUser: windowsUser(options.env),
     },
     launchctl: options.launchctl ?? systemLaunchctl,
+    systemctl: options.systemctl ?? systemSystemctl,
+    schtasks: options.schtasks ?? systemSchtasks,
+    registry: options.registry ?? createNpmRegistry(),
+    updateCheckDisabled: options.env['REMOTECTL_NO_UPDATE_CHECK'] === '1',
   };
 }

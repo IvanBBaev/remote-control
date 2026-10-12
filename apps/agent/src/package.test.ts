@@ -114,7 +114,7 @@ describe('npm package', () => {
 
   it('runs: --help lists the commands', async () => {
     const { stdout } = await run(process.execPath, [BUNDLE, '--help']);
-    for (const command of ['run', 'status', 'pair', 'devices', 'hooks install', 'logs']) {
+    for (const command of ['run', 'status', 'pair', 'devices', 'hooks install', 'logs', 'update']) {
       expect(stdout).toContain(`  ${command}`);
     }
   });
@@ -129,6 +129,8 @@ describe('npm package', () => {
         XDG_DATA_HOME: join(home, 'data'),
         XDG_STATE_HOME: join(home, 'state'),
         XDG_CACHE_HOME: join(home, 'cache'),
+        // No npm registry request from a test.
+        REMOTECTL_NO_UPDATE_CHECK: '1',
       };
       // Port 0: the test never collides with an agent running on this machine.
       const configDir =

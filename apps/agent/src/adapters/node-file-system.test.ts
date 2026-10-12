@@ -57,6 +57,16 @@ describe('createNodeFileSystem', () => {
     expect(await fs.permissions(path)).toBe(0o644);
   });
 
+  it('reads and writes raw bytes atomically', async () => {
+    const path = join(dir, 'task.xml');
+    expect(await fs.readBytes(path)).toBeUndefined();
+    expect(await fs.readBytes(join(dir, 'nope', 'deeper'))).toBeUndefined();
+    await fs.writeBytesAtomic(path, new Uint8Array([0xff, 0xfe, 0x41, 0x00]), 0o644);
+    expect(await fs.readBytes(path)).toEqual(new Uint8Array([0xff, 0xfe, 0x41, 0x00]));
+    expect(await readdir(dir)).toEqual(['task.xml']);
+    await expect(fs.readBytes(dir)).rejects.toMatchObject({ code: 'EISDIR' });
+  });
+
   it('cleans up the temp file when the rename fails', async () => {
     await fs.ensureDir(join(dir, 'target', 'occupied'), 0o700);
     await expect(fs.writeTextAtomic(join(dir, 'target'), 'x', 0o600)).rejects.toBeDefined();

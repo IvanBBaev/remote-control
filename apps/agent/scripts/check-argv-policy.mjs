@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 // Static argv/policy gate for the agent (D13, 02 W11). Fails the build when:
 //   1. a module other than the process modules imports child_process. The process
-//      modules are `adapters/claude-code/spawn.ts` (starts `claude`) and
-//      `adapters/launchd/launchctl.ts` (runs `/bin/launchctl` for the service, M0-24, D22);
+//      modules are `adapters/claude-code/spawn.ts` (starts `claude`) and the service
+//      managers (D22): `adapters/launchd/launchctl.ts` (`/bin/launchctl`, M0-24),
+//      `adapters/systemd/systemctl.ts` (`/usr/bin/systemctl`, `/usr/bin/loginctl`) and
+//      `adapters/windows/schtasks.ts` (`C:\Windows\System32\schtasks.exe`, M1-08);
 //   2. a process module imports anything but `spawn`, builds argv other than as a literal
-//      array returned by an `...Argv` function, or enables a shell; `launchctl.ts` must
-//      also name its executable as the literal `/bin/launchctl`;
+//      array returned by an `...Argv` function, or enables a shell; a service-manager
+//      module must also name every executable as one of its allowed literal paths;
 //   3. any agent source contains a forbidden permission token, or `updatedInput` outside
 //      `claude-code/decide.ts` (D11).
 // Usage: node scripts/check-argv-policy.mjs [sourceDir]   (default: ../src)
@@ -16,16 +18,21 @@ import { fileURLToPath } from 'node:url';
 
 import ts from 'typescript';
 
-const SPAWN_MODULE = 'adapters/claude-code/spawn.ts';
-const LAUNCHCTL_MODULE = 'adapters/launchd/launchctl.ts';
 /**
  * Modules (paths relative to the source root, exact match) allowed to import
- * child_process, with the executable each must name when it is fixed.
+ * child_process, with the literal executables each may spawn (`undefined`: any command,
+ * for `claude`, whose location is resolved at run time).
  */
 const PROCESS_MODULES = new Map([
-  [SPAWN_MODULE, { command: undefined }],
-  [LAUNCHCTL_MODULE, { command: '/bin/launchctl' }],
+  ['adapters/claude-code/spawn.ts', { commands: undefined }],
+  ['adapters/launchd/launchctl.ts', { commands: new Set(['/bin/launchctl']) }],
+  [
+    'adapters/systemd/systemctl.ts',
+    { commands: new Set(['/usr/bin/systemctl', '/usr/bin/loginctl']) },
+  ],
+  ['adapters/windows/schtasks.ts', { commands: new Set(['C:\\Windows\\System32\\schtasks.exe']) }],
 ]);
+const PROCESS_MODULE_LIST = [...PROCESS_MODULES.keys()].join(', ');
 const DECIDE_MODULE = 'claude-code/decide.ts';
 const CHILD_PROCESS = new Set(['child_process', 'node:child_process']);
 const FORBIDDEN_TOKENS = [
@@ -119,10 +126,11 @@ function checkSpawnModule(source, report, rule) {
     ) {
       const [command, args, options] = node.arguments;
       if (
-        rule.command !== undefined &&
-        (!command || !ts.isStringLiteral(command) || command.text !== rule.command)
+        rule.commands !== undefined &&
+        (!command || !ts.isStringLiteral(command) || !rule.commands.has(command.text))
       ) {
-        report(line(source, node), `spawn command must be the literal "${rule.command}"`);
+        const allowed = [...rule.commands].map((name) => `"${name}"`).join(' or ');
+        report(line(source, node), `spawn command must be the literal ${allowed}`);
       }
       if (!args || !ts.isIdentifier(args) || args.text !== 'argv') {
         report(
@@ -171,10 +179,7 @@ export function checkArgvPolicy(sourceDir) {
     for (const { name, node } of moduleSpecifiers(source)) {
       if (name === '<dynamic>') report(line(source, node), 'dynamic import/require specifier');
       if (CHILD_PROCESS.has(name) && processRule === undefined) {
-        report(
-          line(source, node),
-          `imports ${name} (only ${SPAWN_MODULE} and ${LAUNCHCTL_MODULE} may)`,
-        );
+        report(line(source, node), `imports ${name} (only ${PROCESS_MODULE_LIST} may)`);
       }
     }
     if (processRule !== undefined) checkSpawnModule(source, report, processRule);

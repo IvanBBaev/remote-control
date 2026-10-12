@@ -13,4 +13,8 @@ export interface ServiceHost {
   readonly scriptPath: string | undefined;
   /** The installing shell's `PATH`, copied into the service environment. */
   readonly pathEnv: string | undefined;
+  /** `$XDG_CONFIG_HOME`, else `~/.config`: the systemd user units live below it (Linux). */
+  readonly xdgConfigHome: string;
+  /** `USERDOMAIN\USERNAME`, the scheduled task's principal (Windows); `undefined` when unknown. */
+  readonly windowsUser: string | undefined;
 }

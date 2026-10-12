@@ -60,7 +60,7 @@ describe('remotectl install / uninstall / status (launchd)', () => {
   function container(overrides: Partial<Parameters<typeof createContainer>[0]> = {}): Container {
     return createContainer({
       platform: 'darwin',
-      env: { PATH: '/usr/local/bin:/usr/bin:/bin' },
+      env: { PATH: '/usr/local/bin:/usr/bin:/bin', REMOTECTL_NO_UPDATE_CHECK: '1' },
       homedir: home,
       tmpdir: join(base, 'tmp'),
       output: { stdout: (text) => (stdout += text), stderr: (text) => (stderr += text) },
@@ -258,23 +258,35 @@ describe('remotectl install / uninstall / status (launchd)', () => {
     expect(stdout).toBe('Uninstalled the service.\n');
   });
 
+  it('uninstall --dry-run prints the plan and touches nothing', async () => {
+    const c = container();
+    expect(await run(['install'], c)).toBe(EXIT_OK);
+    stdout = '';
+    expect(await run(['uninstall', '--dry-run'], c)).toBe(EXIT_OK);
+    expect(stdout).toBe(
+      `Would run: launchctl bootout ${TARGET} (if loaded)\nWould remove: ${launchdPlistPath(c)}\n`,
+    );
+    expect(launchctl.calls).toHaveLength(1);
+    expect(launchctl.loaded).toBe(true);
+    expect((await stat(launchdPlistPath(c))).isFile()).toBe(true);
+  });
+
   it('rejects unknown options', async () => {
     expect(await run(['install', '--force'])).toBe(EXIT_USAGE);
     expect(await run(['uninstall', 'now'])).toBe(EXIT_USAGE);
+    expect(await run(['uninstall', '--force'])).toBe(EXIT_USAGE);
   });
 
-  it.each(['linux', 'win32'] as const)(
-    'says not supported yet on %s and exits 1',
-    async (platform) => {
-      for (const command of ['install', 'uninstall']) {
-        stderr = '';
-        expect(await run([command], container({ platform }))).toBe(EXIT_ERROR);
-        expect(stderr).toContain(`not supported on ${platform} yet (planned in M1-08)`);
-      }
-      stdout = '';
-      expect(await run(['status'], container({ platform }))).toBe(EXIT_OK);
-      expect(stdout).toContain(`service:         not supported on ${platform} yet (M1-08)`);
-      expect(launchctl.calls).toEqual([]);
-    },
-  );
+  it('says not supported on another platform and exits 1', async () => {
+    for (const command of ['install', 'uninstall']) {
+      stderr = '';
+      expect(await run([command], container({ platform: 'freebsd' }))).toBe(EXIT_ERROR);
+      expect(stderr).toContain('running as a service is not supported on freebsd');
+    }
+    stdout = '';
+    expect(await run(['status'], container({ platform: 'freebsd' }))).toBe(EXIT_OK);
+    expect(stdout).toContain('service:         not supported on freebsd\n');
+    expect(stdout).toContain('update:          check disabled\n');
+    expect(launchctl.calls).toEqual([]);
+  });
 });

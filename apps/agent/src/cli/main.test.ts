@@ -17,10 +17,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HookReceiverBindError } from '../adapters/hook-receiver.js';
 import { createContainer, type Container } from '../container.js';
+import type { ProcessResult } from '../ports/process-result.js';
+import type { Systemctl } from '../ports/systemctl.js';
 import { AGENT_VERSION } from '../version.js';
 import { EXIT_ERROR, EXIT_OK, EXIT_USAGE, HELP_TEXT, runCli } from './main.js';
 
 const posixOnly = process.platform === 'win32' ? it.skip : it;
+
+const ok = (stdout = ''): Promise<ProcessResult> =>
+  Promise.resolve({ code: 0, stdout, stderr: '' });
+
+/** A user manager that knows no `remotectl.service`. */
+const notInstalledSystemctl: Systemctl = {
+  daemonReload: () => ok(),
+  enableNow: () => ok(),
+  disableNow: () => ok(),
+  restart: () => ok(),
+  show: () => ok('LoadState=not-found\nActiveState=inactive\n'),
+  enableLinger: () => ok(),
+  showLinger: () => ok('Linger=no\n'),
+};
 
 interface Harness {
   readonly c: Container;
@@ -44,13 +60,16 @@ describe('runCli', () => {
     await writeFile(hookSource, '// hook v1\n');
     const real = createContainer({
       platform: 'linux',
-      env: {},
+      // No npm registry request from a test; `update.test.ts` covers the checks.
+      env: { REMOTECTL_NO_UPDATE_CHECK: '1' },
       homedir: join(base, 'home'),
       tmpdir: join(base, 'tmp'),
       output: { stdout: (text) => (stdout += text), stderr: (text) => (stderr += text) },
       clock: { now: () => 1_760_000_000_000 },
       hookSource,
       execPath: '/usr/local/bin/node',
+      systemctl: notInstalledSystemctl,
+      registry: { distTags: () => Promise.reject(new Error('no registry in this test')) },
     });
     // Port 0: tests never collide with an agent running on this machine.
     const c: Container = {
@@ -90,6 +109,7 @@ describe('runCli', () => {
         'hooks remove',
         'hooks status',
         'logs',
+        'update',
       ]) {
         expect(h.out()).toMatch(new RegExp(`^  ${command}\\b`, 'm'));
       }
@@ -361,6 +381,8 @@ describe('runCli', () => {
       expect(h.out()).toContain(`data dir:        ${h.c.paths.data}`);
       expect(h.out()).toContain('device key:      (not created yet)');
       expect(h.out()).toContain('paired devices:  0');
+      expect(h.out()).toContain('service:         not installed (`remotectl install`)\n');
+      expect(h.out()).toContain('update:          check disabled\n');
     });
 
     it('reports the config, each repository root and the public key', async () => {

@@ -19,6 +19,7 @@ import { createPendingStore } from '../core/pending-store.js';
 import { resolveRepository } from '../core/resolve-repository.js';
 import type { Container } from '../container.js';
 import { installService, serviceStatusLine, uninstallService } from './service.js';
+import { startUpdateChecks, updateCommand, updateStatusLine } from './update.js';
 
 export const EXIT_OK = 0;
 export const EXIT_ERROR = 1;
@@ -38,8 +39,9 @@ export const HELP_TEXT = `Usage: remotectl <command> [options]
 
 Commands:
   run                      Start the agent in the foreground
-  install [--dry-run]      Run the agent as a login service (macOS launchd)
-  uninstall                Stop and remove the login service
+  install [--dry-run]      Run the agent as a login service (launchd, systemd --user,
+                           Task Scheduler)
+  uninstall [--dry-run]    Stop and remove the login service
   status                   Show configuration, allowed repositories and keys
   pair                     Pair a phone with this agent
   devices                  List paired phones
@@ -47,10 +49,14 @@ Commands:
   hooks remove             Remove the Claude Code approval hooks
   hooks status             Show whether the hooks are installed
   logs [-f] [-n <lines>]   Print the agent log (-f follows it)
+  update                   Check npm for a newer remotectl (never installs it)
 
 Options:
   -h, --help               Show this help
   -v, --version            Show the version
+
+Environment:
+  REMOTECTL_NO_UPDATE_CHECK=1   No automatic update check in \`run\` and \`status\`
 `;
 
 export interface RunCliOptions {
@@ -73,6 +79,7 @@ const COMMANDS: Readonly<Record<string, Command>> = {
   logs: logsCommand,
   install: installCommand,
   uninstall: uninstallCommand,
+  update: updateCliCommand,
 };
 
 /** Runs one CLI invocation and returns the process exit code. */
@@ -180,6 +187,7 @@ async function runCommand(
   const { config } = loaded;
   const key = await c.keyStore.loadOrCreateDeviceKey();
   const log = await c.openLog();
+  const updates = startUpdateChecks(c, log.logger);
   const store = createPendingStore({
     clock: c.clock,
     timer: c.timer,
@@ -247,6 +255,7 @@ async function runCommand(
     // Held hooks get `{}` (handoff) instead of a dropped connection.
     store.releaseAll('shutdown');
     await receiver?.close();
+    await updates.stop();
     await log.close();
   }
   return EXIT_OK;
@@ -284,6 +293,7 @@ async function statusCommand(args: readonly string[], c: Container): Promise<num
   );
   out(`paired devices:  ${(await c.keyStore.listPeers()).length}`);
   out(`service:         ${await serviceStatusLine(c)}`);
+  out(`update:          ${await updateStatusLine(c)}`);
   return exitCode;
 }
 
@@ -448,6 +458,11 @@ function installCommand(args: readonly string[], c: Container): Promise<number> 
 }
 
 function uninstallCommand(args: readonly string[], c: Container): Promise<number> {
+  const { values } = parse(args, { options: { 'dry-run': { type: 'boolean' } } });
+  return uninstallService(c, { dryRun: values['dry-run'] === true });
+}
+
+function updateCliCommand(args: readonly string[], c: Container): Promise<number> {
   noArguments(args);
-  return uninstallService(c);
+  return updateCommand(c);
 }

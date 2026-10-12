@@ -1,3 +1,5 @@
+import { escapeXml } from './xml-escape.js';
+
 /** What goes into the launchd user agent definition (06 §5.4, D22). */
 export interface LaunchdPlistSpec {
   readonly label: string;
@@ -7,22 +9,6 @@ export interface LaunchdPlistSpec {
   readonly environment: Readonly<Record<string, string>>;
   readonly stdoutPath: string;
   readonly stderrPath: string;
-}
-
-/** Characters XML 1.0 cannot carry at all, not even escaped (lone surrogates included). */
-// eslint-disable-next-line no-control-regex
-const XML_INVALID = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF\uD800-\uDFFF]/u;
-
-function escapeXml(value: string): string {
-  if (XML_INVALID.test(value)) {
-    throw new RangeError('plist value contains a character XML cannot represent');
-  }
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&apos;');
 }
 
 function xmlString(value: string): string {

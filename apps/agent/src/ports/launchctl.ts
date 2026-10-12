@@ -1,10 +1,7 @@
+import type { ProcessResult } from './process-result.js';
+
 /** The outcome of one `launchctl` invocation. */
-export interface LaunchctlResult {
-  /** Process exit code (`launchctl print` exits non-zero for an unknown service). */
-  readonly code: number;
-  readonly stdout: string;
-  readonly stderr: string;
-}
+export type LaunchctlResult = ProcessResult;
 
 /**
  * The `launchctl` subcommands the agent uses (06 §5.4). The real adapter is

@@ -32,7 +32,7 @@ describe.skipIf(!enabled)('launchd service against the real launchctl', () => {
     await writeFile(script, 'setInterval(() => {}, 60_000);\n');
     c = createContainer({
       platform: 'darwin',
-      env: { PATH: '/usr/bin:/bin' },
+      env: { PATH: '/usr/bin:/bin', REMOTECTL_NO_UPDATE_CHECK: '1' },
       homedir: join(base, 'home'),
       tmpdir: join(base, 'tmp'),
       output: { stdout: (text) => (stdout += text), stderr: (text) => (stdout += text) },
