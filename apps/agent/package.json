@@ -5,7 +5,26 @@
   "description": "Home agent: bridges local AI coding agents to the phone over an end-to-end encrypted channel.",
   "license": "MIT",
   "type": "module",
+  "bin": {
+    "remotectl": "dist/cli.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "exports": {
     ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "node scripts/check-argv-policy.mjs && tsdown src/cli.ts --no-config --platform node --target node22 --format esm --sourcemap --shims --no-dts --clean"
+  },
+  "devDependencies": {
+    "@remote-control/crypto": "workspace:*",
+    "@remote-control/log": "workspace:*",
+    "@remote-control/protocol": "workspace:*",
+    "tsdown": "^0.23.0",
+    "zod": "^4.6.5"
   }
 }

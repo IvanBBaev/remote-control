@@ -12,6 +12,7 @@ export default defineConfig({
       thresholds: {
         'packages/log/src/**': { lines: 100 },
         'packages/fake-claude-code/src/**': { lines: 90 },
+        'apps/agent/src/**': { lines: 90 },
         // 07 §5.13: the protocol package is the trust boundary and stays fully covered.
         'packages/protocol/src/**': { lines: 100, functions: 100, branches: 100, statements: 100 },
         'packages/crypto/src/**': { lines: 100, functions: 100, branches: 100, statements: 100 },
