@@ -282,6 +282,43 @@ describe('runCli', () => {
       expect(log).not.toContain('session_id');
     });
 
+    it('denies at the deadline when agent.onExpire is "deny" (D10)', async () => {
+      await writeConfig({ agent: { onExpire: 'deny' } });
+      const c: Container = {
+        ...h.c,
+        // Every hold ends at once: the deadline path without waiting 30 minutes.
+        timer: {
+          after: (_ms, callback) => {
+            setImmediate(callback);
+            return { cancel: () => undefined };
+          },
+        },
+      };
+      const controller = new AbortController();
+      const running = runCli(['run'], c, { signal: controller.signal });
+      await vi.waitFor(() => expect(h.out()).toContain('press Ctrl-C to stop'));
+      const endpoint = JSON.parse(await readFile(join(h.c.paths.data, 'agent.json'), 'utf8')) as {
+        port: number;
+        token: string;
+      };
+      const response = await fetch(`http://127.0.0.1:${endpoint.port}/hook`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${endpoint.token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ hook_event_name: 'PermissionRequest', session_id: 's1' }),
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        hookSpecificOutput: {
+          hookEventName: 'PermissionRequest',
+          decision: { behavior: 'deny', message: 'No decision from phone', interrupt: false },
+        },
+      });
+      controller.abort();
+      expect(await running).toBe(EXIT_OK);
+      const log = await readFile(join(h.c.paths.log, 'agent.1.log'), 'utf8');
+      expect(log).toContain('"outcome":"deadline"');
+    });
+
     it('exits 1 when the hook port cannot be bound', async () => {
       await writeConfig({});
       const c: Container = {

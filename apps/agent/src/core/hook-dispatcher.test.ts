@@ -84,6 +84,47 @@ describe('hook dispatcher', () => {
     expect(store.list()).toEqual([]);
   });
 
+  it('answers with onDeadline at the deadline only (onExpire "deny", D10)', async () => {
+    const fire: (() => void)[] = [];
+    const timer: Timer = {
+      after: (_ms, callback) => {
+        fire.push(callback);
+        return { cancel: () => undefined };
+      },
+    };
+    const store = createPendingStore({
+      clock: { now: () => 1_000 },
+      timer,
+      random: seededRandom(5),
+    });
+    const deny = { hookSpecificOutput: { decision: { behavior: 'deny' } } };
+    const seen: string[] = [];
+    const handler = createHookDispatcher({
+      store,
+      onDeadline: (request) => {
+        seen.push(request.id);
+        return deny;
+      },
+    });
+    const expiring = handler(permission, {
+      hookTimeoutMs: 1_800_000,
+      signal: new AbortController().signal,
+    });
+    const [request] = store.list();
+    fire[0]!();
+    await expect(expiring).resolves.toEqual({ status: 200, body: deny });
+    expect(seen).toEqual([request!.id]);
+
+    const controller = new AbortController();
+    const disconnected = handler(permission, {
+      hookTimeoutMs: 1_800_000,
+      signal: controller.signal,
+    });
+    controller.abort();
+    await expect(disconnected).resolves.toEqual({ status: 200, body: {} });
+    expect(seen).toHaveLength(1);
+  });
+
   it('hands off at once when the signal is already aborted', async () => {
     const { handler } = createHookDispatcherWithoutListener();
     const controller = new AbortController();

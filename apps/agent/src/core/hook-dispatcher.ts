@@ -1,4 +1,4 @@
-import type { PendingKind, PendingStore } from './pending-store.js';
+import type { PendingKind, PendingRequest, PendingStore } from './pending-store.js';
 
 /** A hook event as posted by `hook.js`: the Claude Code stdin JSON, unchanged. */
 export type HookInput = Readonly<Record<string, unknown>> & {
@@ -48,6 +48,12 @@ export interface HookDispatcherOptions {
   readonly store: PendingStore;
   /** Every event that reached the agent, blocking or not (registry, logs). */
   readonly onEvent?: (input: HookInput) => void;
+  /**
+   * The hook output when a request reaches its deadline (`agent.onExpire: "deny"`, D10);
+   * absent = handoff. Every other handoff (replaced, released, disconnected, shutdown)
+   * still returns no decision.
+   */
+  readonly onDeadline?: (request: PendingRequest) => Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -73,7 +79,11 @@ export function createHookDispatcher(options: HookDispatcherOptions): HookHandle
     else context.signal.addEventListener('abort', onAbort, { once: true });
     try {
       const outcome = await registration.settled;
-      return outcome.type === 'decided' ? { status: 200, body: outcome.response } : HANDOFF;
+      if (outcome.type === 'decided') return { status: 200, body: outcome.response };
+      if (outcome.reason === 'deadline' && options.onDeadline !== undefined) {
+        return { status: 200, body: options.onDeadline(registration.request) };
+      }
+      return HANDOFF;
     } finally {
       context.signal.removeEventListener('abort', onAbort);
     }

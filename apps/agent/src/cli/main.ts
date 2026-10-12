@@ -2,6 +2,8 @@ import { parseArgs } from 'node:util';
 
 import { toBase64Url } from '@remote-control/protocol';
 
+import { claudeCodeAdapter } from '../adapters/claude-code/adapter.js';
+import { NO_DECISION_MESSAGE } from '../adapters/claude-code/decide.js';
 import { KeyStoreError } from '../adapters/file-key-store.js';
 import { HookReceiverBindError, type HookReceiver } from '../adapters/hook-receiver.js';
 import { DEFAULT_HOLD_SECONDS } from '../core/agent-config.js';
@@ -197,6 +199,12 @@ async function runCommand(
   const handler = createHookDispatcher({
     store,
     onEvent: (input) => log.logger.debug({ event: 'hook', hook: input.hook_event_name }),
+    ...(config.agent.onExpire === 'deny'
+      ? {
+          onDeadline: (request) =>
+            claudeCodeAdapter.decide(request, { behavior: 'deny', message: NO_DECISION_MESSAGE }),
+        }
+      : {}),
   });
   const token = toBase64Url(c.random.bytes(HOOK_TOKEN_BYTES));
   let receiver: HookReceiver | undefined;
