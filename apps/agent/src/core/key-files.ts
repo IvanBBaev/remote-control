@@ -41,3 +41,17 @@ export const PeersFile = z
   })
   .strict();
 export type PeersFile = z.infer<typeof PeersFile>;
+
+/**
+ * `agent.json` (0600, data dir): where `hook.cjs` finds the running agent (D11, D22).
+ * Rewritten at every start with a fresh token and the next `generation`.
+ */
+export const AgentEndpointFile = z
+  .object({
+    version: z.literal(1),
+    port: z.int().min(1).max(65_535),
+    token: z.string().min(1),
+    generation: z.int().nonnegative(),
+  })
+  .strict();
+export type AgentEndpointFile = z.infer<typeof AgentEndpointFile>;

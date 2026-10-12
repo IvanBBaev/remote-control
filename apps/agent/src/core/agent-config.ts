@@ -6,6 +6,8 @@ export const DEFAULT_HOLD_SECONDS = 1800;
 export const MIN_HOLD_SECONDS = 30;
 /** Upper bound: one day. Claude Code documents no maximum; this keeps typos sane. */
 export const MAX_HOLD_SECONDS = 86_400;
+/** Loopback port of the hook receiver (D11, ROADMAP §5); agenthropic uses 4317. */
+export const DEFAULT_HOOK_PORT = 4327;
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
@@ -48,9 +50,14 @@ export const AgentConfig = z
           .min(MIN_HOLD_SECONDS)
           .max(MAX_HOLD_SECONDS)
           .default(DEFAULT_HOLD_SECONDS),
+        /**
+         * Loopback port of the hook receiver. `hook.js` reads the bound port from
+         * `agent.json`, so any free port works; 0 picks one (tests).
+         */
+        port: z.int().min(0).max(65_535).default(DEFAULT_HOOK_PORT),
       })
       .strict()
-      .default({ holdSeconds: DEFAULT_HOLD_SECONDS }),
+      .default({ holdSeconds: DEFAULT_HOLD_SECONDS, port: DEFAULT_HOOK_PORT }),
     agent: z
       .object({
         /** What a pending request does at its deadline (D10): `handoff` (default) or `deny`. */

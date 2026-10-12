@@ -2,10 +2,10 @@ import { X25519_KEY_LENGTH, bytesEqual, x25519KeyPairFromPrivateKey } from '@rem
 import { toBase64Url } from '@remote-control/protocol';
 
 import { fromBase64Url } from '../core/from-base64url.js';
-import { DeviceKeyFile, PeersFile } from '../core/key-files.js';
+import { AgentEndpointFile, DeviceKeyFile, PeersFile } from '../core/key-files.js';
 import type { Clock } from '../ports/clock.js';
 import type { FileSystem } from '../ports/file-system.js';
-import type { DeviceKey, KeyStore, Peer } from '../ports/key-store.js';
+import type { DeviceKey, HookEndpoint, KeyStore, Peer } from '../ports/key-store.js';
 import type { PathPort } from '../ports/path-port.js';
 import type { Random } from '../ports/random.js';
 
@@ -15,6 +15,8 @@ export const SECRET_FILE_MODE = 0o600;
 export const SECRET_DIR_MODE = 0o700;
 export const DEVICE_KEY_FILE = 'device-key.json';
 export const PEERS_FILE = 'peers.json';
+/** Read by `hook.cjs` from its own directory (D11). */
+export const AGENT_ENDPOINT_FILE = 'agent.json';
 
 /** A key file exists but cannot be used; the agent refuses to start rather than re-key. */
 export class KeyStoreError extends Error {
@@ -51,6 +53,7 @@ export function createFileKeyStore(options: FileKeyStoreOptions): KeyStore {
   const { dir, fs, paths } = options;
   const keyPath = paths.join(dir, DEVICE_KEY_FILE);
   const peersPath = paths.join(dir, PEERS_FILE);
+  const endpointPath = paths.join(dir, AGENT_ENDPOINT_FILE);
 
   async function readSecret(path: string): Promise<string | undefined> {
     const text = await fs.readText(path);
@@ -92,8 +95,34 @@ export function createFileKeyStore(options: FileKeyStoreOptions): KeyStore {
     return parsed.data;
   }
 
+  async function readHookEndpoint(): Promise<HookEndpoint | undefined> {
+    const text = await readSecret(endpointPath);
+    if (text === undefined) return undefined;
+    let value: unknown;
+    try {
+      value = JSON.parse(text);
+    } catch {
+      return undefined;
+    }
+    const parsed = AgentEndpointFile.safeParse(value);
+    if (!parsed.success) return undefined;
+    const { port, token, generation } = parsed.data;
+    return { port, token, generation };
+  }
+
   return {
     readDeviceKey,
+    readHookEndpoint,
+    async publishHookEndpoint({ port, token }) {
+      const previous = await readHookEndpoint();
+      const generation = (previous?.generation ?? 0) + 1;
+      const file: AgentEndpointFile = { version: 1, port, token, generation };
+      if (!AgentEndpointFile.safeParse(file).success) {
+        throw new KeyStoreError('hook endpoint has an invalid format');
+      }
+      await writeSecret(endpointPath, file);
+      return { port, token, generation };
+    },
     async loadOrCreateDeviceKey() {
       const existing = await readDeviceKey();
       if (existing !== undefined) return existing;

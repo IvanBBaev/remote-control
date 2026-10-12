@@ -50,12 +50,18 @@ importers:
       '@remote-control/crypto':
         specifier: workspace:*
         version: link:../../packages/crypto
+      '@remote-control/fake-claude-code':
+        specifier: workspace:*
+        version: link:../../packages/fake-claude-code
       '@remote-control/log':
         specifier: workspace:*
         version: link:../../packages/log
       '@remote-control/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      fastify:
+        specifier: 5.12.5
+        version: 5.12.5
       tsdown:
         specifier: ^0.23.0
         version: 0.23.0(tsx@4.23.15)(typescript@6.0.3)

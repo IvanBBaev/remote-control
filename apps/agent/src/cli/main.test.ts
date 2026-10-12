@@ -15,6 +15,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { toBase64Url } from '@remote-control/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { HookReceiverBindError } from '../adapters/hook-receiver.js';
 import { createContainer, type Container } from '../container.js';
 import { AGENT_VERSION } from '../version.js';
 import { EXIT_ERROR, EXIT_OK, EXIT_USAGE, HELP_TEXT, runCli } from './main.js';
@@ -30,6 +31,7 @@ interface Harness {
 
 describe('runCli', () => {
   let base: string;
+  let hookSource: string;
   let h: Harness;
 
   beforeEach(async () => {
@@ -37,14 +39,24 @@ describe('runCli', () => {
     let stdout = '';
     let stderr = '';
     // A Linux layout rooted in the temp dir: the real home is never touched.
-    const c = createContainer({
+    hookSource = join(base, 'dist', 'hook.cjs');
+    await mkdir(join(base, 'dist'));
+    await writeFile(hookSource, '// hook v1\n');
+    const real = createContainer({
       platform: 'linux',
       env: {},
       homedir: join(base, 'home'),
       tmpdir: join(base, 'tmp'),
       output: { stdout: (text) => (stdout += text), stderr: (text) => (stderr += text) },
       clock: { now: () => 1_760_000_000_000 },
+      hookSource,
+      execPath: '/usr/local/bin/node',
     });
+    // Port 0: tests never collide with an agent running on this machine.
+    const c: Container = {
+      ...real,
+      startHookReceiver: (options) => real.startHookReceiver({ ...options, port: 0 }),
+    };
     h = {
       c,
       out: () => stdout,
@@ -106,13 +118,89 @@ describe('runCli', () => {
   });
 
   describe('not yet available commands', () => {
-    it('pair and hooks report that they are not available', async () => {
+    it('pair reports that it is not available', async () => {
       expect(await h.run(['pair'])).toBe(EXIT_ERROR);
-      for (const action of ['install', 'remove', 'status']) {
-        expect(await h.run(['hooks', action])).toBe(EXIT_ERROR);
-      }
       expect(h.err()).toContain('remotectl pair: pairing is not available');
-      expect(h.err()).toContain('remotectl hooks status: not available');
+    });
+  });
+
+  describe('hooks', () => {
+    const settingsPath = (): string => join(base, 'home', '.claude', 'settings.json');
+
+    it('installs into ~/.claude, reports status and removes again', async () => {
+      await mkdir(join(base, 'home', '.claude'), { recursive: true });
+      const original = '{\n  "model": "opus"\n}\n';
+      await writeFile(settingsPath(), original);
+
+      expect(await h.run(['hooks', 'status'])).toBe(EXIT_OK);
+      expect(h.out()).toContain(`settings:     ${settingsPath()}\n`);
+      expect(h.out()).toMatch(/PermissionRequest\s+missing/);
+      expect(h.out()).toContain('(missing)');
+      expect(h.out()).toContain('Run `remotectl hooks install`');
+      expect(h.out()).toContain('Claude Code runs hooks only in folders you have trusted');
+
+      expect(await h.run(['hooks', 'install'])).toBe(EXIT_OK);
+      expect(h.out()).toContain(`Installed the hooks in ${settingsPath()}.`);
+      expect(h.out()).toMatch(/Backup: .*settings\.json\.backup-/);
+      const installed = JSON.parse(await readFile(settingsPath(), 'utf8')) as {
+        model: string;
+        hooks: Record<
+          string,
+          { matcher?: string; hooks: { command: string; timeout: number }[] }[]
+        >;
+      };
+      expect(installed.model).toBe('opus');
+      const script = join(h.c.paths.data, 'hook.cjs');
+      expect(installed.hooks['PermissionRequest']).toEqual([
+        {
+          hooks: [
+            { type: 'command', command: `"/usr/local/bin/node" "${script}" 1800`, timeout: 1800 },
+          ],
+        },
+      ]);
+      expect(await readFile(script, 'utf8')).toBe('// hook v1\n');
+
+      expect(await h.run(['hooks', 'install'])).toBe(EXIT_OK);
+      expect(h.out()).toContain('Hooks already installed');
+
+      expect(await h.run(['hooks', 'status'])).toBe(EXIT_OK);
+      expect(h.out()).toMatch(/PreToolUse \(\^AskUserQuestion\$\)\s+installed/);
+      expect(h.out()).toContain('Hooks are installed.');
+
+      expect(await h.run(['hooks', 'remove'])).toBe(EXIT_OK);
+      expect(h.out()).toContain(`Removed the hooks in ${settingsPath()}.`);
+      expect(await readFile(settingsPath(), 'utf8')).toBe(original);
+      expect(await h.run(['hooks', 'remove'])).toBe(EXIT_OK);
+      expect(h.out()).toContain('No remotectl hooks in');
+    });
+
+    it('uses holdSeconds from the config', async () => {
+      await writeConfig({ hooks: { holdSeconds: 600 } });
+      expect(await h.run(['hooks', 'install'])).toBe(EXIT_OK);
+      expect(h.out()).not.toContain('Backup:');
+      expect(await readFile(settingsPath(), 'utf8')).toContain('hook.cjs\\" 600"');
+    });
+
+    it('refuses a corrupt settings.json and an invalid config', async () => {
+      await mkdir(join(base, 'home', '.claude'), { recursive: true });
+      await writeFile(settingsPath(), '{ "hooks": ');
+      expect(await h.run(['hooks', 'install'])).toBe(EXIT_ERROR);
+      expect(h.err()).toContain(`remotectl hooks install: ${settingsPath()} is not valid JSON`);
+      expect(await readFile(settingsPath(), 'utf8')).toBe('{ "hooks": ');
+
+      await writeConfig({ hooks: { holdSeconds: 1 } });
+      expect(await h.run(['hooks', 'status'])).toBe(EXIT_ERROR);
+      expect(h.err()).toContain('  hooks.holdSeconds: ');
+    });
+
+    it('rethrows unexpected installer errors', async () => {
+      const broken: Container = {
+        ...h.c,
+        fs: { ...h.c.fs, readText: () => Promise.reject(new Error('disk on fire')) },
+      };
+      await expect(
+        runCli(['hooks', 'status'], broken, { signal: new AbortController().signal }),
+      ).rejects.toThrow('disk on fire');
     });
   });
 
@@ -120,7 +208,7 @@ describe('runCli', () => {
     posixOnly('writes a default config, creates the key, logs and stops on abort', async () => {
       const controller = new AbortController();
       const running = h.run(['run'], controller.signal);
-      await vi.waitFor(() => expect(h.out()).toContain('running; press Ctrl-C to stop'));
+      await vi.waitFor(() => expect(h.out()).toContain('press Ctrl-C to stop'));
       controller.abort();
       expect(await running).toBe(EXIT_OK);
 
@@ -142,6 +230,13 @@ describe('runCli', () => {
       expect(lines.map((line) => line['event'])).toEqual(['agent_start', 'agent_stop']);
       expect(lines[0]).toMatchObject({ name: 'agent', version: AGENT_VERSION, keyCreated: true });
       expect(log).not.toContain('privateKey');
+      // The hook endpoint is published owner-only, with the bound port (D11).
+      const endpointPath = join(h.c.paths.data, 'agent.json');
+      expect((await stat(endpointPath)).mode & 0o777).toBe(0o600);
+      const endpoint = JSON.parse(await readFile(endpointPath, 'utf8')) as Record<string, unknown>;
+      expect(endpoint).toMatchObject({ version: 1, generation: 1 });
+      expect(endpoint['port']).toBe(lines[0]?.['hookPort']);
+      expect(log).not.toContain(endpoint['token'] as string);
     });
 
     it('returns at once when already aborted and keeps an existing config', async () => {
@@ -157,6 +252,57 @@ describe('runCli', () => {
       expect(await h.run(['run'])).toBe(EXIT_ERROR);
       expect(h.err()).toContain(`invalid config file ${path}`);
       expect(h.err()).toContain('  hooks.holdSeconds: ');
+    });
+
+    it('answers held hooks with {} on shutdown', async () => {
+      await writeConfig({});
+      const controller = new AbortController();
+      const running = h.run(['run'], controller.signal);
+      await vi.waitFor(() => expect(h.out()).toContain('press Ctrl-C to stop'));
+      const endpoint = JSON.parse(await readFile(join(h.c.paths.data, 'agent.json'), 'utf8')) as {
+        port: number;
+        token: string;
+      };
+      const answer = fetch(`http://127.0.0.1:${endpoint.port}/hook`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${endpoint.token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ hook_event_name: 'PermissionRequest', session_id: 's1' }),
+      });
+      await vi.waitFor(async () => {
+        const log = await readFile(join(h.c.paths.log, 'agent.1.log'), 'utf8').catch(() => '');
+        expect(log).toContain('pending_added');
+      });
+      controller.abort();
+      const response = await answer;
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe('{}');
+      expect(await running).toBe(EXIT_OK);
+      const log = await readFile(join(h.c.paths.log, 'agent.1.log'), 'utf8');
+      expect(log).toContain('"outcome":"shutdown"');
+      expect(log).not.toContain('session_id');
+    });
+
+    it('exits 1 when the hook port cannot be bound', async () => {
+      await writeConfig({});
+      const c: Container = {
+        ...h.c,
+        startHookReceiver: () =>
+          Promise.reject(new HookReceiverBindError('cannot listen on 127.0.0.1:4327: EADDRINUSE')),
+      };
+      expect(await runCli(['run'], c, { signal: new AbortController().signal })).toBe(EXIT_ERROR);
+      expect(h.err()).toContain('remotectl run: cannot listen on 127.0.0.1:4327: EADDRINUSE');
+      expect(await h.c.keyStore.readHookEndpoint()).toBeUndefined();
+    });
+
+    it('rethrows unexpected receiver errors', async () => {
+      await writeConfig({});
+      const c: Container = {
+        ...h.c,
+        startHookReceiver: () => Promise.reject(new Error('boom')),
+      };
+      await expect(runCli(['run'], c, { signal: new AbortController().signal })).rejects.toThrow(
+        'boom',
+      );
     });
 
     it('refuses to start with a broken device key', async () => {

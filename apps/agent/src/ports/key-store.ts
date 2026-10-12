@@ -19,6 +19,15 @@ export interface Peer {
   readonly pairedAt: number;
 }
 
+/** The hook endpoint published in `agent.json` for `hook.cjs` (D11). */
+export interface HookEndpoint {
+  readonly port: number;
+  /** Bearer token, unpadded base64url of 32 random bytes; new at every agent start. */
+  readonly token: string;
+  /** Increments at every publish, so a stale reader can tell agent restarts apart. */
+  readonly generation: number;
+}
+
 /**
  * Agent key material (Q16: plain files at 0600 in the env-paths data dir, no OS
  * keychain in MVP). Pairing (M0-16) adds peers; revocation (M1-10) removes them.
@@ -33,4 +42,8 @@ export interface KeyStore {
   addPeer(peer: Peer): Promise<void>;
   /** Removes a peer; returns false when it was not present. */
   removePeer(deviceId: string): Promise<boolean>;
+  /** Writes `agent.json` with the bound port and token; returns the stored endpoint. */
+  publishHookEndpoint(endpoint: { port: number; token: string }): Promise<HookEndpoint>;
+  /** The current `agent.json`, or `undefined` when missing or unreadable. */
+  readHookEndpoint(): Promise<HookEndpoint | undefined>;
 }

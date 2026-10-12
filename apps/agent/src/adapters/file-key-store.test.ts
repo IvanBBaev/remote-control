@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { Peer } from '../ports/key-store.js';
 import {
+  AGENT_ENDPOINT_FILE,
   DEVICE_KEY_FILE,
   KeyStoreError,
   PEERS_FILE,
@@ -137,5 +138,51 @@ describe('createFileKeyStore', () => {
     await keys.addPeer(peer(1));
     await writeFile(join(dir, PEERS_FILE), '{"version":1,"peers":[{}]}', { mode: 0o600 });
     await expect(keys.listPeers()).rejects.toThrow(/invalid format/);
+  });
+
+  describe('hook endpoint (agent.json)', () => {
+    posixOnly('publishes the port and token owner-only and counts generations', async () => {
+      const keys = store();
+      expect(await keys.readHookEndpoint()).toBeUndefined();
+      expect(await keys.publishHookEndpoint({ port: 4327, token: 'a' })).toEqual({
+        port: 4327,
+        token: 'a',
+        generation: 1,
+      });
+      expect(await keys.publishHookEndpoint({ port: 4328, token: 'b' })).toEqual({
+        port: 4328,
+        token: 'b',
+        generation: 2,
+      });
+      expect(await keys.readHookEndpoint()).toEqual({ port: 4328, token: 'b', generation: 2 });
+      const path = join(dir, AGENT_ENDPOINT_FILE);
+      expect((await stat(path)).mode & 0o777).toBe(0o600);
+      expect(JSON.parse(await readFile(path, 'utf8'))).toEqual({
+        version: 1,
+        port: 4328,
+        token: 'b',
+        generation: 2,
+      });
+    });
+
+    it('treats an unreadable file as absent and starts the generation over', async () => {
+      const keys = store();
+      await keys.publishHookEndpoint({ port: 4327, token: 'a' });
+      const path = join(dir, AGENT_ENDPOINT_FILE);
+      await writeFile(path, 'not json', { mode: 0o600 });
+      expect(await keys.readHookEndpoint()).toBeUndefined();
+      await writeFile(path, '{"version":1,"port":0,"token":"a","generation":1}', { mode: 0o600 });
+      expect(await keys.readHookEndpoint()).toBeUndefined();
+      expect((await keys.publishHookEndpoint({ port: 4327, token: 'c' })).generation).toBe(1);
+    });
+
+    it('refuses to publish an invalid endpoint', async () => {
+      await expect(store().publishHookEndpoint({ port: 0, token: 'a' })).rejects.toThrow(
+        KeyStoreError,
+      );
+      await expect(store().publishHookEndpoint({ port: 4327, token: '' })).rejects.toThrow(
+        /invalid format/,
+      );
+    });
   });
 });

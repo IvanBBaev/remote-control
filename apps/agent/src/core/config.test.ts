@@ -23,7 +23,7 @@ describe('parseConfig', () => {
       ok: true,
       config: {
         repositories: [],
-        hooks: { holdSeconds: DEFAULT_HOLD_SECONDS },
+        hooks: { holdSeconds: DEFAULT_HOLD_SECONDS, port: 4327 },
         agent: { onExpire: 'handoff' },
       },
     });
@@ -47,7 +47,7 @@ describe('parseConfig', () => {
     );
     expect(result).toMatchObject({
       ok: true,
-      config: { hooks: { holdSeconds: 60 }, agent: { onExpire: 'deny' } },
+      config: { hooks: { holdSeconds: 60, port: 4327 }, agent: { onExpire: 'deny' } },
     });
   });
 

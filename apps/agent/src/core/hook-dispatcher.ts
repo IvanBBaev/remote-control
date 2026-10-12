@@ -1,0 +1,81 @@
+import type { PendingKind, PendingStore } from './pending-store.js';
+
+/** A hook event as posted by `hook.js`: the Claude Code stdin JSON, unchanged. */
+export type HookInput = Readonly<Record<string, unknown>> & {
+  readonly hook_event_name: string;
+  readonly session_id: string;
+};
+
+/**
+ * The receiver's answer to `hook.js`. 200 with a body: `hook.js` prints the body
+ * verbatim. 204: `hook.js` prints nothing. Both end with exit 0.
+ */
+export type HookReply =
+  | { readonly status: 200; readonly body: Readonly<Record<string, unknown>> }
+  | { readonly status: 204 };
+
+export interface HookContext {
+  /** The hook's own timeout `T` (from `hook.js`), in milliseconds. */
+  readonly hookTimeoutMs: number;
+  /** Aborted when the hook process disconnects. */
+  readonly signal: AbortSignal;
+}
+
+export type HookHandler = (input: HookInput, context: HookContext) => Promise<HookReply>;
+
+/** The question tool whose answer goes through `PreToolUse` (D11). */
+export const ASK_USER_QUESTION = 'AskUserQuestion';
+
+/** The blocking kind of a hook event, or `undefined` for a feed-only event (D11). */
+export function blockingKind(input: HookInput): PendingKind | undefined {
+  if (input.hook_event_name === 'PermissionRequest') return 'permission';
+  if (input.hook_event_name === 'PreToolUse' && input['tool_name'] === ASK_USER_QUESTION) {
+    return 'question';
+  }
+  return undefined;
+}
+
+/** Identity of a blocking request: tool name and input (a retry has both unchanged). */
+export function fingerprint(input: HookInput): string {
+  const toolName = typeof input['tool_name'] === 'string' ? input['tool_name'] : '';
+  return `${toolName}\0${JSON.stringify(input['tool_input'] ?? null)}`;
+}
+
+/** No decision: Claude Code continues as if the hook were absent (D10 handoff). */
+const HANDOFF: HookReply = { status: 200, body: {} };
+
+export interface HookDispatcherOptions {
+  readonly store: PendingStore;
+  /** Every event that reached the agent, blocking or not (registry, logs). */
+  readonly onEvent?: (input: HookInput) => void;
+}
+
+/**
+ * Routes hook events: blocking ones (`PermissionRequest`, `PreToolUse` for
+ * `AskUserQuestion`) wait in the pending store for a decision or a handoff; every other
+ * event is a feed event and is answered at once with no output.
+ */
+export function createHookDispatcher(options: HookDispatcherOptions): HookHandler {
+  const { store } = options;
+  return async (input, context) => {
+    options.onEvent?.(input);
+    const kind = blockingKind(input);
+    if (kind === undefined) return { status: 204 };
+    const registration = store.register({
+      sessionId: input.session_id,
+      kind,
+      fingerprint: fingerprint(input),
+      payload: input,
+      hookTimeoutMs: context.hookTimeoutMs,
+    });
+    const onAbort = (): void => registration.cancel('disconnected');
+    if (context.signal.aborted) onAbort();
+    else context.signal.addEventListener('abort', onAbort, { once: true });
+    try {
+      const outcome = await registration.settled;
+      return outcome.type === 'decided' ? { status: 200, body: outcome.response } : HANDOFF;
+    } finally {
+      context.signal.removeEventListener('abort', onAbort);
+    }
+  };
+}

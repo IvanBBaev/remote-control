@@ -22,12 +22,14 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "build": "node scripts/check-argv-policy.mjs && tsdown src/cli.ts --no-config --platform node --target node22 --format esm --sourcemap --shims --no-dts --clean"
+    "build": "node scripts/check-argv-policy.mjs && tsdown src/cli.ts --no-config --platform node --target node22 --format esm --sourcemap --shims --no-dts --clean && tsdown src/hook/hook.ts --no-config --platform node --target node22 --format cjs --no-dts --no-clean"
   },
   "devDependencies": {
     "@remote-control/crypto": "workspace:*",
+    "@remote-control/fake-claude-code": "workspace:*",
     "@remote-control/log": "workspace:*",
     "@remote-control/protocol": "workspace:*",
+    "fastify": "5.12.5",
     "tsdown": "^0.23.0",
     "zod": "^4.6.5"
   }

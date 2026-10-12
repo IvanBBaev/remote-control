@@ -3,8 +3,17 @@ import { parseArgs } from 'node:util';
 import { toBase64Url } from '@remote-control/protocol';
 
 import { KeyStoreError } from '../adapters/file-key-store.js';
+import { HookReceiverBindError, type HookReceiver } from '../adapters/hook-receiver.js';
+import { DEFAULT_HOLD_SECONDS } from '../core/agent-config.js';
 import { defaultConfigText } from '../core/default-config-text.js';
+import { createHookDispatcher } from '../core/hook-dispatcher.js';
+import {
+  HooksSettingsError,
+  createHooksInstaller,
+  type HookStateEntry,
+} from '../core/hooks-installer.js';
 import { loadConfig, type LoadConfigResult } from '../core/load-config.js';
+import { createPendingStore } from '../core/pending-store.js';
 import { resolveRepository } from '../core/resolve-repository.js';
 import type { Container } from '../container.js';
 
@@ -19,6 +28,8 @@ const DEFAULT_LOG_LINES = 50;
 const MAX_LOG_LINES = 10_000;
 const LOG_TAIL_BYTES = 1024 * 1024;
 const LOG_POLL_MS = 500;
+/** Random bytes of the hook bearer token (D11). */
+const HOOK_TOKEN_BYTES = 32;
 
 export const HELP_TEXT = `Usage: remotectl <command> [options]
 
@@ -159,22 +170,70 @@ async function runCommand(
     if (loaded.status === 'invalid') reportInvalidConfig(c, loaded);
     return EXIT_ERROR;
   }
+  const { config } = loaded;
   const key = await c.keyStore.loadOrCreateDeviceKey();
   const log = await c.openLog();
+  const store = createPendingStore({
+    clock: c.clock,
+    timer: c.timer,
+    random: c.random,
+    onEvent: (event) => {
+      // Ids, kinds and outcomes only: hook payloads never reach the log.
+      const { id, kind, sessionId } = event.request;
+      if (event.type === 'added') {
+        log.logger.info({
+          event: 'pending_added',
+          id,
+          kind,
+          sessionId,
+          duplicate: event.duplicate,
+        });
+      } else {
+        const outcome = event.outcome.type === 'decided' ? 'decided' : event.outcome.reason;
+        log.logger.info({ event: 'pending_removed', id, kind, sessionId, outcome });
+      }
+    },
+  });
+  const handler = createHookDispatcher({
+    store,
+    onEvent: (input) => log.logger.debug({ event: 'hook', hook: input.hook_event_name }),
+  });
+  const token = toBase64Url(c.random.bytes(HOOK_TOKEN_BYTES));
+  let receiver: HookReceiver | undefined;
   try {
+    receiver = await c.startHookReceiver({
+      port: config.hooks.port,
+      token,
+      handler,
+      defaultHookTimeoutMs: config.hooks.holdSeconds * 1000,
+    });
+    // Published only after the bind succeeded: a second agent never overwrites it.
+    const endpoint = await c.keyStore.publishHookEndpoint({ port: receiver.port, token });
     log.logger.info(
       {
         event: 'agent_start',
         version: c.version,
-        repositories: loaded.config.repositories.length,
+        repositories: config.repositories.length,
         keyCreated: key.created,
+        hookPort: endpoint.port,
+        generation: endpoint.generation,
       },
       'agent started',
     );
-    c.output.stdout(`remotectl ${c.version} running; press Ctrl-C to stop.\n`);
+    c.output.stdout(
+      `remotectl ${c.version} running; hooks on 127.0.0.1:${endpoint.port}; press Ctrl-C to stop.\n`,
+    );
     await waitForAbort(c, options.signal);
     log.logger.info({ event: 'agent_stop' }, 'agent stopped');
+  } catch (error) {
+    if (!(error instanceof HookReceiverBindError)) throw error;
+    log.logger.error({ event: 'hook_bind_failed', port: config.hooks.port }, error.message);
+    c.output.stderr(`remotectl run: ${error.message}\n`);
+    return EXIT_ERROR;
   } finally {
+    // Held hooks get `{}` (handoff) instead of a dropped connection.
+    store.releaseAll('shutdown');
+    await receiver?.close();
     await log.close();
   }
   return EXIT_OK;
@@ -237,14 +296,73 @@ async function devicesCommand(args: readonly string[], c: Container): Promise<nu
 
 const HOOK_ACTIONS = new Set(['install', 'remove', 'status']);
 
-function hooksCommand(args: readonly string[], c: Container): Promise<number> {
+/** Hooks run only in folders Claude Code trusts (04 §2.6). */
+export const TRUST_HINT =
+  'Claude Code runs hooks only in folders you have trusted: open each repository once\n' +
+  'with `claude` and accept the trust prompt. Sessions started before an install pick\n' +
+  'up the hooks after a restart (or a review in `/hooks`).\n';
+
+function describeHook(entry: HookStateEntry): string {
+  const name = entry.matcher === undefined ? entry.event : `${entry.event} (${entry.matcher})`;
+  return `  ${name.padEnd(34)}${entry.state}`;
+}
+
+async function hooksCommand(args: readonly string[], c: Container): Promise<number> {
   const [action, ...rest] = args;
   if (action === undefined || !HOOK_ACTIONS.has(action)) {
     throw new UsageError('expected one of: install, remove, status');
   }
   noArguments(rest);
-  c.output.stderr(`remotectl hooks ${action}: not available in this version yet.\n`);
-  return Promise.resolve(EXIT_ERROR);
+  const loaded = await loadConfig(c.paths.config, c.fs, c.pathPort);
+  if (loaded.status === 'invalid') {
+    reportInvalidConfig(c, loaded);
+    return EXIT_ERROR;
+  }
+  const installer = createHooksInstaller({
+    fs: c.fs,
+    paths: c.pathPort,
+    clock: c.clock,
+    settingsDir: c.claudeConfigDir,
+    dataDir: c.paths.data,
+    hookSource: c.hookSource,
+    execPath: c.execPath,
+    holdSeconds: loaded.status === 'ok' ? loaded.config.hooks.holdSeconds : DEFAULT_HOLD_SECONDS,
+  });
+  const out = (line: string): void => c.output.stdout(`${line}\n`);
+  try {
+    if (action === 'status') {
+      const status = await installer.status();
+      out(`settings:     ${status.settingsPath}${status.settingsExists ? '' : ' (missing)'}`);
+      out(`hook script:  ${status.scriptPath} (${status.script})`);
+      for (const entry of status.hooks) out(describeHook(entry));
+      const complete =
+        status.script === 'current' && status.hooks.every((entry) => entry.state === 'installed');
+      out(
+        complete
+          ? 'Hooks are installed.'
+          : 'Run `remotectl hooks install` to install or update them.',
+      );
+      c.output.stdout(`\n${TRUST_HINT}`);
+      return EXIT_OK;
+    }
+    const change = action === 'install' ? await installer.install() : await installer.remove();
+    if (!change.changed) {
+      out(
+        action === 'install'
+          ? `Hooks already installed in ${change.settingsPath}.`
+          : `No remotectl hooks in ${change.settingsPath}.`,
+      );
+    } else {
+      out(`${action === 'install' ? 'Installed' : 'Removed'} the hooks in ${change.settingsPath}.`);
+      if (change.backupPath !== undefined) out(`Backup: ${change.backupPath}`);
+    }
+    if (action === 'install') c.output.stdout(`\n${TRUST_HINT}`);
+    return EXIT_OK;
+  } catch (error) {
+    if (!(error instanceof HooksSettingsError)) throw error;
+    c.output.stderr(`remotectl hooks ${action}: ${error.message}\n`);
+    return EXIT_ERROR;
+  }
 }
 
 function parseLineCount(value: unknown): number {
