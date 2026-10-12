@@ -500,7 +500,7 @@ one iPhone and one Android device; NO-GO on push or UV → stop and ask the owne
 wrapper or scope change) before any PWA WP.
 
 #### M0-04 — `packages/log`
-Size S · Deps M0-01 · Status todo · Sources 06 W11, 02 W9, 03 W12
+Size S · Deps M0-01 · Status done 9368965 · Sources 06 W11, 02 W9, 03 W12
 Scope: shared pino factory (level label, `req_id`, `user_id`, `device_id`, `event`,
 `bytes`, `duration_ms`, `ws_close_code`), redaction list per D19, `pino-roll` option for
 the agent, canary helper `assertNoCanary(logLines, canaries)` reused by the privacy gate.
