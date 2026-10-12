@@ -7,5 +7,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "pino": "10.4.0",
+    "pino-roll": "4.0.0"
   }
 }
