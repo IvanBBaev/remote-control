@@ -1,0 +1,39 @@
+{
+  "comment": "Frozen D7 vectors. Never change a value without a protocol version bump.",
+  "vectors": [
+    {
+      "name": "02 §7.2 reference decision",
+      "decision": {
+        "agent_device_id": "a",
+        "expires_at": 300,
+        "issued_at": 0,
+        "kind": "allow",
+        "payload": null,
+        "phone_device_id": "p",
+        "request_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "request_id": "r",
+        "v": 1
+      },
+      "canonical": "{\"agent_device_id\":\"a\",\"expires_at\":300,\"issued_at\":0,\"kind\":\"allow\",\"payload\":null,\"phone_device_id\":\"p\",\"request_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"request_id\":\"r\",\"v\":1}",
+      "sha256": "dff6fb689e9190f30988151085b076973b2a07f52f990f5ec9771ffbdd596c7b",
+      "challenge": "3_b7aJ6RkPMJiBUQhbB2lzsqB_UvmQ9eyXcf-91ZbHs"
+    },
+    {
+      "name": "answer with non-ASCII payload",
+      "decision": {
+        "v": 1,
+        "kind": "answer",
+        "request_id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+        "request_hash": "4196590ec41b976c1c2f586f398945a01bf0e4c11b18bab7809211a4c8025bcf",
+        "payload": "Use the CANARY-7f3a option — ünïcode",
+        "issued_at": 1791763200,
+        "expires_at": 1791763500,
+        "phone_device_id": "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+        "agent_device_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+      },
+      "canonical": "{\"agent_device_id\":\"1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d\",\"expires_at\":1791763500,\"issued_at\":1791763200,\"kind\":\"answer\",\"payload\":\"Use the CANARY-7f3a option — ünïcode\",\"phone_device_id\":\"6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f\",\"request_hash\":\"4196590ec41b976c1c2f586f398945a01bf0e4c11b18bab7809211a4c8025bcf\",\"request_id\":\"0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b\",\"v\":1}",
+      "sha256": "6c54ce4c82af811383363056a9cb7cc242ea430f67da086e9a6d779b7beddd9f",
+      "challenge": "bFTOTIKvgRODNjBWqct8wkLqQw9n2ghumm13m3vt3Z8"
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "valid": [
+    {
+      "agent": "claude-code",
+      "always": true,
+      "questions": true,
+      "instructions": true,
+      "startSession": true
+    }
+  ],
+  "invalid": [
+    {
+      "reason": "agent id not lower-case",
+      "value": {
+        "agent": "Claude Code",
+        "always": true,
+        "questions": true,
+        "instructions": true,
+        "startSession": true
+      }
+    },
+    {
+      "reason": "missing startSession",
+      "value": { "agent": "codex", "always": false, "questions": false, "instructions": true }
+    }
+  ]
+}

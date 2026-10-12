@@ -1,0 +1,98 @@
+{
+  "valid": [
+    {
+      "v": 1,
+      "kind": "allow",
+      "request_id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+      "request_hash": "4196590ec41b976c1c2f586f398945a01bf0e4c11b18bab7809211a4c8025bcf",
+      "payload": null,
+      "issued_at": 1791763200,
+      "expires_at": 1791763500,
+      "phone_device_id": "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+      "agent_device_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+    },
+    {
+      "v": 1,
+      "kind": "answer",
+      "request_id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+      "request_hash": "4196590ec41b976c1c2f586f398945a01bf0e4c11b18bab7809211a4c8025bcf",
+      "payload": "Use the CANARY-7f3a option — ünïcode",
+      "issued_at": 1791763200,
+      "expires_at": 1791763500,
+      "phone_device_id": "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+      "agent_device_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+    }
+  ],
+  "invalid": [
+    {
+      "reason": "expires_at is not issued_at + 300",
+      "value": {
+        "v": 1,
+        "kind": "deny",
+        "request_id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+        "request_hash": "4196590ec41b976c1c2f586f398945a01bf0e4c11b18bab7809211a4c8025bcf",
+        "payload": null,
+        "issued_at": 1791763200,
+        "expires_at": 1791763800,
+        "phone_device_id": "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+        "agent_device_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+      }
+    },
+    {
+      "reason": "allow with a payload",
+      "value": {
+        "v": 1,
+        "kind": "allow",
+        "request_id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+        "request_hash": "4196590ec41b976c1c2f586f398945a01bf0e4c11b18bab7809211a4c8025bcf",
+        "payload": "x",
+        "issued_at": 0,
+        "expires_at": 300,
+        "phone_device_id": "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+        "agent_device_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+      }
+    },
+    {
+      "reason": "start without a payload",
+      "value": {
+        "v": 1,
+        "kind": "start",
+        "request_id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+        "request_hash": "4196590ec41b976c1c2f586f398945a01bf0e4c11b18bab7809211a4c8025bcf",
+        "payload": null,
+        "issued_at": 0,
+        "expires_at": 300,
+        "phone_device_id": "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+        "agent_device_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+      }
+    },
+    {
+      "reason": "wrong protocol version",
+      "value": {
+        "v": 2,
+        "kind": "deny",
+        "request_id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+        "request_hash": "4196590ec41b976c1c2f586f398945a01bf0e4c11b18bab7809211a4c8025bcf",
+        "payload": null,
+        "issued_at": 0,
+        "expires_at": 300,
+        "phone_device_id": "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+        "agent_device_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+      }
+    },
+    {
+      "reason": "unknown kind",
+      "value": {
+        "v": 1,
+        "kind": "bypass",
+        "request_id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+        "request_hash": "4196590ec41b976c1c2f586f398945a01bf0e4c11b18bab7809211a4c8025bcf",
+        "payload": null,
+        "issued_at": 0,
+        "expires_at": 300,
+        "phone_device_id": "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+        "agent_device_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+      }
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "valid": [
+    {
+      "id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+      "sessionId": "5b7c1e2a-9d3f-4e8a-b6c4-2f1d0e9a8b7c",
+      "requestHash": "4196590ec41b976c1c2f586f398945a01bf0e4c11b18bab7809211a4c8025bcf",
+      "toolLabel": "Run a command",
+      "toolName": "Bash",
+      "content": "echo CANARY-7f3a café",
+      "truncated": false,
+      "suggestions": ["Always allow echo in this project"],
+      "expiresAt": 1791764990000,
+      "alwaysSupported": true
+    }
+  ],
+  "invalid": [
+    {
+      "reason": "upper-case hash",
+      "value": {
+        "id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+        "sessionId": "5b7c1e2a-9d3f-4e8a-b6c4-2f1d0e9a8b7c",
+        "requestHash": "4196590EC41B976C1C2F586F398945A01BF0E4C11B18BAB7809211A4C8025BCF",
+        "toolLabel": "Run a command",
+        "toolName": "Bash",
+        "content": "ls",
+        "truncated": false,
+        "suggestions": [],
+        "expiresAt": 0,
+        "alwaysSupported": false
+      }
+    },
+    {
+      "reason": "permission mode smuggled in",
+      "value": {
+        "id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+        "sessionId": "5b7c1e2a-9d3f-4e8a-b6c4-2f1d0e9a8b7c",
+        "requestHash": "4196590ec41b976c1c2f586f398945a01bf0e4c11b18bab7809211a4c8025bcf",
+        "toolLabel": "Run a command",
+        "toolName": "Bash",
+        "content": "ls",
+        "truncated": false,
+        "suggestions": [],
+        "expiresAt": 0,
+        "alwaysSupported": false,
+        "permissionMode": "bypassPermissions"
+      }
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "valid": [
+    { "sessionId": "5b7c1e2a-9d3f-4e8a-b6c4-2f1d0e9a8b7c", "text": "Now run the CANARY-7f3a tests" }
+  ],
+  "invalid": [
+    {
+      "reason": "empty text",
+      "value": { "sessionId": "5b7c1e2a-9d3f-4e8a-b6c4-2f1d0e9a8b7c", "text": "" }
+    }
+  ]
+}

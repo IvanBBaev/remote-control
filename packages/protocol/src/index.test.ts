@@ -1,9 +1,62 @@
 import { describe, expect, it } from 'vitest';
 
-import { packageName } from './index.js';
+import * as protocol from './index.js';
 
-describe('@remote-control/protocol', () => {
-  it('exposes its package name', () => {
-    expect(packageName).toBe('@remote-control/protocol');
+describe('@remote-control/protocol barrel', () => {
+  it('exports the public API', () => {
+    expect(Object.keys(protocol).sort()).toEqual(
+      [
+        'Ack',
+        'AgentId',
+        'ApprovalRequest',
+        'CanonicalDecision',
+        'Capabilities',
+        'ChangedFile',
+        'DECISION_TTL_SECONDS',
+        'Decision',
+        'DecisionKind',
+        'DeviceId',
+        'Envelope',
+        'EnvelopeId',
+        'EpochMs',
+        'FRAME_KINDS',
+        'Frame',
+        'Hello',
+        'HelloOk',
+        'Instruction',
+        'MAX_PAYLOAD_LENGTH',
+        'Machine',
+        'OpaqueId',
+        'Ping',
+        'Pong',
+        'Presence',
+        'PresenceEntry',
+        'Question',
+        'QuestionOption',
+        'REQUEST_TRANSITIONS',
+        'RelayError',
+        'RelayErrorCode',
+        'Repository',
+        'RequestEvent',
+        'RequestId',
+        'RequestState',
+        'Session',
+        'SessionId',
+        'Sha256Hex',
+        'StartSession',
+        'VERSION_TABLE',
+        'canonicalJson',
+        'decisionChallenge',
+        'decisionHash',
+        'encodeFrame',
+        'negotiateVersion',
+        'parseFrame',
+        'requestHash',
+        'requiresAssertion',
+        'toBase64Url',
+        'toHex',
+        'transitionRequest',
+      ].sort(),
+    );
   });
 });

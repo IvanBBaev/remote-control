@@ -1,0 +1,16 @@
+{
+  "valid": [
+    {
+      "v": 1,
+      "kind": "ack",
+      "ids": ["0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b", "0199a1b2-c3d5-7000-9abc-def012345678"]
+    }
+  ],
+  "invalid": [
+    { "reason": "empty ids", "value": { "v": 1, "kind": "ack", "ids": [] } },
+    {
+      "reason": "id is not a UUIDv7",
+      "value": { "v": 1, "kind": "ack", "ids": ["1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"] }
+    }
+  ]
+}

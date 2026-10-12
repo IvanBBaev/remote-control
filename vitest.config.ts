@@ -7,9 +7,12 @@ export default defineConfig({
       provider: 'v8',
       include: ['{apps,packages}/*/src/**/*.{ts,tsx}'],
       exclude: ['**/*.test.{ts,tsx}', '**/*.d.ts'],
+      reporter: ['text-summary', 'text'],
       // Per-package thresholds; packages without an entry are reported, not gated.
       thresholds: {
         'packages/log/src/**': { lines: 100 },
+        // 07 §5.13: the protocol package is the trust boundary and stays fully covered.
+        'packages/protocol/src/**': { lines: 100, functions: 100, branches: 100, statements: 100 },
       },
     },
     projects: [

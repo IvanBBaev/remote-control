@@ -1,0 +1,23 @@
+{
+  "valid": [
+    {
+      "v": 1,
+      "kind": "presence",
+      "deviceId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+      "online": false,
+      "at": 1791763200000
+    }
+  ],
+  "invalid": [
+    {
+      "reason": "online is not a boolean",
+      "value": {
+        "v": 1,
+        "kind": "presence",
+        "deviceId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+        "online": "yes",
+        "at": 0
+      }
+    }
+  ]
+}

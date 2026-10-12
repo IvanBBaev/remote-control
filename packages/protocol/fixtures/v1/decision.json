@@ -1,0 +1,30 @@
+{
+  "valid": [
+    { "requestId": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b", "behavior": "allow" },
+    {
+      "requestId": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+      "behavior": "always",
+      "scope": "projectSettings"
+    },
+    {
+      "requestId": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+      "behavior": "deny",
+      "reason": "Not on CANARY-7f3a"
+    },
+    { "requestId": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b", "behavior": "terminal" }
+  ],
+  "invalid": [
+    {
+      "reason": "unknown behavior",
+      "value": { "requestId": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b", "behavior": "maybe" }
+    },
+    {
+      "reason": "updatedInput smuggled in",
+      "value": {
+        "requestId": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+        "behavior": "allow",
+        "updatedInput": { "command": "rm -rf /" }
+      }
+    }
+  ]
+}

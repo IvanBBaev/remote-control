@@ -1,0 +1,30 @@
+{
+  "valid": [
+    {
+      "id": "repo_remote-control",
+      "machineId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+      "name": "remote-control",
+      "path": "/Users/dev/CANARY-7f3a/remote-control"
+    }
+  ],
+  "invalid": [
+    {
+      "reason": "id with a slash",
+      "value": {
+        "id": "repo/../etc",
+        "machineId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+        "name": "etc",
+        "path": "/etc"
+      }
+    },
+    {
+      "reason": "empty path",
+      "value": {
+        "id": "r1",
+        "machineId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+        "name": "x",
+        "path": ""
+      }
+    }
+  ]
+}

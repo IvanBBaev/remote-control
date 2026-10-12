@@ -1,0 +1,112 @@
+{
+  "valid": [
+    {
+      "v": 1,
+      "kind": "data",
+      "id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+      "from": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+      "to": "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+      "session": "5b7c1e2a-9d3f-4e8a-b6c4-2f1d0e9a8b7c",
+      "cls": "request",
+      "seq": 0,
+      "ts": 1791763200000,
+      "expiresAt": 1791764970000,
+      "payload": "Q0FOQVJZLTdmM2E="
+    },
+    {
+      "v": 1,
+      "kind": "data",
+      "id": "0199a1b2-c3d5-7000-9abc-def012345678",
+      "from": "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+      "to": null,
+      "session": null,
+      "cls": "reply",
+      "seq": 7,
+      "ts": 1791763201000,
+      "expiresAt": null,
+      "replyTo": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+      "payload": ""
+    }
+  ],
+  "invalid": [
+    {
+      "reason": "id is not a UUIDv7",
+      "value": {
+        "v": 1,
+        "kind": "data",
+        "id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+        "from": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+        "to": "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+        "session": null,
+        "cls": "event",
+        "seq": 0,
+        "ts": 0,
+        "expiresAt": null,
+        "payload": ""
+      }
+    },
+    {
+      "reason": "unknown cls",
+      "value": {
+        "v": 1,
+        "kind": "data",
+        "id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+        "from": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+        "to": "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+        "session": null,
+        "cls": "chat",
+        "seq": 0,
+        "ts": 0,
+        "expiresAt": null,
+        "payload": ""
+      }
+    },
+    {
+      "reason": "negative seq",
+      "value": {
+        "v": 1,
+        "kind": "data",
+        "id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+        "from": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+        "to": "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+        "session": null,
+        "cls": "event",
+        "seq": -1,
+        "ts": 0,
+        "expiresAt": null,
+        "payload": ""
+      }
+    },
+    {
+      "reason": "payload is not base64",
+      "value": {
+        "v": 1,
+        "kind": "data",
+        "id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+        "from": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+        "to": "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+        "session": null,
+        "cls": "event",
+        "seq": 0,
+        "ts": 0,
+        "expiresAt": null,
+        "payload": "CANARY-7f3a plaintext!"
+      }
+    },
+    {
+      "reason": "missing expiresAt",
+      "value": {
+        "v": 1,
+        "kind": "data",
+        "id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+        "from": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+        "to": "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+        "session": null,
+        "cls": "event",
+        "seq": 0,
+        "ts": 0,
+        "payload": ""
+      }
+    }
+  ]
+}

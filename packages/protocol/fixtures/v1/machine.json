@@ -1,0 +1,57 @@
+{
+  "valid": [
+    {
+      "id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+      "name": "MacMini CANARY-7f3a",
+      "platform": "darwin",
+      "agentVersion": "0.1.0",
+      "agents": [
+        {
+          "agent": "claude-code",
+          "always": true,
+          "questions": true,
+          "instructions": true,
+          "startSession": true
+        }
+      ]
+    },
+    {
+      "id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+      "name": "wsl",
+      "platform": "linux",
+      "agentVersion": "0.1.0",
+      "agents": []
+    }
+  ],
+  "invalid": [
+    {
+      "reason": "unknown platform",
+      "value": {
+        "id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+        "name": "box",
+        "platform": "freebsd",
+        "agentVersion": "0.1.0",
+        "agents": []
+      }
+    },
+    {
+      "reason": "unknown key in capabilities",
+      "value": {
+        "id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+        "name": "box",
+        "platform": "linux",
+        "agentVersion": "0.1.0",
+        "agents": [
+          {
+            "agent": "claude-code",
+            "always": true,
+            "questions": true,
+            "instructions": true,
+            "startSession": true,
+            "bypassPermissions": true
+          }
+        ]
+      }
+    }
+  ]
+}

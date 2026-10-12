@@ -1,0 +1,6 @@
+{
+  "valid": [{ "v": 1, "kind": "pong", "t": 1791763200000, "relayTs": 1791763200004 }],
+  "invalid": [
+    { "reason": "missing relayTs", "value": { "v": 1, "kind": "pong", "t": 1791763200000 } }
+  ]
+}

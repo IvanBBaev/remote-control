@@ -1,0 +1,4 @@
+{
+  "valid": [{ "v": 1, "kind": "ping", "t": 1791763200000 }],
+  "invalid": [{ "reason": "fractional t", "value": { "v": 1, "kind": "ping", "t": 1.5 } }]
+}

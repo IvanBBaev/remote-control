@@ -1,0 +1,28 @@
+{
+  "valid": [
+    {
+      "v": 1,
+      "kind": "error",
+      "code": "expired",
+      "ref": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+      "message": "Envelope expired before delivery"
+    },
+    { "v": 1, "kind": "error", "code": "rate_limited", "ref": null, "message": "" }
+  ],
+  "invalid": [
+    {
+      "reason": "unknown code",
+      "value": { "v": 1, "kind": "error", "code": "teapot", "ref": null, "message": "" }
+    },
+    {
+      "reason": "message too long",
+      "value": {
+        "v": 1,
+        "kind": "error",
+        "code": "bad_frame",
+        "ref": null,
+        "message": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      }
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "comment": "Frozen D7 request-hash vectors. Never change a value without a protocol version bump.",
+  "vectors": [
+    {
+      "name": "tool call",
+      "input": {
+        "toolName": "Bash",
+        "toolInput": { "command": "echo CANARY-7f3a café", "description": "Print a canary" }
+      },
+      "canonical": "{\"tool_input\":{\"command\":\"echo CANARY-7f3a café\",\"description\":\"Print a canary\"},\"tool_name\":\"Bash\"}",
+      "sha256": "4196590ec41b976c1c2f586f398945a01bf0e4c11b18bab7809211a4c8025bcf"
+    },
+    {
+      "name": "prompt in a directory",
+      "input": { "prompt": "Fix the CANARY-7f3a test", "cwd": "/home/dev/project" },
+      "canonical": "{\"cwd\":\"/home/dev/project\",\"prompt\":\"Fix the CANARY-7f3a test\"}",
+      "sha256": "2cf1755acff9e7bc66643dd7802b5a4599f96829b384cf68fbe40ec9021d5b98"
+    }
+  ]
+}

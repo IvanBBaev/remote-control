@@ -1,0 +1,71 @@
+{
+  "valid": [
+    {
+      "v": 1,
+      "kind": "hello_ok",
+      "protocol": 1,
+      "min_supported": 1,
+      "deviceId": "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+      "relayTs": 1791763200000,
+      "presence": [
+        {
+          "deviceId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+          "kind": "agent",
+          "name": "MacMini",
+          "online": true,
+          "lastSeen": null
+        },
+        {
+          "deviceId": "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+          "kind": "phone",
+          "name": "iPhone",
+          "online": false,
+          "lastSeen": 1791763100000
+        }
+      ]
+    },
+    {
+      "v": 1,
+      "kind": "hello_ok",
+      "protocol": 1,
+      "min_supported": 1,
+      "deviceId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+      "relayTs": 0,
+      "presence": []
+    }
+  ],
+  "invalid": [
+    {
+      "reason": "unknown key in presence entry",
+      "value": {
+        "v": 1,
+        "kind": "hello_ok",
+        "protocol": 1,
+        "min_supported": 1,
+        "deviceId": "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+        "relayTs": 0,
+        "presence": [
+          {
+            "deviceId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "kind": "agent",
+            "name": "MacMini",
+            "online": true,
+            "lastSeen": null,
+            "ip": "203.0.113.7"
+          }
+        ]
+      }
+    },
+    {
+      "reason": "missing min_supported",
+      "value": {
+        "v": 1,
+        "kind": "hello_ok",
+        "protocol": 1,
+        "deviceId": "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+        "relayTs": 0,
+        "presence": []
+      }
+    }
+  ]
+}

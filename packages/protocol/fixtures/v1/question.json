@@ -1,0 +1,83 @@
+{
+  "valid": [
+    {
+      "id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+      "sessionId": "5b7c1e2a-9d3f-4e8a-b6c4-2f1d0e9a8b7c",
+      "requestHash": "4196590ec41b976c1c2f586f398945a01bf0e4c11b18bab7809211a4c8025bcf",
+      "expiresAt": 1791764990000,
+      "questions": [
+        {
+          "text": "Which CANARY-7f3a database?",
+          "options": [
+            { "label": "Postgres", "description": "Railway Postgres" },
+            { "label": "PGlite" }
+          ],
+          "multi": false
+        },
+        {
+          "text": "Which checks?",
+          "options": [{ "label": "lint" }, { "label": "test" }],
+          "multi": true
+        }
+      ]
+    }
+  ],
+  "invalid": [
+    {
+      "reason": "no questions",
+      "value": {
+        "id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+        "sessionId": "5b7c1e2a-9d3f-4e8a-b6c4-2f1d0e9a8b7c",
+        "requestHash": "4196590ec41b976c1c2f586f398945a01bf0e4c11b18bab7809211a4c8025bcf",
+        "expiresAt": 0,
+        "questions": []
+      }
+    },
+    {
+      "reason": "unknown key in a question",
+      "value": {
+        "id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+        "sessionId": "5b7c1e2a-9d3f-4e8a-b6c4-2f1d0e9a8b7c",
+        "requestHash": "4196590ec41b976c1c2f586f398945a01bf0e4c11b18bab7809211a4c8025bcf",
+        "expiresAt": 0,
+        "questions": [{ "text": "Q?", "options": [], "multi": false, "header": "x" }]
+      }
+    },
+    {
+      "reason": "unknown key in an option",
+      "value": {
+        "id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+        "sessionId": "5b7c1e2a-9d3f-4e8a-b6c4-2f1d0e9a8b7c",
+        "requestHash": "4196590ec41b976c1c2f586f398945a01bf0e4c11b18bab7809211a4c8025bcf",
+        "expiresAt": 0,
+        "questions": [{ "text": "Q?", "options": [{ "label": "a", "value": "b" }], "multi": false }]
+      }
+    },
+    {
+      "reason": "nine options",
+      "value": {
+        "id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+        "sessionId": "5b7c1e2a-9d3f-4e8a-b6c4-2f1d0e9a8b7c",
+        "requestHash": "4196590ec41b976c1c2f586f398945a01bf0e4c11b18bab7809211a4c8025bcf",
+        "expiresAt": 0,
+        "questions": [
+          {
+            "text": "Q?",
+            "options": [
+              { "label": "1" },
+              { "label": "2" },
+              { "label": "3" },
+              { "label": "4" },
+              { "label": "5" },
+              { "label": "6" },
+              { "label": "7" },
+              { "label": "8" },
+              { "label": "9" }
+            ],
+            "multi": false
+          }
+        ]
+      }
+    }
+  ]
+}
