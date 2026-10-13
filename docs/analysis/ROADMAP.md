@@ -806,7 +806,7 @@ AC: all six journeys green in < 60 s on ubuntu; J1/J2/J5 green on macOS and Wind
 privacy gate green; meta-test red when the plant is active.
 
 #### M0-23 — Real Claude Code verification
-Size M · Deps M0-16, M0-21 · Status todo · Sources 04 W5, 04 W12, 04 A2–A3, 02 §7.2
+Size M · Deps M0-16, M0-21 · Status doing — kit done 331f246 (overhead p95 31.9 ms PASS); real-CLI runs pending owner (claude CLI, trusted temp repo) · Sources 04 W5, 04 W12, 04 A2–A3, 02 §7.2
 Scope: not CI. In a temp trusted repo with the real CLI: `claude --bg` with a prompt that
 forces a `Bash` permission; the hook held ≥ 11 min and decided from the phone; verify A2
 (timeout honoured beyond 600 s) and A3 (terminal shows nothing while held; Ctrl+C
