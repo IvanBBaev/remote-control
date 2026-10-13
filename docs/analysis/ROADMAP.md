@@ -62,7 +62,7 @@ named, so nobody re-derives it.
 | M0-27b | remotectl@0.0.1 placeholder on npm | §4 M0-27, §6 Q15 | `blocked-owner` | 0.5 |
 | M0-EXIT | M0 exit record (real approval from outside home) | §4 M0 exit record | `blocked-owner` | 1 |
 | M1-01 | AskUserQuestion end-to-end | §4 M1-01 | `done` | 2 |
-| M1-02 | "Always" from the phone (session scope) | §4 M1-02 | `open` | 1 |
+| M1-02 | "Always" from the phone (session scope) | §4 M1-02 | `done` | 1 |
 | M1-03 | "Reply in terminal", early handoff, remotectl pause | §4 M1-03 | `open` | 1 |
 | M1-04 | Session registry, launcher, follow-up, J9–J11 — deps M0-23 | §4 M1-04 | `blocked-owner` | 4 |
 | M1-05 | Live feed and thin session view, J8 — deps M1-04 | §4 M1-05 | `blocked-owner` | 4 |
@@ -869,7 +869,7 @@ for `AskUserQuestion`; J4 green; argv/policy gate extended to flag `updatedInput
 the single module.
 
 #### M1-02 — "Always" from the phone (session scope)
-Size S · Deps M1-01 · Status todo · Sources 04 W10, 01 Q3, 04 Q5, D24
+Size S · Deps M1-01 · Status done 4aef90a · Sources 04 W10, 01 Q3, 04 Q5, D24
 Scope: `decision.behavior = always` → `updatedPermissions` built from
 `permission_suggestions` with `destination: "session"` only; card shows "Always (this
 session)" only when `alwaysSupported`; UV assertion required; security note in the
