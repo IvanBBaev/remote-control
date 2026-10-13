@@ -652,7 +652,7 @@ AC: golden tests with 04 §2.2 JSON produce the documented outputs; a test asser
 `allow` never carries `updatedInput` here.
 
 #### M0-16 — Agent: relay client, pairing, E2E sessions, decision intake
-Size L · Deps M0-15, M0-11, M0-12, M0-06 · Status done be5c40b (QR carries the code-derived PSK, full 32-byte QR token deferred to M2; userId via `login --user-id` until the relay returns it) · Sources 04 W9, 02 W6, 02 W8, 03 W10, D4, D7
+Size L · Deps M0-15, M0-11, M0-12, M0-06 · Status done be5c40b (QR carries the code-derived PSK, full 32-byte QR token deferred to M2; userId from the relay on token rotation, `login --user-id` is an optional cross-check) · Sources 04 W9, 02 W6, 02 W8, 03 W10, D4, D7
 Scope: outbound WSS client (hello with package + protocol version, jittered backoff
 1 → 60 s, never exits on disconnect); `remotectl pair` (opens a slot, prints the 12-char
 code and the `rc1:` QR text, XXpsk0 responder, fingerprint shown, 3-failure abort,
