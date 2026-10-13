@@ -11,6 +11,7 @@ import type { PlatformActions } from './app-state.js';
 import { probeCapabilities } from './capabilities.js';
 import type { BrowserEnvironment, WebCryptoCheck } from './capabilities.js';
 import type { NotificationPermissionState } from './onboarding.js';
+import type { PhoneService } from './realtime/phone.js';
 import { AppRoutes } from './routes.js';
 
 /** The slice of the `Notification` global the app uses. */
@@ -39,6 +40,7 @@ export interface BootstrapOptions {
   readonly env: BrowserEnvironment;
   readonly notifications: NotificationApi | undefined;
   readonly relay: RelayApi;
+  readonly phone: PhoneService;
   readonly hint?: SessionHint;
   readonly checkWebCrypto?: WebCryptoCheck;
 }
@@ -47,16 +49,18 @@ export interface BootstrapOptions {
 export async function bootstrap(options: BootstrapOptions): Promise<Root> {
   const { relay } = options;
   const auth = createAuthStore({ api: relay, ...(options.hint && { hint: options.hint }) });
-  const [capabilities] = await Promise.all([
+  const [capabilities, , pairedCount] = await Promise.all([
     probeCapabilities(options.env, options.checkWebCrypto),
     // Known before the first render, so a signed-in user never sees the passkey step.
     auth.getState().checkSession(),
+    // A phone without a usable key store cannot pair either: onboarding stops at that step.
+    options.phone.pairedCount().catch(() => 0),
   ]);
   const initialState = {
     capabilities,
     installSkipped: false,
     notificationPermission: readNotificationPermission(options.notifications),
-    paired: false,
+    paired: pairedCount > 0,
   };
   const root = createRoot(options.container);
   root.render(
@@ -67,6 +71,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<Root> {
           platform={createPlatformActions(options.notifications)}
           auth={auth}
           relay={relay}
+          phone={options.phone}
         >
           <AppRoutes />
         </AppStateProvider>

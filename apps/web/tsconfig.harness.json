@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "node_modules/.cache/tsc/harness",
+    "tsBuildInfoFile": "node_modules/.cache/tsc/harness.tsbuildinfo",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    // Harness tests run the PWA's services in Node against the in-process relay and agent.
+    "types": ["node", "vite/client"]
+  },
+  "include": ["src"],
+  "exclude": ["src/sw.ts", "src/sw.test.ts"],
+  "references": [
+    { "path": "../../packages/crypto" },
+    { "path": "../../packages/protocol" },
+    { "path": "../../packages/test-harness" },
+    { "path": "../../packages/fake-claude-code" },
+    { "path": "../relay" }
+  ]
+}

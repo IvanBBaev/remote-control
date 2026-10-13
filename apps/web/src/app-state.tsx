@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useStore } from 'zustand';
 
@@ -6,6 +6,8 @@ import { isSignedIn } from './auth/auth-store.js';
 import type { AuthState, AuthStore } from './auth/auth-store.js';
 import type { RelayApi } from './auth/relay-api.js';
 import type { NotificationPermissionState, OnboardingState } from './onboarding.js';
+import type { PhoneService } from './realtime/phone.js';
+import type { RealtimeState } from './realtime/realtime-store.js';
 
 /** Side effects the onboarding screens trigger; injected so tests stay in jsdom. */
 export interface PlatformActions {
@@ -17,6 +19,7 @@ export interface AppStateValue {
   readonly state: OnboardingState;
   readonly auth: AuthStore;
   readonly relay: RelayApi;
+  readonly phone: PhoneService;
   readonly skipInstall: () => void;
   readonly requestNotifications: () => Promise<void>;
 }
@@ -29,23 +32,43 @@ export interface AppStateProviderProps {
   readonly platform: PlatformActions;
   readonly auth: AuthStore;
   readonly relay: RelayApi;
+  readonly phone: PhoneService;
   readonly children: ReactNode;
 }
 
+const signedInUser = (state: AuthState): string | null =>
+  state.status === 'signed-in' ? state.userId : null;
+const hasMachines = (state: RealtimeState): boolean => Object.keys(state.machines).length > 0;
+
 /**
  * Holds the onboarding state for the screens. `signedIn` comes from the auth store
- * (M0-19); M0-20 (pairing) moves `paired` into its store, until then it starts false.
+ * (M0-19); `paired` is the key store's count at start-up, then the realtime store's
+ * machines (M0-20). The phone is connected exactly while a user is signed in.
  */
 export function AppStateProvider({
   initialState,
   platform,
   auth,
   relay,
+  phone,
   children,
 }: AppStateProviderProps) {
   const [device, setState] = useState(initialState);
   const signedIn = useStore(auth, isSignedIn);
-  const state = useMemo(() => ({ ...device, signedIn }), [device, signedIn]);
+  const userId = useStore(auth, signedInUser);
+  const machines = useStore(phone.realtime, hasMachines);
+  useEffect(() => {
+    if (userId === null) {
+      phone.disconnect();
+      return;
+    }
+    // A failure (e.g. offline) is retried when the app wakes up; see `PhoneService.wake`.
+    phone.connect(userId).catch(() => undefined);
+  }, [phone, userId]);
+  const state = useMemo(
+    () => ({ ...device, signedIn, paired: device.paired || machines }),
+    [device, signedIn, machines],
+  );
   const skipInstall = useCallback(() => {
     setState((s) => ({ ...s, installSkipped: true }));
   }, []);
@@ -54,8 +77,8 @@ export function AppStateProvider({
     setState((s) => ({ ...s, notificationPermission }));
   }, [platform]);
   const value = useMemo(
-    () => ({ state, auth, relay, skipInstall, requestNotifications }),
-    [state, auth, relay, skipInstall, requestNotifications],
+    () => ({ state, auth, relay, phone, skipInstall, requestNotifications }),
+    [state, auth, relay, phone, skipInstall, requestNotifications],
   );
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
 }

@@ -1,0 +1,118 @@
+import type {
+  ApprovalRequest,
+  DecisionResultMessage,
+  Machine,
+  RelayErrorCode,
+  Session,
+} from '@remote-control/protocol';
+import { createStore } from 'zustand/vanilla';
+import type { StoreApi } from 'zustand/vanilla';
+
+import type { SocketStatus } from './relay-socket.js';
+
+/** The agent's heartbeat (D15); presence older than twice that is not trusted (Rec-5). */
+export const AGENT_HEARTBEAT_MS = 25_000;
+export const PRESENCE_STALE_MS = 2 * AGENT_HEARTBEAT_MS;
+
+export type SessionStatus = 'none' | 'handshaking' | 'open';
+
+/** One paired computer as the phone sees it. */
+export interface MachineView {
+  readonly deviceId: string;
+  /** The name from the pairing handshake, until a snapshot brings the current one. */
+  readonly name: string;
+  /** Relay presence: online flag and last-seen, both in relay time. */
+  readonly online: boolean;
+  readonly lastSeen: number | null;
+  readonly session: SessionStatus;
+  /** From the latest snapshot. */
+  readonly machine: Machine | null;
+  readonly sessions: readonly Session[];
+}
+
+export type RequestStatus = 'pending' | 'resolved' | 'expired';
+
+export interface RequestView {
+  readonly machineId: string;
+  readonly request: ApprovalRequest;
+  /** Local-clock deadline: arrival time plus the agent's `ttlMs` (D10). */
+  readonly deadline: number;
+  readonly status: RequestStatus;
+  readonly outcome?: 'allow' | 'deny' | 'terminal' | 'withdrawn';
+  /** The agent's answer to this phone's decision, once it arrived. */
+  readonly result?: DecisionResultMessage;
+  /** The relay refused the decision's envelope (e.g. `unverified`, `expired`). */
+  readonly relayError?: RelayErrorCode;
+}
+
+export interface RealtimeState {
+  readonly connection: SocketStatus;
+  /** Consecutive socket attempts that never reached `hello_ok`. */
+  readonly failures: number;
+  /** `true` while `/api/state` polling stands in for the socket (Rec-5). */
+  readonly polling: boolean;
+  /** Relay time minus local time, from the latest relay timestamp. */
+  readonly relayOffset: number;
+  /** Relay time at which the presence below was last known to be current. */
+  readonly confirmedAt: number | null;
+  readonly machines: Readonly<Record<string, MachineView>>;
+  readonly requests: Readonly<Record<string, RequestView>>;
+}
+
+export type RealtimeStore = StoreApi<RealtimeState>;
+
+export function createRealtimeStore(): RealtimeStore {
+  return createStore<RealtimeState>()(() => ({
+    connection: 'stopped',
+    failures: 0,
+    polling: false,
+    relayOffset: 0,
+    confirmedAt: null,
+    machines: {},
+    requests: {},
+  }));
+}
+
+/** Requests still waiting for a decision, oldest deadline first. */
+export function pendingRequests(state: RealtimeState): RequestView[] {
+  return Object.values(state.requests)
+    .filter((view) => view.status === 'pending')
+    .sort((a, b) => a.deadline - b.deadline);
+}
+
+function ago(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 1) return 'less than a minute';
+  if (minutes < 60) return minutes === 1 ? '1 minute' : `${String(minutes)} minutes`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return hours === 1 ? '1 hour' : `${String(hours)} hours`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? '1 day' : `${String(days)} days`;
+}
+
+export interface PresenceLabel {
+  readonly online: boolean;
+  readonly text: string;
+}
+
+/**
+ * What the machine list says about a computer (05 Rec-5). Everything is relay time:
+ * `localNow + relayOffset`, never the phone's own clock against the relay's stamps. An
+ * "online" that has not been confirmed for twice the agent heartbeat is shown as
+ * offline, last seen when it was confirmed.
+ */
+export function presenceLabel(
+  machine: Pick<MachineView, 'online' | 'lastSeen'>,
+  state: Pick<RealtimeState, 'relayOffset' | 'confirmedAt'>,
+  localNow: number,
+): PresenceLabel {
+  const relayNow = localNow + state.relayOffset;
+  const fresh = state.confirmedAt !== null && relayNow - state.confirmedAt <= PRESENCE_STALE_MS;
+  if (machine.online && fresh) return { online: true, text: 'Online' };
+  const lastSeen = machine.online ? state.confirmedAt : machine.lastSeen;
+  if (lastSeen === null) return { online: false, text: 'Machine offline' };
+  return {
+    online: false,
+    text: `Machine offline — last seen ${ago(Math.max(0, relayNow - lastSeen))} ago`,
+  };
+}

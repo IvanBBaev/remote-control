@@ -1,15 +1,35 @@
 import { Link, useParams } from 'react-router';
+import { useStore } from 'zustand';
 
+import { useAppState } from '../app-state.js';
+import { presenceLabel } from '../realtime/realtime-store.js';
 import { Notice, Screen } from './layout.js';
 
-/** Paired computers and their online state. */
+/** Paired computers and their online state, from relay timestamps (M0-20). */
 export function MachinesScreen() {
+  const { phone } = useAppState();
+  const realtime = useStore(phone.realtime);
+  const machines = Object.values(realtime.machines).sort((a, b) => a.name.localeCompare(b.name));
   return (
     <Screen title="Computers">
-      <Notice>No computers yet.</Notice>
+      {machines.length === 0 ? (
+        <Notice>No computers yet.</Notice>
+      ) : (
+        <ul className="machine-list">
+          {machines.map((machine) => {
+            const presence = presenceLabel(machine, realtime, phone.now());
+            return (
+              <li key={machine.deviceId} className={presence.online ? 'online' : 'offline'}>
+                <span className="machine-name">{machine.name}</span>
+                <span className="meta">{presence.text}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
       <div className="actions">
         <Link className="button primary" to="/onboarding/pair">
-          Add your first computer
+          {machines.length === 0 ? 'Add your first computer' : 'Add a computer'}
         </Link>
       </div>
     </Screen>

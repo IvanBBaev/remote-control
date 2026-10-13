@@ -11,6 +11,6 @@
     "types": ["vite/client"]
   },
   "include": ["src"],
-  "exclude": ["src/sw.ts", "src/sw.test.ts"],
+  "exclude": ["src/sw.ts", "src/sw.test.ts", "src/**/*.harness.test.ts"],
   "references": [{ "path": "../../packages/crypto" }, { "path": "../../packages/protocol" }]
 }

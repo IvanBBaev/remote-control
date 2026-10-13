@@ -39,7 +39,7 @@ describe('route table (onboarded user)', () => {
     ['/requests/r-7', 'Approval request'],
     ['/new', 'New session'],
     ['/login', 'Sign in'],
-    ['/onboarding/pair', 'Add your first computer'],
+    ['/onboarding/pair', 'Add a computer'],
     ['/no-such-page', 'Page not found'],
   ])('%s renders "%s"', async (path, heading) => {
     const app = await mount(path, onboarded);

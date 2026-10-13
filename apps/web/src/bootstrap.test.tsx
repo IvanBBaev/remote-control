@@ -5,6 +5,7 @@ import { OfflineError } from './auth/relay-api.js';
 import { fakeRelay } from './auth/test-credentials.js';
 import { bootstrap, createPlatformActions, readNotificationPermission } from './bootstrap.js';
 import type { BootstrapOptions, NotificationApi } from './bootstrap.js';
+import { createTestPhone } from './realtime/test-phone.js';
 import './test-render.js';
 
 function notificationApi(permission: NotificationPermission): NotificationApi {
@@ -38,7 +39,11 @@ describe('bootstrap', () => {
     window.history.replaceState(null, '', '/');
   });
 
-  async function boot(path: string, options: Pick<BootstrapOptions, 'relay' | 'hint'>) {
+  async function boot(
+    path: string,
+    options: Pick<BootstrapOptions, 'relay' | 'hint'> &
+      Partial<Pick<BootstrapOptions, 'phone' | 'env'>>,
+  ) {
     const container = document.createElement('div');
     document.body.append(container);
     window.history.replaceState(null, '', path);
@@ -49,6 +54,7 @@ describe('bootstrap', () => {
         env: { navigator: {}, PushManager: class {}, PublicKeyCredential: class {} },
         notifications: notificationApi('granted'),
         checkWebCrypto: () => Promise.resolve(true),
+        phone: createTestPhone(options.relay).phone,
         ...options,
       });
     });
@@ -85,6 +91,41 @@ describe('bootstrap', () => {
       hint: { read: () => 'user-1', write: () => undefined },
     });
     expect(window.location.pathname).toBe('/onboarding/install');
+    app.unmount();
+  });
+
+  const installed = {
+    navigator: { standalone: true },
+    PushManager: class {},
+    PublicKeyCredential: class {},
+  };
+
+  it('starts paired when the key store already holds a computer', async () => {
+    const test = createTestPhone(fakeRelay());
+    await test.keyStore.saveMachine({
+      deviceId: 'agent-1',
+      name: 'Studio Mac',
+      publicKey: new Uint8Array(32),
+      pairedAt: 0,
+    });
+    const app = await boot('/sessions', {
+      relay: fakeRelay({ session: () => Promise.resolve({ userId: 'user-1' }) }),
+      phone: test.phone,
+      env: installed,
+    });
+    expect(window.location.pathname).toBe('/sessions');
+    app.unmount();
+  });
+
+  it('treats an unreadable key store as no computers', async () => {
+    const test = createTestPhone(fakeRelay());
+    vi.spyOn(test.phone, 'pairedCount').mockRejectedValue(new Error('IndexedDB blocked'));
+    const app = await boot('/sessions', {
+      relay: fakeRelay({ session: () => Promise.resolve({ userId: 'user-1' }) }),
+      phone: test.phone,
+      env: installed,
+    });
+    expect(window.location.pathname).toBe('/onboarding/pair');
     app.unmount();
   });
 });

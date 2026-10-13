@@ -262,3 +262,42 @@ label.confirm input {
   width: var(--touch);
   flex: none;
 }
+
+.pair-step h2 {
+  font-size: 1.1rem;
+  margin: calc(var(--space) * 1.5) 0 0;
+}
+
+.fingerprint {
+  font-family: var(--font-mono);
+  font-size: 2rem;
+  letter-spacing: 0.08em;
+  text-align: center;
+  padding: var(--space);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.machine-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.machine-list li {
+  display: flex;
+  flex-direction: column;
+  padding: 12px var(--space);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.machine-list .machine-name {
+  font-weight: 600;
+}
+
+.machine-list li.online .meta {
+  color: var(--color-accent);
+}

@@ -60,6 +60,23 @@ describe('createRelayApi', () => {
     ]);
   });
 
+  it('wraps device, pairing and state calls in the relay request shapes', async () => {
+    const fetchImpl = respond(200, { ok: true });
+    const api = createRelayApi(fetchImpl);
+    await api.bindPhone({ name: 'iPhone' });
+    await api.enrollAgent('Mac');
+    await api.joinPairing('h'.repeat(43));
+    await api.state();
+    await api.state(1234);
+    expect(fetchImpl.mock.calls.map(([url, init]) => [init.method, url, init.body])).toEqual([
+      ['POST', '/api/devices/phone', '{"name":"iPhone"}'],
+      ['POST', '/api/agents', '{"name":"Mac"}'],
+      ['POST', '/api/pairings/join', JSON.stringify({ codeHash: 'h'.repeat(43) })],
+      ['GET', '/api/state', undefined],
+      ['GET', '/api/state?since=1234', undefined],
+    ]);
+  });
+
   it('reads the session, and a 401 as signed out', async () => {
     await expect(createRelayApi(respond(200, { userId: 'u' })).session()).resolves.toEqual({
       userId: 'u',

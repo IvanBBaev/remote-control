@@ -40,7 +40,31 @@ export interface VerifiedDecision {
   readonly verifiedUntil: number;
 }
 
-/** The relay's `/api/auth/*` and `/api/decisions/*` endpoints, as the PWA calls them. */
+/** One device in `GET /api/state` (D23): relay-side metadata only. */
+export interface DeviceState {
+  readonly deviceId: string;
+  readonly kind: 'phone' | 'agent';
+  readonly name: string;
+  readonly online: boolean;
+  /** Relay clock, Unix ms; `null` when the device never connected. */
+  readonly lastSeen: number | null;
+  readonly revoked: boolean;
+}
+
+export interface RelayState {
+  readonly relayTs: number;
+  /** Pass back as `since` to get only what changed after this response. */
+  readonly cursor: number;
+  readonly devices: readonly DeviceState[];
+}
+
+export interface EnrolledAgent {
+  readonly deviceId: string;
+  /** `rc-enroll:…`, shown once for `remotectl login` (02 Q2). */
+  readonly enrollToken: string;
+}
+
+/** The relay's HTTP endpoints, as the PWA calls them. */
 export interface RelayApi {
   registerOptions(input: {
     inviteCode: string;
@@ -54,6 +78,14 @@ export interface RelayApi {
   logout(): Promise<void>;
   decisionChallenge(decisionHash: string): Promise<PublicKeyCredentialRequestOptionsJSON>;
   decisionVerify(response: AuthenticationResponseJSON): Promise<VerifiedDecision>;
+  /** Binds this phone to the login session; `deviceId` re-binds a known phone. */
+  bindPhone(input: { name: string; deviceId?: string }): Promise<{ deviceId: string }>;
+  /** Issues the one-time enrolment token for a new computer. */
+  enrollAgent(name: string): Promise<EnrolledAgent>;
+  /** Joins the agent's pairing slot by the hash of the code (D6). */
+  joinPairing(codeHash: string): Promise<{ agentDeviceId: string }>;
+  /** Relay-side state (devices, presence, last seen), all or changed after `since`. */
+  state(since?: number): Promise<RelayState>;
 }
 
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
@@ -125,5 +157,10 @@ export function createRelayApi(
     },
     decisionChallenge: (decisionHash) => json('POST', '/api/decisions/challenge', { decisionHash }),
     decisionVerify: (response) => json('POST', '/api/decisions/verify', { response }),
+    bindPhone: (input) => json('POST', '/api/devices/phone', input),
+    enrollAgent: (name) => json('POST', '/api/agents', { name }),
+    joinPairing: (codeHash) => json('POST', '/api/pairings/join', { codeHash }),
+    state: (since) =>
+      json('GET', since === undefined ? '/api/state' : `/api/state?since=${String(since)}`),
   };
 }

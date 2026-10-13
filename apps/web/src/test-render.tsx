@@ -10,6 +10,8 @@ import type { AuthStore } from './auth/auth-store.js';
 import type { RelayApi } from './auth/relay-api.js';
 import { fakeRelay } from './auth/test-credentials.js';
 import type { OnboardingState } from './onboarding.js';
+import type { PhoneService } from './realtime/phone.js';
+import { createTestPhone } from './realtime/test-phone.js';
 import { AppRoutes } from './routes.js';
 
 declare global {
@@ -69,13 +71,15 @@ export interface RenderAppOptions {
   readonly relay?: RelayApi;
   /** Defaults to a store that is signed in exactly when `state.signedIn` is. */
   readonly auth?: AuthStore;
+  /** Defaults to a phone on fake sockets that never connects past `bindPhone`. */
+  readonly phone?: PhoneService;
 }
 
 /** Mounts the full route table at `path` with the given onboarding state. */
 export async function renderApp(
   path: string,
   state: OnboardingState,
-  { platform = noPlatform, relay = fakeRelay(), auth }: RenderAppOptions = {},
+  { platform = noPlatform, relay = fakeRelay(), auth, phone }: RenderAppOptions = {},
 ): Promise<RenderedApp> {
   const store =
     auth ??
@@ -88,7 +92,13 @@ export async function renderApp(
   let current = path;
   const rendered = await render(
     <MemoryRouter initialEntries={[path]}>
-      <AppStateProvider initialState={state} platform={platform} auth={store} relay={relay}>
+      <AppStateProvider
+        initialState={state}
+        platform={platform}
+        auth={store}
+        relay={relay}
+        phone={phone ?? createTestPhone(relay).phone}
+      >
         <AppRoutes />
         <LocationProbe
           onChange={(p) => {

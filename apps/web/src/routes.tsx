@@ -15,12 +15,8 @@ import {
   SessionScreen,
   SessionsScreen,
 } from './screens/main.js';
-import {
-  InstallScreen,
-  NotificationsScreen,
-  PairScreen,
-  UpdateBrowserScreen,
-} from './screens/onboarding.js';
+import { InstallScreen, NotificationsScreen, UpdateBrowserScreen } from './screens/onboarding.js';
+import { PairScreen } from './screens/pairing.js';
 
 /** Where the app lands once onboarding is complete. */
 export const HOME_ROUTE = '/sessions';

@@ -2,5 +2,9 @@
   // Solution file: the page (DOM) and the service worker (WebWorker) need different
   // `lib`s, which cannot coexist in one program.
   "files": [],
-  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.sw.json" }]
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.sw.json" },
+    { "path": "./tsconfig.harness.json" }
+  ]
 }

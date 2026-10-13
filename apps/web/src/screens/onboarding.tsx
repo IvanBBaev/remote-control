@@ -95,38 +95,3 @@ export function NotificationsScreen() {
     </Screen>
   );
 }
-
-/** Step 4: pair the first computer with the code `remotectl pair` prints. */
-export function PairScreen() {
-  const [code, setCode] = useState('');
-  return (
-    <Screen title="Add your first computer">
-      <p>On your computer, run:</p>
-      <pre className="command">npx remotectl pair</pre>
-      <p>Then enter the code it shows, or scan its QR code with your camera.</p>
-      <form
-        className="pair-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-        }}
-      >
-        <label htmlFor="pair-code">Pairing code</label>
-        <input
-          id="pair-code"
-          name="code"
-          autoComplete="one-time-code"
-          autoCapitalize="characters"
-          spellCheck={false}
-          maxLength={12}
-          value={code}
-          onChange={(event) => {
-            setCode(event.target.value);
-          }}
-        />
-        <button type="submit" className="primary" disabled>
-          Pair
-        </button>
-      </form>
-    </Screen>
-  );
-}

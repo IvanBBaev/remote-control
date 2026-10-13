@@ -11,6 +11,10 @@ const RELAY_METHODS = [
   'logout',
   'decisionChallenge',
   'decisionVerify',
+  'bindPhone',
+  'enrollAgent',
+  'joinPairing',
+  'state',
 ] as const satisfies readonly (keyof RelayApi)[];
 
 /** A relay whose every call fails loudly unless the test stubs it. */
