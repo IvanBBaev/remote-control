@@ -26,8 +26,8 @@ export function parseConfig(text: string, paths: PathPort): ParseConfigResult {
       }),
     };
   }
-  const errors = parsed.data.repositories.flatMap((root, index) =>
-    paths.isAbsolute(root) ? [] : [`repositories.${index}: must be an absolute path`],
+  const errors = parsed.data.repositories.flatMap(({ path }, index) =>
+    paths.isAbsolute(path) ? [] : [`repositories.${index}: must be an absolute path`],
   );
   return errors.length > 0 ? { ok: false, errors } : { ok: true, config: parsed.data };
 }

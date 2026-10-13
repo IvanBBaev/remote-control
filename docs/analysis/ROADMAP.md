@@ -356,7 +356,8 @@ user sitting at the desk; kept only as the opt-in above. Sources: `04 §2.2`, `0
   A long-lived `claude -p --input-format stream-json` child is the fallback only if
   background sessions leave research preview in a breaking way (owner 04 Q4 default: no).
   tmux/pty: never. Spawn argv is the literal `["--bg", "--name", name, prompt]` in one
-  module (D13); no `--permission-mode` from the phone in MVP.
+  module (D13); no `--permission-mode` from the phone in MVP (M2-09 adds a bounded one:
+  ADR 0006).
 - **Session identity and live view** (`04 §5.3`, `04 §5.5`): key = hook `session_id`;
   project = first `cwd` matched against the allow-list; `SessionRegistry` fed by hooks and
   enriched every 10 s from `claude agents --json --all` (`state`, `status`, `waitingFor`,
@@ -400,7 +401,8 @@ Loopback-only bind with exit on failure, per-install hook token, `realpath` allo
 check (symlink, `..`, trailing-space fixtures), CI static gate
 `scripts/check-argv-policy.mjs` (only the spawn module imports `child_process`; argv is a
 literal; forbidden tokens `--dangerously-skip-permissions`, `bypassPermissions`,
-`--allowedTools`, `--settings`), npm trusted publishing with provenance, `npm audit
+`--allowedTools`, `--settings`; `dontAsk` and the single bounded `--permission-mode`
+literal from ADR 0006 since M2-09), npm trusted publishing with provenance, `npm audit
 signatures` in CI, pnpm `minimumReleaseAge`, `files` whitelist, zero runtime
 dependencies in the published bundle, no `postinstall`, notify-only update check
 (`remotectl update` is run by the user). Sources: `02 §5.8`, `02 W11–W13`, `06 §5.3`.

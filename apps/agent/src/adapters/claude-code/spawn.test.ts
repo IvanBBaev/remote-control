@@ -15,6 +15,7 @@ import {
   resumeSessionArgv,
   spawnBackgroundSession,
   startSessionArgv,
+  startSessionInModeArgv,
   versionArgv,
 } from './spawn.js';
 
@@ -41,6 +42,31 @@ describe('startSessionArgv', () => {
       expect(() => startSessionArgv('name', prompt)).toThrow(SpawnArgumentError);
     }
     expect(startSessionArgv('name', 'x'.repeat(32_768))).toHaveLength(4);
+  });
+});
+
+describe('startSessionInModeArgv (M2-09)', () => {
+  it('builds the literal start argv with the mode right after --bg', () => {
+    expect(startSessionInModeArgv('acceptEdits', 'rc-app-1', 'Fix it')).toEqual([
+      '--bg',
+      '--permission-mode',
+      'acceptEdits',
+      '--name',
+      'rc-app-1',
+      'Fix it',
+    ]);
+    expect(startSessionInModeArgv('plan', 'rc-app-1', 'Plan it')[2]).toBe('plan');
+  });
+
+  it('refuses every mode but plan and acceptEdits', () => {
+    for (const mode of ['default', 'bypassPermissions', 'dontAsk', 'auto', '', '--bg']) {
+      expect(() => startSessionInModeArgv(mode, 'name', 'ok')).toThrow(SpawnArgumentError);
+    }
+  });
+
+  it('checks the name and the prompt like the plain start argv', () => {
+    expect(() => startSessionInModeArgv('plan', 'a b', 'ok')).toThrow(SpawnArgumentError);
+    expect(() => startSessionInModeArgv('plan', 'name', '-p')).toThrow(SpawnArgumentError);
   });
 });
 
@@ -77,6 +103,19 @@ describe('spawnBackgroundSession', () => {
         env: process.env,
       }),
     ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('refuses an invalid mode synchronously, before starting anything', () => {
+    expect(() =>
+      spawnBackgroundSession({
+        command: process.execPath,
+        repository: repository(),
+        name: 'session',
+        prompt: 'hello',
+        permissionMode: 'bypassPermissions' as 'plan',
+        env: process.env,
+      }),
+    ).toThrow(SpawnArgumentError);
   });
 
   it('refuses invalid arguments synchronously, before starting anything', () => {
@@ -155,6 +194,18 @@ describe.skipIf(process.platform === 'win32')('against fake-claude', () => {
       env,
     });
     expect(resumed).toBe(0);
+  });
+
+  it('starts a session in a picked permission mode', async () => {
+    const code = await spawnBackgroundSession({
+      command,
+      repository: repository(),
+      name: 'rc-repo-2',
+      prompt: 'Plan the tests',
+      permissionMode: 'plan',
+      env,
+    });
+    expect(code).toBe(0);
   });
 
   it('reports a failed resume through the exit code', async () => {

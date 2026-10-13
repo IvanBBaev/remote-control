@@ -1,4 +1,4 @@
-import { AlwaysDestination } from '@remote-control/protocol';
+import { AlwaysDestination, PermissionMode } from '@remote-control/protocol';
 import { z } from 'zod';
 
 /** Default hold for a blocking hook (D10, Q3): 30 minutes, then handoff to the terminal. */
@@ -35,6 +35,23 @@ const RepositoryRoot = z
   .refine((value) => value.trim() === value, 'must not start or end with whitespace')
   .refine((value) => !value.includes('\0'), 'must not contain a NUL character');
 
+/** The bound a repository gets when the config names only its root (M2-09). */
+export const DEFAULT_MAX_PERMISSION_MODE: PermissionMode = 'default';
+
+/**
+ * An allow-listed repository: a bare root, or `{ path, maxPermissionMode }` to let the
+ * phone start sessions there in a mode up to that bound (M2-09, 04 §5.4). Both forms
+ * read as the object form.
+ */
+const RepositoryEntry = z.preprocess(
+  (entry) => (typeof entry === 'string' ? { path: entry } : entry),
+  z.strictObject({
+    path: RepositoryRoot,
+    maxPermissionMode: PermissionMode.default(DEFAULT_MAX_PERMISSION_MODE),
+  }),
+);
+export type RepositoryEntry = z.infer<typeof RepositoryEntry>;
+
 /**
  * The agent config file (`config.json` in the env-paths config dir). It is local only:
  * no protocol message can change it (02 §4.1, Q17), and the repository allow-list is
@@ -42,8 +59,17 @@ const RepositoryRoot = z
  */
 export const AgentConfig = z
   .object({
-    /** Repository allow-list: absolute roots; checked with `realpath` at use time (D13). */
-    repositories: z.array(RepositoryRoot).default([]),
+    /**
+     * Repository allow-list: absolute roots, each with its permission-mode bound; checked
+     * with `realpath` at use time (D13).
+     */
+    repositories: z
+      .array(RepositoryEntry)
+      .refine(
+        (list) => new Set(list.map((entry) => entry.path)).size === list.length,
+        'must not repeat a repository',
+      )
+      .default([]),
     hooks: z
       .object({
         holdSeconds: z

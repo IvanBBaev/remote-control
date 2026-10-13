@@ -4,6 +4,12 @@
       "machineId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
       "repositoryId": "repo_remote-control",
       "prompt": "Fix the CANARY-7f3a test"
+    },
+    {
+      "machineId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+      "repositoryId": "repo_remote-control",
+      "prompt": "Plan the CANARY-7f3a refactor",
+      "permissionMode": "plan"
     }
   ],
   "invalid": [
@@ -22,6 +28,15 @@
         "machineId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
         "repositoryId": "repo_remote-control",
         "prompt": ""
+      }
+    },
+    {
+      "reason": "a permission mode off the ladder",
+      "value": {
+        "machineId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+        "repositoryId": "repo_remote-control",
+        "prompt": "hi",
+        "permissionMode": "bypassPermissions"
       }
     }
   ]

@@ -77,6 +77,7 @@ describe('argv policy gate', () => {
   it.each([
     '--dangerously-skip-permissions',
     'bypassPermissions',
+    'dontAsk',
     '--allowedTools',
     '--settings',
     '--permission-mode',
@@ -86,8 +87,65 @@ describe('argv policy gate', () => {
   });
 
   it('fails on a forbidden token added to the start argv', async () => {
-    await plant(SPAWN, spawnSource.replace("['--bg',", "['--bg', '--permission-mode',"));
-    await expectViolation(/forbidden token --permission-mode/);
+    await plant(
+      SPAWN,
+      spawnSource.replace("['--bg',", "['--bg', '--dangerously-skip-permissions',"),
+    );
+    await expectViolation(/forbidden token --dangerously-skip-permissions/);
+  });
+
+  describe('--permission-mode (M2-09)', () => {
+    const FLAG_LINE = "    '--permission-mode',\n";
+
+    it('allows the one literal in the mode builder', () => {
+      expect(spawnSource.split('--permission-mode')).toHaveLength(2);
+      expect(spawnSource).toContain(FLAG_LINE);
+    });
+
+    it('fails on a second literal in another builder', async () => {
+      await plant(
+        SPAWN,
+        spawnSource.replace("['--bg', '--name',", "['--bg', '--permission-mode', '--name',"),
+      );
+      await expectViolation(/spawn\.ts:\d+: --permission-mode more than once/);
+    });
+
+    it('fails on the flag outside an ...Argv builder', async () => {
+      await plant(
+        SPAWN,
+        `${spawnSource.replace(FLAG_LINE, '')}export const FLAG = '--permission-mode';\n`,
+      );
+      await expectViolation(/--permission-mode outside an \.\.\.Argv builder's array/);
+    });
+
+    it('fails on the flag in a comment of the spawn module', async () => {
+      await plant(SPAWN, `// --permission-mode\n${spawnSource}`);
+      await expectViolation(/spawn\.ts:1: forbidden token --permission-mode/);
+    });
+
+    it('fails on a second mention on the flag line', async () => {
+      await plant(
+        SPAWN,
+        spawnSource.replace(FLAG_LINE, "    '--permission-mode', // --permission-mode\n"),
+      );
+      await expectViolation(/forbidden token --permission-mode/);
+    });
+
+    it('fails on the flag in any other module', async () => {
+      await plant('core/planted.ts', "export const flag = ['--bg', '--permission-mode'];\n");
+      await expectViolation(/core\/planted\.ts:1: forbidden token --permission-mode/);
+    });
+
+    it('fails on an argv chosen between a builder and something else', async () => {
+      await plant(
+        SPAWN,
+        spawnSource.replace(
+          ': startSessionInModeArgv(mode, options.name, options.prompt);',
+          ": ['--bg', options.prompt];",
+        ),
+      );
+      await expectViolation(/`argv` must be the result of an \.\.\.Argv builder/);
+    });
   });
 
   describe('updatedInput (D11, M1-01)', () => {
@@ -195,11 +253,11 @@ describe('argv policy gate', () => {
     await plant(
       SPAWN,
       spawnSource.replace(
-        'const argv = startSessionArgv(options.name, options.prompt);',
-        'const argv = [options.name, options.prompt];',
+        'const argv = resumeSessionArgv(options.sessionId, options.prompt);',
+        'const argv = [options.sessionId, options.prompt];',
       ),
     );
-    await expectViolation(/spawn\.ts:\d+: /);
+    await expectViolation(/spawn\.ts:\d+: `argv` must be the result/);
   });
 
   it('fails when the shell is enabled', async () => {

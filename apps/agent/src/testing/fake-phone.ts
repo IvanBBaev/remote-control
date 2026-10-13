@@ -25,6 +25,7 @@ import {
   type DecisionKind,
   type Envelope,
   type Frame,
+  type StartSession,
 } from '@remote-control/protocol';
 
 import { normalizePairingCode, pairingPsk, slotCodeHash } from '../core/pairing-code.js';
@@ -71,11 +72,7 @@ export interface FakePhone {
    * Sends a `start` (M1-04) for `repositoryId` on `machineId`; `path` is the repository's
    * configured root the request hash covers. Returns the command envelope id.
    */
-  start(
-    start: { machineId: string; repositoryId: string; prompt: string },
-    path: string,
-    overrides?: DecideOverrides,
-  ): Promise<string>;
+  start(start: StartSession, path: string, overrides?: DecideOverrides): Promise<string>;
   /** Sends an `instruct` (M1-04) to `sessionId`; returns the command envelope id. */
   instruct(sessionId: string, text: string, overrides?: DecideOverrides): Promise<string>;
   /** Joins a pairing slot with the code and runs the XXpsk0 initiator (D6). */
@@ -268,7 +265,11 @@ export async function createFakePhone(
       return command(kind, request.id, request.requestHash, null, {}, overrides);
     },
     async start(start, path, overrides = {}) {
-      const hash = await requestHash({ prompt: start.prompt, cwd: path });
+      const hash = await requestHash({
+        prompt: start.prompt,
+        cwd: path,
+        permissionMode: start.permissionMode,
+      });
       return command(
         'start',
         uuidV7(clock, random),

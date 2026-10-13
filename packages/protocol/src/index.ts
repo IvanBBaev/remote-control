@@ -31,6 +31,12 @@ export { encodeFrame } from './encode-frame.js';
 
 export { Capabilities } from './domain/capabilities.js';
 export { Machine } from './domain/machine.js';
+export {
+  PERMISSION_MODES,
+  PermissionMode,
+  permissionModesUpTo,
+  permissionModeWithin,
+} from './domain/permission-mode.js';
 export { Repository } from './domain/repository.js';
 export { ChangedFile, Session } from './domain/session.js';
 export { AlwaysDestination } from './domain/always-destination.js';

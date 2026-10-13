@@ -8,7 +8,10 @@
 //   2. a process module imports anything but `spawn`, builds argv other than as a literal
 //      array returned by an `...Argv` function, or enables a shell; a service-manager
 //      module must also name every executable as one of its allowed literal paths;
-//   3. any agent source contains a forbidden permission token;
+//   3. any agent source contains a forbidden permission token. `--permission-mode` (M2-09)
+//      is the one exception, and only in `adapters/claude-code/spawn.ts`: there it must
+//      appear exactly once, as a string literal inside the array an `...Argv` builder
+//      returns, and nowhere else in that file (not even in a comment);
 //   4. `updatedInput` (D11, M1-01) appears outside `adapters/claude-code/decide.ts` — in
 //      code, comments or strings, test files included except that module's own test and
 //      this gate's test — or, inside it, other than as one object property named once,
@@ -42,12 +45,15 @@ const UPDATED_INPUT = 'updatedInput';
 const UPDATED_INPUT_TESTS = new Set(['adapters/claude-code/decide.test.ts', 'argv-policy.test.ts']);
 const ASK_USER_QUESTION = new Set(['ASK_USER_QUESTION', "'AskUserQuestion'"]);
 const CHILD_PROCESS = new Set(['child_process', 'node:child_process']);
+const SPAWN_MODULE = 'adapters/claude-code/spawn.ts';
+const PERMISSION_MODE_FLAG = '--permission-mode';
 const FORBIDDEN_TOKENS = [
   '--dangerously-skip-permissions',
   'bypassPermissions',
+  'dontAsk',
   '--allowedTools',
   '--settings',
-  '--permission-mode',
+  PERMISSION_MODE_FLAG,
 ];
 
 function listSources(dir) {
@@ -94,6 +100,48 @@ function moduleSpecifiers(source) {
 
 function line(source, node) {
   return source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
+}
+
+function isArgvCall(node) {
+  return (
+    ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text.endsWith('Argv')
+  );
+}
+
+/**
+ * Rule 3's exception in the spawn module: the line of the one `--permission-mode` literal
+ * that is an element of the array an `...Argv` builder returns, or `undefined` (with the
+ * misplaced or repeated literals reported).
+ */
+function permissionModeFlagLine(source, report) {
+  const literals = [];
+  const visit = (node) => {
+    if (ts.isStringLiteralLike(node) && node.text === PERMISSION_MODE_FLAG) literals.push(node);
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  if (literals.length === 0) return undefined;
+  if (literals.length > 1) {
+    for (const literal of literals.slice(1)) {
+      report(line(source, literal), `${PERMISSION_MODE_FLAG} more than once in ${SPAWN_MODULE}`);
+    }
+  }
+  const [first] = literals;
+  const array = first.parent;
+  const returned = array && ts.isArrayLiteralExpression(array) ? array.parent : undefined;
+  const builder = returned && ts.isReturnStatement(returned) ? returned.parent?.parent : undefined;
+  if (
+    !ts.isStringLiteral(first) ||
+    !builder ||
+    !ts.isFunctionDeclaration(builder) ||
+    !builder.name?.text.endsWith('Argv')
+  ) {
+    report(line(source, first), `${PERMISSION_MODE_FLAG} outside an ...Argv builder's array`);
+    return undefined;
+  }
+  return line(source, first);
 }
 
 function checkSpawnModule(source, report, rule) {
@@ -165,11 +213,13 @@ function checkSpawnModule(source, report, rule) {
     }
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === 'argv') {
       const init = node.initializer;
+      // One builder, or a choice between two (`cond ? aArgv(...) : bArgv(...)`).
       const ok =
-        init &&
-        ts.isCallExpression(init) &&
-        ts.isIdentifier(init.expression) &&
-        init.expression.text.endsWith('Argv');
+        init !== undefined &&
+        (isArgvCall(init) ||
+          (ts.isConditionalExpression(init) &&
+            isArgvCall(init.whenTrue) &&
+            isArgvCall(init.whenFalse)));
       if (!ok) report(line(source, node), '`argv` must be the result of an ...Argv builder');
     }
     ts.forEachChild(node, visit);
@@ -261,9 +311,14 @@ export function checkArgvPolicy(sourceDir) {
     if (processRule !== undefined) checkSpawnModule(source, report, processRule);
     if (rel === DECIDE_MODULE) checkDecideModule(source, report);
     else checkUpdatedInputText(text, report);
+    const flagLine = rel === SPAWN_MODULE ? permissionModeFlagLine(source, report) : undefined;
     text.split('\n').forEach((content, index) => {
       for (const token of FORBIDDEN_TOKENS) {
-        if (content.includes(token)) report(index + 1, `forbidden token ${token}`);
+        const allowed =
+          token === PERMISSION_MODE_FLAG &&
+          index + 1 === flagLine &&
+          content.split(token).length === 2;
+        if (content.includes(token) && !allowed) report(index + 1, `forbidden token ${token}`);
       }
     });
   }

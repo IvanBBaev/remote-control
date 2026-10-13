@@ -10,6 +10,7 @@ import {
   encodeAnswerPayload,
   MAX_MESSAGE_BYTES,
   messageBytes,
+  requestHash,
   type AlwaysDestination,
   type ApprovalRequest,
   type Envelope,
@@ -928,7 +929,12 @@ describe('relay link (fake relay, fake phones)', () => {
     });
   });
   describe('start and instruct (M1-04)', () => {
-    const REPO = { id: 'f'.repeat(32), name: 'app', path: '/work/app' };
+    const REPO = {
+      id: 'f'.repeat(32),
+      name: 'app',
+      path: '/work/app',
+      maxPermissionMode: 'default' as const,
+    };
     const SESSION = '5b7c1e2a-9d3f-4e8a-b6c4-2f1d0e9a8b7c';
     const LIVE: SessionView = {
       id: SESSION,
@@ -992,7 +998,7 @@ describe('relay link (fake relay, fake phones)', () => {
       const start = { machineId: t.agentId, repositoryId: REPO.id, prompt: 'fix the build' };
       await t.phone.start(start, REPO.path);
       await waitFor(() => t.launcher.start.mock.calls.length === 1);
-      expect(t.launcher.start).toHaveBeenCalledWith(REPO.id, 'fix the build');
+      expect(t.launcher.start).toHaveBeenCalledWith(REPO.id, 'fix the build', undefined);
       // The phone's queue is free while `claude` runs: a request still reaches it.
       const registration = t.store.register(permission());
       await t.requestOn(t.phone, registration.request.id);
@@ -1001,6 +1007,28 @@ describe('relay link (fake relay, fake phones)', () => {
       expect(await t.resultOn(t.phone)).toMatchObject({ result: 'accepted', sessionId: SESSION });
       expect(t.logs.map((entry) => entry.event)).toContain('command_accepted');
       expect(JSON.stringify(t.logs)).not.toContain('fix the build');
+    });
+
+    it('passes a hash-bound permission mode to the launcher (M2-09)', async () => {
+      const t = await launching();
+      const start = {
+        machineId: t.agentId,
+        repositoryId: REPO.id,
+        prompt: 'go',
+        permissionMode: 'plan' as const,
+      };
+      await t.phone.start(start, REPO.path);
+      await waitFor(() => t.launcher.start.mock.calls.length === 1);
+      expect(t.launcher.start).toHaveBeenCalledWith(REPO.id, 'go', 'plan');
+      t.finish({ ok: true, sessionId: SESSION });
+      expect(await t.resultOn(t.phone)).toMatchObject({ result: 'accepted' });
+      // A mode the signed hash does not cover is refused before the launcher.
+      const unbound = await requestHash({ prompt: 'go', cwd: REPO.path });
+      await t.phone.start({ ...start, permissionMode: 'acceptEdits' }, REPO.path, {
+        decision: { request_hash: unbound },
+      });
+      expect(await t.resultOn(t.phone, 2)).toMatchObject({ reason: 'hash_mismatch' });
+      expect(t.launcher.start).toHaveBeenCalledTimes(1);
     });
 
     it('replies accepted without an id, and passes a launch refusal on', async () => {

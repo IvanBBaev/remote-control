@@ -87,8 +87,15 @@ export function createClaudeCli(options: ClaudeCliOptions): ClaudeCli {
         return undefined;
       }
     },
-    start: (repository, name, prompt) =>
-      spawnBackgroundSession({ command, repository, name, prompt, env }),
+    start: (repository, name, prompt, permissionMode) =>
+      spawnBackgroundSession({
+        command,
+        repository,
+        name,
+        prompt,
+        env,
+        ...(permissionMode === undefined ? {} : { permissionMode }),
+      }),
     resume: (repository, sessionId, prompt) =>
       resumeBackgroundSession({ command, repository, sessionId, prompt, env }),
   };

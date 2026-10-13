@@ -1,8 +1,15 @@
-import { toHex, type Repository, type Session } from '@remote-control/protocol';
+import {
+  permissionModeWithin,
+  toHex,
+  type PermissionMode,
+  type Repository,
+  type Session,
+} from '@remote-control/protocol';
 
 import type { ClaudeCli } from '../ports/claude-cli.js';
 import type { PathPort } from '../ports/path-port.js';
 import type { Random } from '../ports/random.js';
+import type { RepositoryEntry } from './agent-config.js';
 import { resolveRepository } from './resolve-repository.js';
 import type { SessionRegistry } from './session-registry.js';
 
@@ -13,7 +20,9 @@ const SESSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const MAX_PROJECT_IN_NAME = 40;
 
 /** A repository as the phone sees it; `machineId` is the hub's to add. */
-export type RepositoryView = Omit<Repository, 'machineId'>;
+export type RepositoryView = Omit<Repository, 'machineId'> & {
+  readonly maxPermissionMode: PermissionMode;
+};
 
 /** A session as the phone sees it, before the hub adds the machine and agent. */
 export type SessionView = Pick<Session, 'id' | 'repositoryId' | 'state' | 'statusText'> & {
@@ -33,7 +42,12 @@ export interface SessionLauncher {
   sessions(): Promise<readonly SessionView[]>;
   /** Whether `sessionId` takes a follow-up now (background, known UUID, allowed folder). */
   canFollowUp(sessionId: string): Promise<boolean>;
-  start(repositoryId: string, prompt: string): Promise<LaunchResult>;
+  /** `permissionMode` left out: the CLI's default mode. */
+  start(
+    repositoryId: string,
+    prompt: string,
+    permissionMode?: PermissionMode,
+  ): Promise<LaunchResult>;
   instruct(sessionId: string, text: string): Promise<LaunchResult>;
 }
 
@@ -41,8 +55,8 @@ export interface SessionLauncher {
 export type LauncherLog = (event: string, fields: Readonly<Record<string, unknown>>) => void;
 
 export interface LauncherOptions {
-  /** `repositories` from the config: the allow-list (02 §4.1, D13). */
-  readonly roots: readonly string[];
+  /** `repositories` from the config: the allow-list and its mode bounds (02 §4.1, D13). */
+  readonly repositories: readonly RepositoryEntry[];
   readonly paths: PathPort;
   readonly cli: ClaudeCli;
   readonly registry: SessionRegistry;
@@ -98,14 +112,16 @@ const STATUS_TEXT: Readonly<Record<Session['state'], string>> = {
 export function createLauncher(options: LauncherOptions): SessionLauncher {
   const { cli, registry, paths } = options;
   const log: LauncherLog = options.log ?? (() => undefined);
+  const roots = options.repositories.map((entry) => entry.path);
   let catalog: Promise<readonly RepositoryView[]> | undefined;
 
   function repositories(): Promise<readonly RepositoryView[]> {
     catalog ??= Promise.all(
-      options.roots.map(async (root) => ({
-        id: await repositoryId(root),
-        name: folderName(root).slice(0, 128),
-        path: root,
+      options.repositories.map(async ({ path, maxPermissionMode }) => ({
+        id: await repositoryId(path),
+        name: folderName(path).slice(0, 128),
+        path,
+        maxPermissionMode,
       })),
     );
     return catalog;
@@ -127,7 +143,7 @@ export function createLauncher(options: LauncherOptions): SessionLauncher {
       return undefined;
     }
     if (!SESSION_UUID.test(sessionId)) return undefined;
-    const resolved = await resolveRepository(options.roots, session.cwd, paths);
+    const resolved = await resolveRepository(roots, session.cwd, paths);
     return resolved.allowed ? resolved : undefined;
   }
 
@@ -150,17 +166,23 @@ export function createLauncher(options: LauncherOptions): SessionLauncher {
     async canFollowUp(sessionId) {
       return (await followUpTarget(sessionId)) !== undefined;
     },
-    async start(id, prompt) {
+    async start(id, prompt, permissionMode) {
       const repository = (await repositories()).find((candidate) => candidate.id === id);
       const resolved =
         repository === undefined
           ? undefined
-          : await resolveRepository(options.roots, repository.path, paths);
+          : await resolveRepository(roots, repository.path, paths);
       if (repository === undefined || resolved === undefined || !resolved.allowed) {
         log('launch_refused', {
           repository_id: id,
           reason: resolved?.allowed === false ? resolved.reason : 'unknown_repository',
         });
+        return { ok: false, reason: 'not_allowed' };
+      }
+      // The bound is the agent's, never the phone's (M2-09): checked before any spawn. No
+      // mode is the default mode, which a `plan`-bound folder refuses too.
+      if (!permissionModeWithin(permissionMode ?? 'default', repository.maxPermissionMode)) {
+        log('launch_refused', { repository_id: id, reason: 'permission_mode_above_bound' });
         return { ok: false, reason: 'not_allowed' };
       }
       // A folder no hook ever came from may be untrusted or lack the hooks (04 §2.8).
@@ -170,7 +192,7 @@ export function createLauncher(options: LauncherOptions): SessionLauncher {
       const name = sessionName(repository.name, options.random);
       let code: number;
       try {
-        code = await cli.start(resolved, name, prompt);
+        code = await cli.start(resolved, name, prompt, permissionMode);
       } catch (error) {
         log('launch_failed', {
           repository_id: id,

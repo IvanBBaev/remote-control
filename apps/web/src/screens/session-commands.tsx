@@ -1,4 +1,5 @@
-import type { Repository, Session } from '@remote-control/protocol';
+import { permissionModesUpTo } from '@remote-control/protocol';
+import type { PermissionMode, Repository, Session } from '@remote-control/protocol';
 import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link } from 'react-router';
@@ -13,6 +14,13 @@ import type { Failure } from './request-status.js';
 
 /** The longest prompt the protocol carries (`StartSession.prompt`, `Instruction.text`). */
 export const MAX_PROMPT_LENGTH = 16_384;
+
+/** What each permission mode lets the started session do (M2-09, 04 §5.4). */
+export const PERMISSION_MODE_LABELS: Readonly<Record<PermissionMode, string>> = {
+  plan: 'Plan only (no edits)',
+  default: 'Ask before each edit',
+  acceptEdits: 'Accept file edits',
+};
 
 /** A computer the phone can send to right now: online with an open session. */
 const reachable = (machine: MachineView | undefined): boolean =>
@@ -124,6 +132,7 @@ export function NewSessionScreen() {
   const [machineId, setMachineId] = useState<string>();
   const [repositoryId, setRepositoryId] = useState<string>();
   const [prompt, setPrompt] = useState('');
+  const [picked, setPicked] = useState<PermissionMode>('default');
   const command = useCommand();
 
   if (sorted.length === 0) {
@@ -146,6 +155,16 @@ export function NewSessionScreen() {
   const repositories = machine.repositories;
   const repository =
     repositories.find((candidate) => candidate.id === repositoryId) ?? repositories[0];
+  // The computer's config bounds the mode per folder; an agent before M2-09 sends no
+  // bound and gets no mode. The pick falls back to the default, or to the only mode a
+  // `plan`-bound folder allows.
+  const bound = repository?.maxPermissionMode;
+  const modes = bound === undefined ? [] : permissionModesUpTo(bound);
+  const permissionMode = modes.includes(picked)
+    ? picked
+    : modes.includes('default') || modes.length === 0
+      ? 'default'
+      : modes[modes.length - 1]!;
   const online = reachable(machine);
   const text = prompt.trim();
   const canStart =
@@ -154,7 +173,7 @@ export function NewSessionScreen() {
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!canStart) return;
-    void command.run(() => phone.start(machine.deviceId, repository, text));
+    void command.run(() => phone.start(machine.deviceId, repository, text, permissionMode));
   };
 
   return (
@@ -168,6 +187,7 @@ export function NewSessionScreen() {
           onChange={(event) => {
             setMachineId(event.target.value);
             setRepositoryId(undefined);
+            setPicked('default');
           }}
         >
           {sorted.map((candidate) => (
@@ -191,12 +211,32 @@ export function NewSessionScreen() {
                   key={candidate.id}
                   repository={candidate}
                   checked={candidate.id === repository?.id}
-                  onPick={() => setRepositoryId(candidate.id)}
+                  onPick={() => {
+                    setRepositoryId(candidate.id);
+                    setPicked('default');
+                  }}
                 />
               ))}
             </ul>
           )}
         </fieldset>
+        {modes.length > 0 && (
+          <>
+            <label htmlFor="new-mode">Mode</label>
+            <select
+              id="new-mode"
+              name="permissionMode"
+              value={permissionMode}
+              onChange={(event) => setPicked(event.target.value as PermissionMode)}
+            >
+              {modes.map((mode) => (
+                <option key={mode} value={mode}>
+                  {PERMISSION_MODE_LABELS[mode]}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
         <label htmlFor="new-prompt">Prompt</label>
         <textarea
           id="new-prompt"

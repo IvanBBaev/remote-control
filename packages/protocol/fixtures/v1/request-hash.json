@@ -17,6 +17,16 @@
       "sha256": "2cf1755acff9e7bc66643dd7802b5a4599f96829b384cf68fbe40ec9021d5b98"
     },
     {
+      "name": "prompt in a directory with a permission mode",
+      "input": {
+        "prompt": "Fix the CANARY-7f3a test",
+        "cwd": "/home/dev/project",
+        "permissionMode": "acceptEdits"
+      },
+      "canonical": "{\"cwd\":\"/home/dev/project\",\"permission_mode\":\"acceptEdits\",\"prompt\":\"Fix the CANARY-7f3a test\"}",
+      "sha256": "55d19b3a434295e3c0b67a3e4fe318876625dae1c9f1dacb5288005af33e2dea"
+    },
+    {
       "name": "follow-up to a session",
       "input": {
         "prompt": "Now run the CANARY-7f3a tests",

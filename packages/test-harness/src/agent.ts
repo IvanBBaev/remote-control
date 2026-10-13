@@ -4,6 +4,7 @@ import { delimiter, join } from 'node:path';
 
 import { FAKE_CLAUDE_BIN, trustWorkspace, writeClaudeShim } from '@remote-control/fake-claude-code';
 import { createLogger, createMemoryDestination } from '@remote-control/log';
+import type { PermissionMode } from '@remote-control/protocol';
 import { createContainer, runCli, type Container } from 'remotectl';
 import { DEFAULT_HOOK_TIMEOUT_SECONDS, runHook } from 'remotectl/hook';
 
@@ -20,12 +21,17 @@ export interface StartAgentOptions {
   readonly confirm?: boolean;
   /**
    * Folders created under `repos/`, trusted for `claude` and put on the allow-list in
-   * that order (M1-04).
+   * that order (M1-04); an object entry also sets the folder's permission-mode bound
+   * (M2-09).
    */
-  readonly repositories?: readonly string[];
+  readonly repositories?: readonly HarnessRepository[];
   /** Extra environment for the agent and every `claude` it runs (`FAKE_CLAUDE_SCENARIO`). */
   readonly env?: Readonly<Record<string, string>>;
 }
+
+/** A harness folder: its name, or its name and permission-mode bound (M2-09). */
+export type HarnessRepository =
+  string | { readonly name: string; readonly maxPermissionMode: PermissionMode };
 
 /** One `claude` run as the shim saw it: the working directory and the argv. */
 export interface ClaudeRun {
@@ -109,11 +115,16 @@ export async function startAgent(options: StartAgentOptions): Promise<HarnessAge
     ...options.env,
   };
   const repositories: string[] = [];
-  for (const name of options.repositories ?? []) {
+  const entries: (string | { path: string; maxPermissionMode: PermissionMode })[] = [];
+  for (const entry of options.repositories ?? []) {
+    const name = typeof entry === 'string' ? entry : entry.name;
     const path = join(base, 'repos', name);
     await mkdir(path, { recursive: true });
     trustWorkspace(env, path);
     repositories.push(path);
+    entries.push(
+      typeof entry === 'string' ? path : { path, maxPermissionMode: entry.maxPermissionMode },
+    );
   }
   const hookSource = join(base, 'dist', 'hook.cjs');
   await mkdir(join(base, 'dist'));
@@ -148,7 +159,7 @@ export async function startAgent(options: StartAgentOptions): Promise<HarnessAge
   await mkdir(container.paths.config, { recursive: true });
   await writeFile(
     join(container.paths.config, 'config.json'),
-    JSON.stringify({ relay: { url: options.relayUrl }, repositories }),
+    JSON.stringify({ relay: { url: options.relayUrl }, repositories: entries }),
   );
 
   const cli = (argv: readonly string[], signal = new AbortController().signal) =>

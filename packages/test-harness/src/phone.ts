@@ -105,8 +105,9 @@ export interface HeadlessPhone {
   ): Promise<string>;
   /**
    * Asks the agent to start a session (M1-04): a `start` decision over the repository id,
-   * its `request_hash` over the prompt and the repository's `path` as the snapshot showed
-   * it, with a fresh request id. Returns the request id the `decision_result` names.
+   * its `request_hash` over the prompt, the repository's `path` as the snapshot showed it
+   * and the picked permission mode (M2-09), with a fresh request id. Returns the request
+   * id the `decision_result` names.
    */
   start(start: StartSession, path: string): Promise<string>;
   /**
@@ -429,7 +430,11 @@ export async function createPhone(options: CreatePhoneOptions): Promise<Headless
     },
     async start(start, path) {
       const requestId = uuidV7(clock);
-      const hash = await requestHash({ prompt: start.prompt, cwd: path });
+      const hash = await requestHash({
+        prompt: start.prompt,
+        cwd: path,
+        permissionMode: start.permissionMode,
+      });
       await command('start', requestId, hash, start.repositoryId, { t: 'start', start });
       return requestId;
     },

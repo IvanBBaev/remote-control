@@ -11,6 +11,7 @@ import type {
   ApprovalRequest,
   CanonicalDecision,
   DecisionKind,
+  PermissionMode,
   Question,
   Random,
   Repository,
@@ -131,9 +132,16 @@ export interface PhoneService {
    * Starts a session in one of the computer's allow-listed repositories (M1-04). Only the
    * repository id travels; the signed hash covers the prompt and the repository's path,
    * so the passkey assertion (D7) approves exactly this prompt in exactly that folder.
+   * A permission mode other than `default` (M2-09) travels too and the hash covers it;
+   * `default` is sent as no mode, which an agent before M2-09 also reads.
    * Call it from the tap handler, like `decide`.
    */
-  start(machineId: string, repository: Repository, prompt: string): Promise<CommandResult>;
+  start(
+    machineId: string,
+    repository: Repository,
+    prompt: string,
+    permissionMode?: PermissionMode,
+  ): Promise<CommandResult>;
   /** Sends a follow-up prompt to a running session (M1-04), with a passkey assertion. */
   instruct(machineId: string, sessionId: string, text: string): Promise<CommandResult>;
 }
@@ -368,16 +376,22 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
     answer: (machineId, question, answer) =>
       send(machineId, question, 'answer', encodeAnswerPayload(answer)),
     release: (machineId, request) => send(machineId, request, 'terminal', null),
-    async start(machineId, repository, prompt) {
+    async start(machineId, repository, prompt, picked) {
       const id = newRequestId();
-      const hash = await requestHash({ prompt, cwd: repository.path });
+      const permissionMode = picked === 'default' ? undefined : picked;
+      const hash = await requestHash({ prompt, cwd: repository.path, permissionMode });
       const result = await send(
         machineId,
         { id, requestHash: hash },
         'start',
         repository.id,
         (live, decision, decisionHash) => {
-          const start = { machineId, repositoryId: repository.id, prompt };
+          const start = {
+            machineId,
+            repositoryId: repository.id,
+            prompt,
+            ...(permissionMode === undefined ? {} : { permissionMode }),
+          };
           live.command(machineId, { t: 'start', start, decision }, decisionHash);
         },
       );

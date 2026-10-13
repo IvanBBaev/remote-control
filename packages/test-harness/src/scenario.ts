@@ -1,4 +1,4 @@
-import { startAgent, type HarnessAgent } from './agent.js';
+import { startAgent, type HarnessAgent, type HarnessRepository } from './agent.js';
 import { createCanaries, type Canaries } from './canaries.js';
 import { createFakeClock, type FakeClock } from './fake-clock.js';
 import { createPhone, type HeadlessPhone } from './phone.js';
@@ -17,7 +17,7 @@ export interface ScenarioOptions {
   /** Subscribe the phone to push (default: yes). */
   readonly push?: boolean;
   /** The agent's allow-listed repository folders (see `StartAgentOptions`). */
-  readonly repositories?: readonly string[];
+  readonly repositories?: readonly HarnessRepository[];
   /** Extra environment for the agent and its `claude` runs. */
   readonly env?: Readonly<Record<string, string>>;
 }

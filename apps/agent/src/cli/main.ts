@@ -299,7 +299,7 @@ async function runCommand(
     const followUps = versionAtLeast(claudeVersion, FOLLOW_UP_MIN_VERSION);
     log.logger.info({ event: 'claude_cli', version: claudeVersion ?? null, followUps });
     const launcher = createLauncher({
-      roots: config.repositories,
+      repositories: config.repositories,
       paths: c.pathPort,
       cli: c.claude,
       registry: sessions,
@@ -411,9 +411,10 @@ async function statusCommand(args: readonly string[], c: Container): Promise<num
     out(`on expire:       ${config.agent.onExpire}`);
     if (config.relay?.url !== undefined) out(`relay:           ${config.relay.url}`);
     out(`repositories:    ${config.repositories.length === 0 ? '(none)' : ''}`.trimEnd());
-    for (const root of config.repositories) {
+    for (const { path: root, maxPermissionMode } of config.repositories) {
       const result = await resolveRepository([root], root, c.pathPort);
-      out(`  ${root}  ${result.allowed ? `ok (${result.realPath})` : result.reason}`);
+      const state = result.allowed ? `ok (${result.realPath})` : result.reason;
+      out(`  ${root}  ${state}  max mode: ${maxPermissionMode}`);
     }
   }
   out(`data dir:        ${c.paths.data}`);

@@ -567,6 +567,36 @@ describe('phone decisions', () => {
     }
   });
 
+  it('binds a picked permission mode into the start and its hash, and sends default as none (M2-09)', async () => {
+    const credentials = mockCredentials();
+    try {
+      const t = await setup(assertingRelay());
+      await t.online();
+      const command = vi.spyOn(t.phone.client!, 'command');
+      await t.phone.start(AGENT, REPOSITORY, 'Plan it', 'plan');
+      const [, sent] = command.mock.calls[0]!;
+      expect(sent).toMatchObject({
+        t: 'start',
+        start: { repositoryId: 'repo-api', prompt: 'Plan it', permissionMode: 'plan' },
+        decision: {
+          request_hash: await requestHash({
+            prompt: 'Plan it',
+            cwd: REPOSITORY.path,
+            permissionMode: 'plan',
+          }),
+        },
+      });
+      await t.phone.start(AGENT, REPOSITORY, 'Go', 'default');
+      const [, plain] = command.mock.calls[1]!;
+      expect(plain).toMatchObject({
+        decision: { request_hash: await requestHash({ prompt: 'Go', cwd: REPOSITORY.path }) },
+      });
+      expect(plain.t === 'start' && 'permissionMode' in plain.start).toBe(false);
+    } finally {
+      credentials.restore();
+    }
+  });
+
   it('sends a follow-up with a passkey: text in the payload, hash over prompt and session (M1-04)', async () => {
     const credentials = mockCredentials();
     try {

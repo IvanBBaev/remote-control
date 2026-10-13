@@ -5,6 +5,13 @@
       "machineId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
       "name": "remote-control",
       "path": "/Users/dev/CANARY-7f3a/remote-control"
+    },
+    {
+      "id": "repo_api",
+      "machineId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+      "name": "api",
+      "path": "/Users/dev/CANARY-7f3a/api",
+      "maxPermissionMode": "acceptEdits"
     }
   ],
   "invalid": [
@@ -24,6 +31,16 @@
         "machineId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
         "name": "x",
         "path": ""
+      }
+    },
+    {
+      "reason": "a bound off the ladder",
+      "value": {
+        "id": "r1",
+        "machineId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+        "name": "x",
+        "path": "/x",
+        "maxPermissionMode": "dontAsk"
       }
     }
   ]

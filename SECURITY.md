@@ -39,9 +39,11 @@ release) is supported.
    that exact request.** Allow, Always, Answer, Instruct and Start require a biometric
    whose challenge is the hash of the canonical decision. Deny, stop and read-only views
    do not.
-3. **Spawning is a fixed argv.** The protocol has no permission-mode field;
-   `--dangerously-skip-permissions`, `bypassPermissions`, `--allowedTools` and
-   `--settings` are never emitted. A CI gate (`apps/agent/scripts/check-argv-policy.mjs`)
+3. **Spawning is a fixed argv.** `--dangerously-skip-permissions`, `bypassPermissions`,
+   `dontAsk`, `--allowedTools` and `--settings` are never emitted. A start may carry a
+   permission mode (`plan` or `acceptEdits`, M2-09) only up to the bound set per
+   repository in the local config; the mode is part of the signed start and the agent
+   refuses one above the bound before anything runs (ADR 0006). A CI gate (`apps/agent/scripts/check-argv-policy.mjs`)
    enforces that only the spawn module imports `child_process`.
 4. **The project allow-list and relay URL are local config**, not protocol fields, and
    cannot be changed from the phone. Paths are resolved with `realpath` and must lie

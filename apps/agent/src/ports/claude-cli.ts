@@ -1,3 +1,5 @@
+import type { PermissionMode } from '@remote-control/protocol';
+
 import type { ResolveRepositoryResult } from '../core/resolve-repository.js';
 
 /** An allow-listed folder, already resolved (02 §4.1); the only possible working directory. */
@@ -23,8 +25,16 @@ export interface ClaudeCli {
   version(): Promise<string | undefined>;
   /** The session roster; `undefined` when the CLI failed or printed something else. */
   agents(): Promise<readonly RosterEntry[] | undefined>;
-  /** `claude --bg --name <name> <prompt>` in `repository`; resolves with the exit code. */
-  start(repository: AllowedRepository, name: string, prompt: string): Promise<number>;
+  /**
+   * `claude --bg --name <name> <prompt>` in `repository`, naming the permission mode when
+   * it is not the default (M2-09); resolves with the exit code.
+   */
+  start(
+    repository: AllowedRepository,
+    name: string,
+    prompt: string,
+    permissionMode?: PermissionMode,
+  ): Promise<number>;
   /** `claude --resume <uuid> --bg <prompt>` in `repository`; resolves with the exit code. */
   resume(repository: AllowedRepository, sessionId: string, prompt: string): Promise<number>;
 }

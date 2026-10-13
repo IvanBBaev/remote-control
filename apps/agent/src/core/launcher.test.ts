@@ -49,7 +49,10 @@ function harness(overrides: Partial<LauncherOptions> = {}) {
   const registry = createSessionRegistry({ clock: time.clock, timer: time.timer, cli });
   const log = vi.fn<(event: string, fields: Readonly<Record<string, unknown>>) => void>();
   const launcher = createLauncher({
-    roots: ['/work/app', '/work/gone'],
+    repositories: [
+      { path: '/work/app', maxPermissionMode: 'acceptEdits' },
+      { path: '/work/gone', maxPermissionMode: 'default' },
+    ],
     paths: fakePaths(['/work/app', '/work/app/sub', '/elsewhere']),
     cli,
     registry,
@@ -107,8 +110,18 @@ describe('createLauncher', () => {
     const { launcher } = harness();
     const first = await launcher.repositories();
     expect(first).toEqual([
-      { id: await repositoryId('/work/app'), name: 'app', path: '/work/app' },
-      { id: await repositoryId('/work/gone'), name: 'gone', path: '/work/gone' },
+      {
+        id: await repositoryId('/work/app'),
+        name: 'app',
+        path: '/work/app',
+        maxPermissionMode: 'acceptEdits',
+      },
+      {
+        id: await repositoryId('/work/gone'),
+        name: 'gone',
+        path: '/work/gone',
+        maxPermissionMode: 'default',
+      },
     ]);
     expect(await launcher.repositories()).toBe(first);
   });
@@ -128,6 +141,37 @@ describe('createLauncher', () => {
     expect(JSON.stringify(log.mock.calls)).not.toMatch(/fix the build|\/work/);
     expect(registry.get(SESSION)?.kind).toBe('background');
     registry.close();
+  });
+
+  it('passes a permission mode within the bound to the CLI (M2-09)', async () => {
+    const { launcher, cli } = harness();
+    const id = await repositoryId('/work/app');
+    expect(await launcher.start(id, 'go', 'acceptEdits')).toEqual({ ok: true, sessionId: SESSION });
+    expect(cli.start.mock.calls[0]![3]).toBe('acceptEdits');
+  });
+
+  it('refuses a permission mode above the bound before spawning (M2-09)', async () => {
+    const { launcher, cli, log } = harness({
+      repositories: [{ path: '/work/app', maxPermissionMode: 'plan' }],
+    });
+    const id = await repositoryId('/work/app');
+    for (const mode of ['default', 'acceptEdits', undefined] as const) {
+      expect(await launcher.start(id, 'go', mode)).toEqual({ ok: false, reason: 'not_allowed' });
+    }
+    expect(cli.start).not.toHaveBeenCalled();
+    expect(log).toHaveBeenLastCalledWith('launch_refused', {
+      repository_id: id,
+      reason: 'permission_mode_above_bound',
+    });
+  });
+
+  it('starts a plan-bound folder in plan mode (M2-09)', async () => {
+    const { launcher, cli } = harness({
+      repositories: [{ path: '/work/app', maxPermissionMode: 'plan' }],
+    });
+    const id = await repositoryId('/work/app');
+    expect(await launcher.start(id, 'go', 'plan')).toMatchObject({ ok: true });
+    expect(cli.start.mock.calls[0]![3]).toBe('plan');
   });
 
   it('skips the trust hint for a folder hooks came from', async () => {
@@ -165,7 +209,7 @@ describe('createLauncher', () => {
 
   it('refuses a root that now points outside the allow-list', async () => {
     const { launcher, cli } = harness({
-      roots: ['/work/app'],
+      repositories: [{ path: '/work/app', maxPermissionMode: 'default' }],
       paths: fakePaths(['/elsewhere'], { '/work/app': '/elsewhere' }),
     });
     // The root resolves (to /elsewhere) and is judged by where it points now: still

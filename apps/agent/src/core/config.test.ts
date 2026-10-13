@@ -52,6 +52,7 @@ describe('parseConfig', () => {
     expect(result).toMatchObject({
       ok: true,
       config: {
+        repositories: [{ path: '/srv/repo', maxPermissionMode: 'default' }],
         hooks: { holdSeconds: 60, port: 4327 },
         agent: { onExpire: 'deny' },
         always: { destinations: ['session', 'localSettings'] },
@@ -119,6 +120,42 @@ describe('parseConfig', () => {
     expect(errorsOf('{"repositories":[" /srv/repo"]}')[0]).toMatch(/whitespace/);
     expect(errorsOf('{"repositories":["/srv/\\u0000"]}')[0]).toMatch(/NUL/);
     expect(errorsOf('{"repositories":[""]}')).toHaveLength(1);
+  });
+
+  it('reads a repository with a permission-mode bound (M2-09)', () => {
+    const result = parseConfig(
+      JSON.stringify({
+        repositories: [
+          '/srv/a',
+          { path: '/srv/b', maxPermissionMode: 'acceptEdits' },
+          { path: '/srv/c' },
+        ],
+      }),
+      nodePaths,
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      config: {
+        repositories: [
+          { path: '/srv/a', maxPermissionMode: 'default' },
+          { path: '/srv/b', maxPermissionMode: 'acceptEdits' },
+          { path: '/srv/c', maxPermissionMode: 'default' },
+        ],
+      },
+    });
+  });
+
+  it('refuses an unbounded mode, a relative object path and a repeated repository', () => {
+    for (const mode of ['bypassPermissions', 'dontAsk', 'auto']) {
+      expect(
+        errorsOf(JSON.stringify({ repositories: [{ path: '/srv/a', maxPermissionMode: mode }] })),
+      ).toHaveLength(1);
+    }
+    expect(errorsOf('{"repositories":[{"path":"repo"}]}')).toEqual([
+      'repositories.0: must be an absolute path',
+    ]);
+    expect(errorsOf('{"repositories":[{"path":"/srv/a","extra":1}]}')).toHaveLength(1);
+    expect(errorsOf('{"repositories":["/srv/a",{"path":"/srv/a"}]}')[0]).toMatch(/repeat/);
   });
 });
 

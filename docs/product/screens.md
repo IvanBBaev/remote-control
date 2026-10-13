@@ -186,6 +186,11 @@ screens through their accessible names, which are part of the screen contract:
   under "repositories" in its remotectl config." Offline: "Offline. Start is available
   when the computer is online." Start stays disabled until a folder and a non-blank
   prompt are chosen and while an earlier start is unanswered.
+- Mode (M2-09, ADR 0006): a "Mode" select (`#new-mode`) lists the modes up to the
+  folder's `maxPermissionMode` — "Plan only (no edits)" (`plan`), "Ask before each edit"
+  (`default`), "Accept file edits" (`acceptEdits`). It starts on "Ask before each edit",
+  or on "Plan only (no edits)" for a `plan`-bound folder, and resets when the computer or
+  folder changes. A computer before M2-09 sends no bound: no select, default mode.
 - Start and Send each ask for the passkey (D7) and carry a signed decision (`kind`
   `start` over the repository id, `instruct` over the text) with a fresh request id.
   While the computer has not answered: "Sent. Waiting for your computer…".

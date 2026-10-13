@@ -94,6 +94,15 @@ async function write(selector: string, value: string): Promise<void> {
   });
 }
 
+async function pick(selector: string, value: string): Promise<void> {
+  const select = query<HTMLSelectElement>(selector)!;
+  await act(async () => {
+    select.value = value;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await Promise.resolve();
+  });
+}
+
 const accepted = (requestId: string): CommandResult => ({
   ok: true,
   decisionHash: 'h',
@@ -157,12 +166,7 @@ describe('new session screen (M1-04)', () => {
     await write('#new-prompt', 'Fix the tests');
     expect(button('Start').disabled).toBe(true);
 
-    const select = query<HTMLSelectElement>('#new-machine')!;
-    await act(async () => {
-      select.value = LAPTOP;
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await pick('#new-machine', LAPTOP);
     expect(text()).toContain('Offline. Start is available when the computer is online.');
     expect(button('Start').disabled).toBe(true);
   });
@@ -181,7 +185,9 @@ describe('new session screen (M1-04)', () => {
     await write('#new-prompt', '  Fix the tests ');
     track(test, { machineId: MAC, kind: 'start', target: web.id, text: 'Fix the tests' });
     await click(button('Start'));
-    expect(start).toHaveBeenCalledWith(MAC, web, 'Fix the tests');
+    expect(start).toHaveBeenCalledWith(MAC, web, 'Fix the tests', 'default');
+    // No bound from the computer: no mode picker, only the default.
+    expect(query('#new-mode')).toBeNull();
     expect(text()).toContain('Sent. Waiting for your computer…');
     expect(button('Start').disabled).toBe(true);
 
@@ -197,6 +203,40 @@ describe('new session screen (M1-04)', () => {
       (a) => a.textContent === 'Open the session',
     );
     expect(link?.getAttribute('href')).toBe('/sessions/sess%2F9');
+  });
+
+  it('offers the modes up to the folder bound and starts in the picked one (M2-09)', async () => {
+    const api = { ...repository(MAC, 'api'), maxPermissionMode: 'acceptEdits' as const };
+    const web = { ...repository(MAC, 'web'), maxPermissionMode: 'plan' as const };
+    const docs = { ...repository(MAC, 'docs'), maxPermissionMode: 'default' as const };
+    const { test, start } = await open('/new', [
+      machine(MAC, 'Studio Mac', true, { repositories: [api, web, docs] }),
+    ]);
+    start.mockResolvedValue(accepted(RID));
+    const options = () =>
+      [...mounted!.container.querySelectorAll<HTMLOptionElement>('#new-mode option')].map(
+        (option) => [option.value, option.textContent],
+      );
+    expect(options()).toEqual([
+      ['plan', 'Plan only (no edits)'],
+      ['default', 'Ask before each edit'],
+      ['acceptEdits', 'Accept file edits'],
+    ]);
+    expect(query<HTMLSelectElement>('#new-mode')?.value).toBe('default');
+    await pick('#new-mode', 'acceptEdits');
+    await write('#new-prompt', 'Go');
+    track(test, { machineId: MAC, kind: 'start', target: api.id, text: 'Go' });
+    await click(button('Start'));
+    expect(start).toHaveBeenLastCalledWith(MAC, api, 'Go', 'acceptEdits');
+
+    // Another folder resets the pick and offers only what its bound allows.
+    const radios = mounted!.container.querySelectorAll<HTMLInputElement>('input[type=radio]');
+    await click(radios[1]!);
+    expect(options().map(([value]) => value)).toEqual(['plan']);
+    expect(query<HTMLSelectElement>('#new-mode')?.value).toBe('plan');
+    await click(radios[2]!);
+    expect(options().map(([value]) => value)).toEqual(['plan', 'default']);
+    expect(query<HTMLSelectElement>('#new-mode')?.value).toBe('default');
   });
 
   it.each([

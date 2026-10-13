@@ -26,6 +26,7 @@ import {
   type Presence,
   type ProjectHistory,
   type Session,
+  type StartSession,
 } from '@remote-control/protocol';
 
 import type { AdapterDecision, QuestionAnswers } from '../ports/agent-adapter.js';
@@ -602,7 +603,7 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     message:
       | {
           t: 'start';
-          start: { machineId: string; repositoryId: string; prompt: string };
+          start: StartSession;
           decision: CanonicalDecision;
         }
       | {
@@ -617,10 +618,12 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     for (const [id, expiresAt] of used) if (expiresAt <= now) used.delete(id);
     let target: CommandTarget = { ok: false, reason: 'not_allowed' };
     if (launcher !== undefined && message.t === 'start') {
-      const { repositoryId, prompt } = message.start;
+      const { repositoryId, prompt, permissionMode } = message.start;
       const repository = (await launcher.repositories()).find((entry) => entry.id === repositoryId);
       if (repository !== undefined) {
-        target = { ok: true, requestHash: await requestHash({ prompt, cwd: repository.path }) };
+        // The picked mode is part of what the passkey signs (D7, M2-09).
+        const subject = { prompt, cwd: repository.path, permissionMode };
+        target = { ok: true, requestHash: await requestHash(subject) };
       }
     } else if (launcher !== undefined && message.t === 'instruct') {
       const { sessionId, text } = message.instruction;
@@ -668,7 +671,11 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     });
     const run: Promise<LaunchResult> =
       message.t === 'start'
-        ? launcher!.start(message.start.repositoryId, message.start.prompt)
+        ? launcher!.start(
+            message.start.repositoryId,
+            message.start.prompt,
+            message.start.permissionMode,
+          )
         : launcher!.instruct(message.instruction.sessionId, message.instruction.text);
     track(
       run.then((outcome) => {

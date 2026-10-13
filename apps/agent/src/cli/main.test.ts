@@ -748,7 +748,7 @@ describe('runCli', () => {
       expect(h.out()).toContain('hold seconds:    1800');
       expect(h.out()).toContain('on expire:       handoff');
       expect(h.out()).toContain('relay:           wss://relay.example.com');
-      expect(h.out()).toContain(`  ${repo}  ok (${repo})`);
+      expect(h.out()).toContain(`  ${repo}  ok (${repo})  max mode: default`);
       expect(h.out()).toContain(`  ${join(base, 'gone')}  not_found`);
       expect(h.out()).toContain(`device key:      ${toBase64Url(key.keyPair.publicKey)}`);
     });

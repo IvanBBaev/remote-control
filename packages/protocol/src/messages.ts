@@ -183,8 +183,9 @@ export type DecisionMessage = z.infer<typeof DecisionMessage>;
 
 /**
  * Start a session (M1-04, `cls: command`). `decision.kind` is `start`, its `payload` the
- * repository id and its `request_hash` the `requestHash({ prompt, cwd })` of the prompt
- * and the repository's path; the phone picks a fresh `request_id`.
+ * repository id and its `request_hash` the `requestHash({ prompt, cwd, permissionMode })`
+ * of the prompt, the repository's path and the picked mode (left out when none was
+ * picked, M2-09); the phone picks a fresh `request_id`.
  */
 export const StartMessage = z.strictObject({
   t: z.literal('start'),
