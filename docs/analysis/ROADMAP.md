@@ -73,7 +73,7 @@ named, so nobody re-derives it.
 | M1-09b | First tagged publish remotectl@0.1.0 + release checklist executed | §4 M1-09, §3 M1 (2)(6) | `blocked-owner` | 1.5 |
 | M1-10 | Revocation and deletion, J12 — deps M1-07 | §4 M1-10 | `blocked-owner` | 2 |
 | M1-11 | Tool-label dictionary, card polish, local stats | §4 M1-11 | `done` | 1 |
-| M1-12 | Playwright P1–P9 + WebKit smoke — deps M1-05 | §4 M1-12 | `blocked-owner` | 3 |
+| M1-12 | Playwright P1–P9 + WebKit smoke — deps M1-05 | §4 M1-12 | `done 5286172 — first CI run pending the next push` | 3 |
 | M1-13 | Audit log and admin counters | §4 M1-13 | `done` | 1 |
 | M1-14 | README final, screens doc, second-user run — deps M1-09, Q13 | §4 M1-14, §6 Q13 | `blocked-owner` | 1.5 |
 | M1-15 | Soak (24 h) and load smoke — deps M1-12 | §4 M1-15 | `blocked-owner` | 1.5 |
@@ -968,7 +968,7 @@ AC: every Claude Code built-in tool has a label (test enumerates the list); coun
 test.
 
 #### M1-12 — Playwright end-to-end
-Size M · Deps M0-25, M1-05 · Status todo · Sources 07 W12–W13, 05 §6
+Size M · Deps M0-25, M1-05 · Status done 5286172 (the relay serves the built PWA instead of a dev server; WebKit signs in by the harness passkey's session cookie and W2 pairs and reads a session with WebKit WebCrypto, the known-answer vectors stay in `pnpm test:browser`; first CI run pending the next push) · Sources 07 W12–W13, 05 §6
 Scope: `webServer` array (relay on PGlite + web dev server), iPhone emulation, CDP
 virtual authenticator, `dispatchPush` into the SW; specs P1 register/login, P2 onboarding
 gate, P3 pair, P4 approve with UV, P5 deny, P6 question, P7 push tap routing, P8 sessions,
