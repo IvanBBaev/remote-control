@@ -19,6 +19,7 @@ export { mintInvites } from '../core/invites.js';
 export { LocalHub } from '../core/local-hub.js';
 export { PairingService } from '../core/pairing-service.js';
 export { PushNotifier } from '../core/push-notifier.js';
+export { DEFAULT_AUTH_RATE_LIMITS, type AuthRateLimits } from '../http/auth-routes.js';
 export { RelayRouter } from '../core/relay-router.js';
 export { MIGRATIONS_DIR } from '../package-paths.js';
 export type { Timer } from '../ports/timer.js';

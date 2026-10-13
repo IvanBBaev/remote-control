@@ -9,12 +9,12 @@ import { createContainer, runCli, type Container } from 'remotectl';
 import { DEFAULT_HOOK_TIMEOUT_SECONDS, runHook } from 'remotectl/hook';
 
 import { eventually } from './eventually.js';
-import type { FakeClock } from './fake-clock.js';
+import type { HarnessClock } from './fake-clock.js';
 
 export interface StartAgentOptions {
   /** `ws://127.0.0.1:<port>`: the relay the agent's config names. */
   readonly relayUrl: string;
-  readonly clock: FakeClock;
+  readonly clock: HarnessClock;
   /** The machine name the phone sees (the snapshot's `machine.name`). */
   readonly name: string;
   /** Answer to the pairing fingerprint question (default: yes). */
@@ -63,8 +63,10 @@ export interface HarnessAgent {
   /** Everything the CLI printed so far. */
   stdout(): string;
   stderr(): string;
-  /** `remotectl login rc-enroll:<token> --user-id <uuid>`; throws on a non-zero exit. */
-  login(enrollToken: string, userId: string): Promise<void>;
+  /**
+   * `remotectl login rc-enroll:<token> [--user-id <uuid>]`; throws on a non-zero exit.
+   */
+  login(enrollToken: string, userId?: string): Promise<void>;
   /** `remotectl pair` in the background. */
   pair(): PairingRun;
   /** `remotectl run` in the background, until `stop` or `close`. */
@@ -179,7 +181,11 @@ export async function startAgent(options: StartAgentOptions): Promise<HarnessAge
     stdout: () => out,
     stderr: () => err,
     async login(enrollToken, userId) {
-      const code = await cli(['login', enrollToken, '--user-id', userId]);
+      const code = await cli([
+        'login',
+        enrollToken,
+        ...(userId === undefined ? [] : ['--user-id', userId]),
+      ]);
       if (code !== 0) throw new Error(`remotectl login exited ${String(code)}: ${err}`);
     },
     pair() {

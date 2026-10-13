@@ -11,8 +11,9 @@ export type {
 export { createCanaries } from './canaries.js';
 export type { Canaries } from './canaries.js';
 export { eventually } from './eventually.js';
+export { createRealClock } from './adapters/system-clock.js';
 export { createFakeClock, FAKE_CLOCK_START } from './fake-clock.js';
-export type { FakeClock, TimerHandle } from './fake-clock.js';
+export type { FakeClock, HarnessClock, TimerHandle } from './fake-clock.js';
 export { createPhone } from './phone.js';
 export type { CreatePhoneOptions, HeadlessPhone, Paired, Received } from './phone.js';
 export { assertNoLeaks, findLeaks, PrivacyLeakError } from './privacy-gate.js';

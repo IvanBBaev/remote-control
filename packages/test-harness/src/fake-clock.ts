@@ -5,12 +5,16 @@ export interface TimerHandle {
   cancel(): void;
 }
 
+/** What the harness hands the relay and the agent as their `Clock` and `Timer` ports. */
+export interface HarnessClock extends Clock {
+  after(ms: number, callback: () => void): TimerHandle;
+}
+
 /**
  * One clock for every `Clock` and `Timer` port of the relay, the agent and the phone
  * (07 §5.6), so expiry is deterministic: time moves only when a test calls `advance`.
  */
-export interface FakeClock extends Clock {
-  after(ms: number, callback: () => void): TimerHandle;
+export interface FakeClock extends HarnessClock {
   /** Moves time forward, firing every due callback in deadline order. */
   advance(ms: number): void;
   /** Callbacks scheduled and not yet fired or cancelled. */

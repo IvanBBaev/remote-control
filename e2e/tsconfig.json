@@ -1,0 +1,11 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../node_modules/.cache/e2e-tsc",
+    "lib": ["ES2023", "DOM", "DOM.Iterable", "WebWorker"],
+    "types": ["node"]
+  },
+  "include": ["*.ts", "support", "specs"],
+  "references": [{ "path": "../packages/test-harness" }, { "path": "../packages/fake-claude-code" }]
+}

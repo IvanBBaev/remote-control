@@ -5,6 +5,7 @@ import { buildApp, DrainState } from '@remote-control/relay';
 import {
   AccountService,
   AuditRecorder,
+  DEFAULT_AUTH_RATE_LIMITS,
   createDrizzleAccountStore,
   createDrizzleAuditLog,
   createDrizzleDeviceDirectory,
@@ -24,9 +25,10 @@ import {
   PairingService,
   PushNotifier,
   RelayRouter,
+  type AuthRateLimits,
 } from '@remote-control/relay/testing';
 
-import type { FakeClock } from './fake-clock.js';
+import type { HarnessClock } from './fake-clock.js';
 
 /** The relying party every harness passkey is bound to. */
 export const RELAY_RP_ID = 'rc.example.test';
@@ -34,7 +36,22 @@ export const RELAY_ORIGIN = `https://${RELAY_RP_ID}`;
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface StartRelayOptions {
-  readonly clock: FakeClock;
+  readonly clock: HarnessClock;
+  /** WebAuthn RP id (default {@link RELAY_RP_ID}). */
+  readonly rpId?: string;
+  /** The origin the phone presents (default {@link RELAY_ORIGIN}). */
+  readonly origin?: string;
+  /** Listen address (default `127.0.0.1`). */
+  readonly host?: string;
+  /** Listen port (default 0). */
+  readonly port?: number;
+  /** The built PWA to serve, as in production (default: none). */
+  readonly publicDir?: string;
+  /**
+   * Overrides of the production `/api/auth/*` limits. Every harness phone shares one IP,
+   * so a suite that registers many accounts raises the per-IP ones.
+   */
+  readonly authLimits?: Partial<AuthRateLimits>;
 }
 
 export interface HarnessRelay {
@@ -88,6 +105,8 @@ async function dumpTables(client: PGlite): Promise<string[]> {
  */
 export async function startRelay(options: StartRelayOptions): Promise<HarnessRelay> {
   const { clock } = options;
+  const rpId = options.rpId ?? RELAY_RP_ID;
+  const origin = options.origin ?? RELAY_ORIGIN;
   const client = new PGlite();
   const db = createPgliteDb(client, { migrationsFolder: MIGRATIONS_DIR });
   await db.migrate();
@@ -102,7 +121,7 @@ export async function startRelay(options: StartRelayOptions): Promise<HarnessRel
   const subscriptions = createDrizzlePushSubscriptionStore(db.orm);
   const hub = new LocalHub(clock, DEVICE_CAP);
   const audit = new AuditRecorder({ clock, store: createDrizzleAuditLog(db.orm), logger });
-  const webauthn = createSimpleWebAuthn({ id: RELAY_RP_ID, origin: RELAY_ORIGIN, name: 'rc' });
+  const webauthn = createSimpleWebAuthn({ id: rpId, origin, name: 'rc' });
   const decisions = new DecisionVerifier({ store: accountStore, webauthn, clock });
   const notifier = new PushNotifier({
     clock,
@@ -142,8 +161,12 @@ export async function startRelay(options: StartRelayOptions): Promise<HarnessRel
     drain: new DrainState(),
     version: '0.0.0-harness',
     commit: null,
-    publicDir: undefined,
-    auth: { service: accounts, origin: RELAY_ORIGIN },
+    publicDir: options.publicDir,
+    auth: {
+      service: accounts,
+      origin,
+      limits: { ...DEFAULT_AUTH_RATE_LIMITS, ...options.authLimits },
+    },
     relay: { router, hub, directory, pairing, decisions },
     // The fake push service is plain http on 127.0.0.1; production keeps the allow-list.
     push: {
@@ -152,15 +175,15 @@ export async function startRelay(options: StartRelayOptions): Promise<HarnessRel
       allowEndpoint: (url) => url.startsWith(push.origin),
     },
   });
-  await app.listen({ host: '127.0.0.1', port: 0 });
+  await app.listen({ host: options.host ?? '127.0.0.1', port: options.port ?? 0 });
   const address = app.server.address();
   if (address === null || typeof address === 'string') throw new Error('relay: no port');
 
   return {
     url: `http://127.0.0.1:${String(address.port)}`,
     wsOrigin: `ws://127.0.0.1:${String(address.port)}`,
-    origin: RELAY_ORIGIN,
-    rpId: RELAY_RP_ID,
+    origin,
+    rpId,
     push,
     logs: () => destination.lines(),
     dump: () => dumpTables(client),

@@ -36,7 +36,7 @@ import { SoftwareAuthenticator } from '@remote-control/relay/testing';
 import WebSocket from 'ws';
 
 import { eventually } from './eventually.js';
-import type { FakeClock } from './fake-clock.js';
+import type { HarnessClock } from './fake-clock.js';
 import type { HarnessRelay } from './relay.js';
 
 const encoder = new TextEncoder();
@@ -62,7 +62,7 @@ export interface Paired {
 
 export interface CreatePhoneOptions {
   readonly relay: HarnessRelay;
-  readonly clock: FakeClock;
+  readonly clock: HarnessClock;
   /** The device name the agent sees. */
   readonly name: string;
 }
@@ -74,6 +74,8 @@ export interface HeadlessPhone {
   readonly userId: string;
   /** Set by `bind`. */
   readonly deviceId: string;
+  /** The `__Host-rc_session` value `register` got, for a browser to sign in with (M1-12). */
+  readonly sessionCookie: string;
   /** Decrypted agent messages, in arrival order. */
   readonly messages: Received[];
   /** Empty `cls: request` envelopes (doorbells). */
@@ -141,7 +143,7 @@ async function pairingSecrets(code: string): Promise<{ psk: Uint8Array; codeHash
   return { psk, codeHash };
 }
 
-function uuidV7(clock: FakeClock): string {
+function uuidV7(clock: HarnessClock): string {
   const bytes = webCryptoRandom.bytes(16);
   let ms = clock.now();
   for (let i = 5; i >= 0; i--) {
@@ -314,6 +316,9 @@ export async function createPhone(options: CreatePhoneOptions): Promise<Headless
   const phone: HeadlessPhone = {
     keyPair,
     authenticator,
+    get sessionCookie() {
+      return cookie;
+    },
     get userId() {
       return userId;
     },

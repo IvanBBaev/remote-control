@@ -22,6 +22,7 @@
     "fixtures:anonymise": "tsx packages/fake-claude-code/src/anonymise-cli.ts",
     "test": "vitest run --coverage",
     "test:browser": "vitest run --config vitest.browser.config.ts",
+    "test:e2e": "pnpm --filter @remote-control/web build && pnpm --filter @remote-control/e2e test",
     "build": "pnpm -r --if-present run build",
     "dev:https": "pnpm --filter @remote-control/relay dev:https",
     "release:version": "tsx tools/release.ts version",

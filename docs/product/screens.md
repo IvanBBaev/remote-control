@@ -36,9 +36,9 @@ when every step is done; a step out of order redirects to the current one.
 | ------- | -------- | -------------------------------------------------------------------------------------------------------------- | ----- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Sign in | `/login` | Relay RP ID; passkey assertion from the button or from the autofill list of the account field (conditional UI) | —     | "You are offline — connect to sign in"; button disabled | Assertion cancelled: stays on the screen; unknown passkey: "This passkey is not registered here — create an account"; rate limited: "Too many attempts — wait a minute and try again"; other: "Sign-in failed — try again" |
 
-### End-to-end hooks (P1, wired in M1-12)
+### End-to-end hooks (M1-12)
 
-Playwright spec P1 (register + login with the CDP virtual authenticator) drives these
+The Playwright specs in `e2e/specs/` (P1–P9 in Chromium, W1–W2 in WebKit) drive these
 screens through their accessible names, which are part of the screen contract:
 
 - Register: open `/onboarding/passkey?invite=<code>`, press **Create passkey**, read the
@@ -48,6 +48,15 @@ screens through their accessible names, which are part of the screen contract:
   `#login-username` (`autocomplete="username webauthn"`).
 - The virtual authenticator must report user verification (`isUserVerified: true`):
   registration, login and decision assertions all require UV.
+- Runs serve the built PWA (`apps/web/dist`) from the harness relay on PGlite, so
+  `pnpm test:e2e` builds the web app first. Push is a stubbed `PushManager` whose
+  subscription points at the harness push sink.
+- WebKit has no CDP virtual authenticator: W1/W2 register the account with the harness's
+  software passkey and sign in by setting its `__Host-rc_session` cookie. W1 removes
+  `PushManager` (Safari in a tab) and expects **Install the app** without **Continue in
+  the browser**; W2 emulates a Home Screen app (`navigator.standalone`, `PushManager`,
+  `Notification`) and pairs and reads a session with WebKit's WebCrypto. The crypto
+  known-answer vectors stay in `pnpm test:browser`.
 
 ## Main app
 

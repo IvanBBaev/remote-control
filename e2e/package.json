@@ -1,0 +1,20 @@
+{
+  "name": "@remote-control/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Playwright end-to-end specs for the PWA against the harness relay and agent.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "server": "tsx server.ts",
+    "test": "playwright test"
+  },
+  "dependencies": {
+    "@remote-control/fake-claude-code": "workspace:*",
+    "@remote-control/test-harness": "workspace:*"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "tsx": "^4.23.15"
+  }
+}

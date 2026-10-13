@@ -1,6 +1,7 @@
 packages:
   - apps/*
   - packages/*
+  - e2e
 
 # esbuild (via tsx) ships its binary as a platform optional dependency; its install
 # script only re-verifies it, so it stays disabled.
