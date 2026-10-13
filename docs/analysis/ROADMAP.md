@@ -1033,7 +1033,7 @@ the `rc1:` QR; short code stays available.
 AC: unit test decodes the fixture QR text; manual check on iOS and Android logged.
 
 #### M2-05 — Desktop two-pane layout
-Size S · Deps M1-05 · Status todo · Sources 05 W16, 05 Rec-10
+Size S · Deps M1-05 · Status done d89d89a · Sources 05 W16, 05 Rec-10
 Scope: ≥ 900 px: sessions list left, detail right; keyboard shortcuts for Allow/Deny
 (still with UV).
 AC: layout test at 1280 px; Playwright desktop project added.
