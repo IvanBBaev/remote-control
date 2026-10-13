@@ -95,13 +95,20 @@ screens through their accessible names, which are part of the screen contract:
   button names what it reveals by the tool's kind: "Show command", "Show file",
   "Show search", "Show address", otherwise "Show details". The revealed block shows the
   raw tool name and the full content and scrolls inside the card when it is long.
-- Truncated content: Allow and "Always (this session)" are disabled and the card says to
+- Truncated content: Allow and every "Always" button are disabled and the card says to
   answer in the terminal; Deny stays available.
 - "Always (this session)" (M1-02, D24) appears only when `alwaysSupported`: the agent
   offers it when Claude Code suggested allow rules, and the card lists every rule it
   grants ("Always allow in this session:" with `Bash(npm test)`-style labels). It asks
   for the same user-verifying passkey as Allow; the agent re-targets every rule to
   `destination: "session"`, so nothing is written to a settings file.
+- Settings destinations (M2-07, D24): the agent's local `always.destinations` config
+  (default `['session']`, must include `session`) may add `localSettings` and/or
+  `projectSettings`. Only then does the request carry `alwaysDestinations` and the card
+  show one button per destination — "Always (this session)", "Always (this project,
+  only me)", "Always (this project, everyone)" — under the heading "Always allow:". The
+  chosen destination is signed in the decision `payload` (`null` = session); the agent
+  rejects a destination outside its config as `wrong_kind` and emits nothing.
 - Taps in the first 600 ms are ignored; an expired, decided or refused card has no
   Deny/Allow/Always buttons.
 

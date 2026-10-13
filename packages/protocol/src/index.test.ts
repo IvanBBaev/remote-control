@@ -30,6 +30,7 @@ describe('@remote-control/protocol barrel', () => {
         'ResolvedMessage',
         'SnapshotMessage',
         'AgentId',
+        'AlwaysDestination',
         'ApprovalRequest',
         'CanonicalDecision',
         'Capabilities',

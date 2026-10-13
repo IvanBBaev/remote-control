@@ -33,6 +33,7 @@ export { Capabilities } from './domain/capabilities.js';
 export { Machine } from './domain/machine.js';
 export { Repository } from './domain/repository.js';
 export { ChangedFile, Session } from './domain/session.js';
+export { AlwaysDestination } from './domain/always-destination.js';
 export { ApprovalRequest } from './domain/approval-request.js';
 export {
   MAX_OPTIONS,

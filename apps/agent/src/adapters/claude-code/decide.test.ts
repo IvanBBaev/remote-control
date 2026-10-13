@@ -182,6 +182,18 @@ describe('decideClaudeCode', () => {
       expect(text).not.toContain('updatedInput');
     });
 
+    it.each(['localSettings', 'projectSettings'] as const)(
+      'puts the rules in %s when the hub checked that destination (M2-07)',
+      (destination) => {
+        const text = JSON.stringify(
+          decideClaudeCode(suggested, { behavior: 'always', destination }),
+        );
+        expect(text).toContain(`"destination":"${destination}"`);
+        expect(text.match(/"destination"/g)).toHaveLength(1);
+        expect(text).not.toMatch(/setMode|"session"/);
+      },
+    );
+
     it('hands off "Always" when the request suggested no rule (D10)', () => {
       expect(decideClaudeCode(bash, { behavior: 'always' })).toEqual({});
     });

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { SETTINGS_DESTINATIONS } from './domain/always-destination.js';
 import { DeviceId, RequestId, Sha256Hex } from './ids.js';
 import { VERSION_TABLE } from './version.js';
 
@@ -21,18 +22,22 @@ export const DecisionKind = z.enum([
 ]);
 export type DecisionKind = z.infer<typeof DecisionKind>;
 
-const KINDS_WITHOUT_PAYLOAD: ReadonlySet<DecisionKind> = new Set([
-  'allow',
-  'always',
-  'deny',
-  'terminal',
-]);
+const KINDS_WITHOUT_PAYLOAD: ReadonlySet<DecisionKind> = new Set(['allow', 'deny', 'terminal']);
+
+/**
+ * `always` signs where its rules go (M2-07): `null` for the session (D24, M1 phones), or
+ * `localSettings` / `projectSettings` when the agent offered them.
+ */
+function payloadFits(kind: DecisionKind, payload: string | null): boolean {
+  if (kind === 'always') return payload === null || SETTINGS_DESTINATIONS.has(payload);
+  return (payload === null) === KINDS_WITHOUT_PAYLOAD.has(kind);
+}
 
 /**
  * The exact object the phone hashes into the WebAuthn challenge and the agent re-checks
  * (D7, 02 §5.4). Field names are snake_case because they are part of the signed bytes.
- * `payload` carries the answer, instruction text or repository id, and is `null` for
- * the kinds that carry nothing.
+ * `payload` carries the answer, instruction text, repository id or an `always` settings
+ * destination, and is `null` for the kinds that carry nothing.
  */
 export const CanonicalDecision = z
   .strictObject({
@@ -52,8 +57,9 @@ export const CanonicalDecision = z
     message: `expires_at must equal issued_at + ${DECISION_TTL_SECONDS}`,
     path: ['expires_at'],
   })
-  .refine((d) => (d.payload === null) === KINDS_WITHOUT_PAYLOAD.has(d.kind), {
-    message: 'payload must be null exactly for allow, always, deny and terminal',
+  .refine((d) => payloadFits(d.kind, d.payload), {
+    message:
+      'payload must be null exactly for allow, deny and terminal; for always null or a settings destination',
     path: ['payload'],
   });
 export type CanonicalDecision = z.infer<typeof CanonicalDecision>;

@@ -13,20 +13,33 @@ const base = {
   agent_device_id: '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d',
 };
 
-const WITHOUT_PAYLOAD = ['allow', 'always', 'deny', 'terminal'];
+const WITHOUT_PAYLOAD = ['allow', 'deny', 'terminal'];
 
 describe('CanonicalDecision', () => {
   it('has a 300 second TTL (D7)', () => {
     expect(DECISION_TTL_SECONDS).toBe(300);
   });
 
-  it.each(DecisionKind.options)('%s carries a payload exactly when it needs one', (kind) => {
-    const needsNull = WITHOUT_PAYLOAD.includes(kind);
-    const ok = CanonicalDecision.safeParse({ ...base, kind, payload: needsNull ? null : 'x' });
-    const wrong = CanonicalDecision.safeParse({ ...base, kind, payload: needsNull ? 'x' : null });
-    expect(ok.success).toBe(true);
-    expect(wrong.success).toBe(false);
-    expect(wrong.error?.issues[0]?.path).toEqual(['payload']);
+  it.each(DecisionKind.options.filter((kind) => kind !== 'always'))(
+    '%s carries a payload exactly when it needs one',
+    (kind) => {
+      const needsNull = WITHOUT_PAYLOAD.includes(kind);
+      const ok = CanonicalDecision.safeParse({ ...base, kind, payload: needsNull ? null : 'x' });
+      const wrong = CanonicalDecision.safeParse({ ...base, kind, payload: needsNull ? 'x' : null });
+      expect(ok.success).toBe(true);
+      expect(wrong.success).toBe(false);
+      expect(wrong.error?.issues[0]?.path).toEqual(['payload']);
+    },
+  );
+
+  it.each([null, 'localSettings', 'projectSettings'])('always may carry %s (M2-07)', (payload) => {
+    expect(CanonicalDecision.safeParse({ ...base, kind: 'always', payload }).success).toBe(true);
+  });
+
+  it.each(['session', 'userSettings', 'x', ''])('always refuses the payload %j', (payload) => {
+    const result = CanonicalDecision.safeParse({ ...base, kind: 'always', payload });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.path).toEqual(['payload']);
   });
 
   it.each([-1, 1, 299, 301, 600])('refuses expires_at = issued_at + %i', (delta) => {

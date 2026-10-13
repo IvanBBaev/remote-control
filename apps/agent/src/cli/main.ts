@@ -295,6 +295,7 @@ async function runCommand(
         agentVersion: c.version,
       },
       capabilities: [CLAUDE_CODE_CAPABILITIES],
+      alwaysDestinations: config.always.destinations,
       history: async () => statsHistory(await stats.read()),
       url: endpoints.ws,
       token: credentials.token,

@@ -13,7 +13,7 @@ import type { TestPhone } from '../realtime/test-phone.js';
 import { fixtures } from '../test-fixtures.js';
 import { click, renderApp, settle } from '../test-render.js';
 import type { RenderedApp } from '../test-render.js';
-import { TAP_GUARD_MS, countdown, revealNoun } from './approval.js';
+import { ALWAYS_TEXT, TAP_GUARD_MS, countdown, revealNoun } from './approval.js';
 
 const AGENT = 'agent-1';
 const ID = '0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b';
@@ -187,7 +187,12 @@ describe('approval card', () => {
       tick(test, TAP_GUARD_MS);
       decide.mockResolvedValue({ ok: true, decisionHash: 'h', asserted: true });
       await click(mounted!.button('Always (this session)'));
-      expect(decide).toHaveBeenCalledWith(AGENT, expect.objectContaining({ id: ID }), 'always');
+      expect(decide).toHaveBeenCalledWith(
+        AGENT,
+        expect.objectContaining({ id: ID }),
+        'always',
+        'session',
+      );
       await settle();
       expect(text()).toContain('Always (this session) sent. Waiting for your computer…');
       expect(() => mounted!.button('Always (this session)')).toThrow();
@@ -196,6 +201,29 @@ describe('approval card', () => {
     it('disables "Always" when the content was truncated', async () => {
       await open(`/requests/${ID}`, (t) => [offered(t, { truncated: true })]);
       expect(mounted!.button('Always (this session)').disabled).toBe(true);
+    });
+
+    it('offers one button per destination the agent turned on (M2-07)', async () => {
+      const destinations = ['session', 'localSettings', 'projectSettings'] as const;
+      const { test, decide } = await open(`/requests/${ID}`, (t) => [
+        offered(t, { alwaysDestinations: [...destinations] }),
+      ]);
+      expect(text()).toContain('Always allow:');
+      expect(text()).not.toContain('Always allow in this session:');
+      for (const destination of destinations) {
+        expect(mounted!.button(ALWAYS_TEXT[destination]).disabled).toBe(false);
+      }
+      tick(test, TAP_GUARD_MS);
+      decide.mockResolvedValue({ ok: true, decisionHash: 'h', asserted: true });
+      await click(mounted!.button('Always (this project, only me)'));
+      expect(decide).toHaveBeenCalledWith(
+        AGENT,
+        expect.objectContaining({ id: ID }),
+        'always',
+        'localSettings',
+      );
+      await settle();
+      expect(text()).toContain('Always (this project, only me) sent. Waiting for your computer…');
     });
   });
 

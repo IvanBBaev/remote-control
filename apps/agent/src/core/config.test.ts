@@ -25,6 +25,7 @@ describe('parseConfig', () => {
         repositories: [],
         hooks: { holdSeconds: DEFAULT_HOLD_SECONDS, port: 4327 },
         agent: { onExpire: 'handoff' },
+        always: { destinations: ['session'] },
         notifications: { turnFinished: false, needsInput: false },
       },
     });
@@ -42,6 +43,7 @@ describe('parseConfig', () => {
         repositories: ['/srv/repo'],
         hooks: { holdSeconds: 60 },
         agent: { onExpire: 'deny' },
+        always: { destinations: ['session', 'localSettings'] },
         notifications: { turnFinished: true },
         relay: { url: 'wss://relay.example.com' },
       }),
@@ -52,6 +54,7 @@ describe('parseConfig', () => {
       config: {
         hooks: { holdSeconds: 60, port: 4327 },
         agent: { onExpire: 'deny' },
+        always: { destinations: ['session', 'localSettings'] },
         notifications: { turnFinished: true, needsInput: false },
       },
     });
@@ -83,6 +86,21 @@ describe('parseConfig', () => {
     expect(errorsOf('{"notifications":{"needsInput":"yes"}}')).toEqual([
       expect.stringMatching(/^notifications\.needsInput: /),
     ]);
+  });
+
+  it('lets "Always" add settings destinations, but always with the session (M2-07)', () => {
+    const all = { always: { destinations: ['session', 'localSettings', 'projectSettings'] } };
+    expect(parseConfig(JSON.stringify(all), nodePaths)).toMatchObject({ ok: true, config: all });
+    for (const destinations of [
+      [],
+      ['projectSettings'],
+      ['session', 'session'],
+      ['userSettings'],
+    ]) {
+      expect(errorsOf(JSON.stringify({ always: { destinations } }))[0]).toMatch(
+        /^always\.destinations/,
+      );
+    }
   });
 
   it('refuses unknown keys, so a typo is not silently ignored', () => {

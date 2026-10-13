@@ -1,3 +1,4 @@
+import { AlwaysDestination } from '@remote-control/protocol';
 import { z } from 'zod';
 
 /** Default hold for a blocking hook (D10, Q3): 30 minutes, then handoff to the terminal. */
@@ -65,6 +66,21 @@ export const AgentConfig = z
       })
       .strict()
       .default({ onExpire: 'handoff' }),
+    always: z
+      .object({
+        /**
+         * Where "Always" from the phone may store rules (D24, M2-07). The session always;
+         * `localSettings` / `projectSettings` only when listed here, since they persist.
+         */
+        destinations: z
+          .array(AlwaysDestination)
+          .min(1)
+          .refine((list) => list.includes('session'), 'must include "session"')
+          .refine((list) => new Set(list).size === list.length, 'must not repeat a destination')
+          .default(['session']),
+      })
+      .strict()
+      .default({ destinations: ['session'] }),
     notifications: z
       .object({
         /** Push when a turn finishes (`Stop`, M2-08). Off by default. */

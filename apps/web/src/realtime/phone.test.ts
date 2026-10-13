@@ -406,6 +406,27 @@ describe('phone decisions', () => {
     },
   );
 
+  it.each([
+    ['session', null],
+    ['localSettings', 'localSettings'],
+    ['projectSettings', 'projectSettings'],
+  ] as const)('signs "Always" to %s in the payload (M2-07)', async (destination, payload) => {
+    const credentials = mockCredentials();
+    try {
+      const t = await setup(assertingRelay());
+      await t.online();
+      const decide = vi.spyOn(t.phone.client!, 'decide');
+      await t.phone.decide(AGENT, REQUEST, 'always', destination);
+      expect(decide).toHaveBeenCalledWith(
+        AGENT,
+        expect.objectContaining({ kind: 'always', payload }),
+        expect.any(String),
+      );
+    } finally {
+      credentials.restore();
+    }
+  });
+
   it('sends nothing when the user cancels the passkey sheet', async () => {
     const credentials = mockCredentials();
     credentials.get.mockRejectedValueOnce(userCancelled());

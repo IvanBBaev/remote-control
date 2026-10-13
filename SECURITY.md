@@ -45,7 +45,9 @@ release) is supported.
    enforces that only the spawn module imports `child_process`.
 4. **The project allow-list and relay URL are local config**, not protocol fields, and
    cannot be changed from the phone. Paths are resolved with `realpath` and must lie
-   inside an allow-listed root.
+   inside an allow-listed root. The same holds for `always.destinations`: "Always" writes
+   allow rules to a settings file only if that file is listed there (default: session
+   only), and the chosen destination is part of the signed canonical decision.
 5. **The agent has no inbound network surface.** Its hook endpoint binds to `127.0.0.1`
    only, requires a per-install token and has no "decide" API; decisions arrive only over
    the agent's outbound WebSocket session.

@@ -129,6 +129,26 @@ describe('approvalView', () => {
       HASH,
     );
     expect(view).toMatchObject({ suggestions: ['Bash(npm test)'], alwaysSupported: true });
+    expect(view).not.toHaveProperty('alwaysDestinations');
+  });
+
+  it('lists the "Always" destinations only when there is a choice (M2-07)', () => {
+    const payload = {
+      tool_name: 'Bash',
+      tool_input: { command: 'npm test' },
+      permission_suggestions: [
+        { type: 'addRules', rules: [{ toolName: 'Bash' }], behavior: 'allow' },
+      ],
+    };
+    const both = ['session', 'projectSettings'] as const;
+    expect(approvalView(pending(payload), HASH, both)?.alwaysDestinations).toEqual(both);
+    expect(approvalView(pending(payload), HASH, ['session'])).not.toHaveProperty(
+      'alwaysDestinations',
+    );
+    // No rule to grant: no "Always" at all, so no destinations either.
+    const none = approvalView(pending({ ...payload, permission_suggestions: [] }), HASH, both);
+    expect(none).toMatchObject({ alwaysSupported: false });
+    expect(none).not.toHaveProperty('alwaysDestinations');
   });
 
   it('names the project by its folder, never the full path (D21)', () => {

@@ -1,5 +1,5 @@
 import { toolInfo } from '@remote-control/protocol';
-import type { ToolKind } from '@remote-control/protocol';
+import type { AlwaysDestination, ToolKind } from '@remote-control/protocol';
 import { useEffect, useRef, useState } from 'react';
 import { Navigate, useParams } from 'react-router';
 import { useStore } from 'zustand';
@@ -28,6 +28,13 @@ const SENT_TEXT = {
 } as const;
 type SentKind = keyof typeof SENT_TEXT;
 
+/** The "Always" button for each destination the agent offers (M2-07). */
+export const ALWAYS_TEXT: Record<AlwaysDestination, string> = {
+  session: 'Always (this session)',
+  localSettings: 'Always (this project, only me)',
+  projectSettings: 'Always (this project, everyone)',
+};
+
 const mostUrgent = (state: RealtimeState): string | undefined =>
   pendingRequests(state)[0]?.request.id;
 const isConnected = (state: RealtimeState): boolean => state.connection === 'open';
@@ -53,7 +60,9 @@ export function revealNoun(toolName: string): string {
  * truncated, taps in the first `TAP_GUARD_MS` are ignored, and a closed or expired card has
  * no decision buttons. "Always (this session)" (M1-02, D24) appears only when the agent
  * offered session rules; it lists every rule it grants, needs the passkey like Allow, and
- * is disabled with it while the content is truncated. "Reply in terminal" (M1-03) hands
+ * is disabled with it while the content is truncated. When the agent's
+ * `always.destinations` adds settings files (M2-07), there is one "Always" button per
+ * destination, and the picked one is signed. "Reply in terminal" (M1-03) hands
  * the request back to Claude Code's own prompt, without the passkey.
  */
 export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
@@ -64,6 +73,7 @@ export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
   const [details, setDetails] = useState(false);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState<SentKind>();
+  const [sentText, setSentText] = useState('');
   const [failure, setFailure] = useState<Failure>();
   const busy = useRef(false);
   const { request } = view;
@@ -85,7 +95,7 @@ export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
   const expired = view.status === 'pending' && !released && left <= 0;
   const open = view.status === 'pending' && !expired && !released && closed === undefined;
 
-  const decide = async (kind: SentKind) => {
+  const decide = async (kind: SentKind, destination?: AlwaysDestination) => {
     if (busy.current || phone.now() - shownAt < TAP_GUARD_MS) return;
     busy.current = true;
     setSending(true);
@@ -93,14 +103,19 @@ export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
     const result =
       kind === 'terminal'
         ? await phone.release(view.machineId, request)
-        : await phone.decide(view.machineId, request, kind);
+        : destination === undefined
+          ? await phone.decide(view.machineId, request, kind)
+          : await phone.decide(view.machineId, request, kind, destination);
     busy.current = false;
     setSending(false);
-    if (result.ok) setSent(kind);
-    else setFailure(result.failure);
+    if (result.ok) {
+      setSent(kind);
+      setSentText(destination === undefined ? SENT_TEXT[kind] : ALWAYS_TEXT[destination]);
+    } else setFailure(result.failure);
   };
 
   const noun = revealNoun(request.toolName);
+  const destinations = request.alwaysDestinations ?? ['session'];
   return (
     <article className="approval-card">
       <p className="meta">
@@ -130,9 +145,7 @@ export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
       {expired && <Notice>Expired. The terminal is asking again.</Notice>}
       {closed !== undefined && <Notice>{closed}</Notice>}
       {released && <Notice>{RELEASED_TEXT}</Notice>}
-      {open && sent !== undefined && (
-        <Notice>{SENT_TEXT[sent]} sent. Waiting for your computer…</Notice>
-      )}
+      {open && sent !== undefined && <Notice>{sentText} sent. Waiting for your computer…</Notice>}
       {failure !== undefined && <p className="notice error">{failureText(failure)}</p>}
       {open && sent === undefined && (
         <div className="actions split">
@@ -156,7 +169,9 @@ export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
       )}
       {open && sent === undefined && request.alwaysSupported && (
         <div className="always">
-          <p className="meta">Always allow in this session:</p>
+          <p className="meta">
+            {destinations.length > 1 ? 'Always allow:' : 'Always allow in this session:'}
+          </p>
           <ul className="always-rules">
             {request.suggestions.map((rule) => (
               <li key={rule}>
@@ -165,13 +180,16 @@ export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
             ))}
           </ul>
           <div className="actions">
-            <button
-              type="button"
-              disabled={sending || request.truncated}
-              onClick={() => void decide('always')}
-            >
-              Always (this session)
-            </button>
+            {destinations.map((destination) => (
+              <button
+                key={destination}
+                type="button"
+                disabled={sending || request.truncated}
+                onClick={() => void decide('always', destination)}
+              >
+                {ALWAYS_TEXT[destination]}
+              </button>
+            ))}
           </div>
         </div>
       )}

@@ -1,3 +1,5 @@
+import { AlwaysDestination } from '@remote-control/protocol';
+
 import type { PendingRequest } from './pending-store.js';
 
 /** `ApprovalRequest.suggestions` caps: what the phone can show for "Always". */
@@ -10,12 +12,12 @@ export interface PermissionRule {
   readonly ruleContent?: string;
 }
 
-/** The `updatedPermissions` entry "Always" emits: allow rules for this session only. */
-export interface SessionRuleUpdate {
+/** The `updatedPermissions` entry "Always" emits: allow rules for one destination. */
+export interface AlwaysRuleUpdate {
   readonly type: 'addRules';
   readonly rules: readonly PermissionRule[];
   readonly behavior: 'allow';
-  readonly destination: 'session';
+  readonly destination: AlwaysDestination;
 }
 
 function isObject(value: unknown): value is Readonly<Record<string, unknown>> {
@@ -39,16 +41,20 @@ export function ruleLabel(entry: PermissionRule): string {
 
 /**
  * The allow rules Claude Code suggested for a permission request (`permission_suggestions`,
- * 04 §2.2), each re-targeted to `destination: "session"` (D24): whatever settings file
- * Claude Code proposed, "Always" from the phone never writes one in M1. Only `addRules`
+ * 04 §2.2), each re-targeted to `destination` (D24, M2-07): whatever settings file Claude
+ * Code proposed, the rules go only where the phone picked from the agent's
+ * `always.destinations`, and to the session by default. Only `addRules`
  * with `behavior: "allow"` qualify — mode changes, directory grants and deny/ask rules are
  * not offered. Fails closed: a malformed rule, or more rules than the phone can show in
  * full, means no "Always" at all, so the user always sees every rule they grant.
  */
-export function sessionRules(request: PendingRequest): SessionRuleUpdate[] {
+export function alwaysRules(
+  request: PendingRequest,
+  destination: AlwaysDestination = 'session',
+): AlwaysRuleUpdate[] {
   const raw = request.payload['permission_suggestions'];
   if (request.kind !== 'permission' || !Array.isArray(raw)) return [];
-  const updates: SessionRuleUpdate[] = [];
+  const updates: AlwaysRuleUpdate[] = [];
   let count = 0;
   for (const suggestion of raw as unknown[]) {
     if (!isObject(suggestion)) return [];
@@ -61,12 +67,25 @@ export function sessionRules(request: PendingRequest): SessionRuleUpdate[] {
     if (valid.some((entry) => ruleLabel(entry).length > MAX_LABEL_LENGTH)) return [];
     count += valid.length;
     if (count > MAX_RULES) return [];
-    updates.push({ type: 'addRules', rules: valid, behavior: 'allow', destination: 'session' });
+    updates.push({ type: 'addRules', rules: valid, behavior: 'allow', destination });
   }
   return updates;
 }
 
 /** The labels of every rule in `updates`, in order: what the "Always" button grants. */
-export function sessionRuleLabels(updates: readonly SessionRuleUpdate[]): string[] {
+export function alwaysRuleLabels(updates: readonly AlwaysRuleUpdate[]): string[] {
   return updates.flatMap((update) => update.rules.map(ruleLabel));
+}
+
+/**
+ * Where an `always` decision sends its rules: its signed payload (M2-07), `null` meaning the
+ * session. `undefined` when that destination is not in the agent's `always.destinations`,
+ * so a phone can never pick a settings file the user did not turn on.
+ */
+export function alwaysDestination(
+  payload: string | null,
+  allowed: readonly AlwaysDestination[],
+): AlwaysDestination | undefined {
+  const parsed = AlwaysDestination.safeParse(payload ?? 'session');
+  return parsed.success && allowed.includes(parsed.data) ? parsed.data : undefined;
 }

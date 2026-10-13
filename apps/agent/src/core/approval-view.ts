@@ -1,8 +1,8 @@
 import { ApprovalRequest, requestHash, toolInfo } from '@remote-control/protocol';
-import type { ToolKind } from '@remote-control/protocol';
+import type { AlwaysDestination, ToolKind } from '@remote-control/protocol';
 
 import type { PendingRequest } from './pending-store.js';
-import { sessionRuleLabels, sessionRules } from './session-rules.js';
+import { alwaysRuleLabels, alwaysRules } from './session-rules.js';
 
 /** `ApprovalRequest.content` cap (04 §5.2): longer content is cut and flagged. */
 export const MAX_CONTENT_LENGTH = 4000;
@@ -80,15 +80,20 @@ export function toolContent(toolInput: unknown, toolName = ''): string {
 /**
  * The phone's view of a pending permission request (D7). `undefined` when the hook input
  * cannot be shown as an `ApprovalRequest` (no tool name, a session id the protocol does
- * not accept); such a request stays with the terminal.
+ * not accept); such a request stays with the terminal. `destinations` is the agent's
+ * `always.destinations` (M2-07); the request lists them only when there is a choice.
  */
-export function approvalView(request: PendingRequest, hash: string): ApprovalRequest | undefined {
+export function approvalView(
+  request: PendingRequest,
+  hash: string,
+  destinations: readonly AlwaysDestination[] = ['session'],
+): ApprovalRequest | undefined {
   const { toolName, toolInput } = toolCall(request);
   const content = toolContent(toolInput, toolName);
   const project = projectName(request.payload['cwd']);
   const truncated = content.length > MAX_CONTENT_LENGTH;
   // The rules "Always (this session)" would grant, shown in full on the card (D24).
-  const suggestions = sessionRuleLabels(sessionRules(request));
+  const suggestions = alwaysRuleLabels(alwaysRules(request));
   const parsed = ApprovalRequest.safeParse({
     id: request.id,
     sessionId: request.sessionId,
@@ -101,6 +106,9 @@ export function approvalView(request: PendingRequest, hash: string): ApprovalReq
     suggestions,
     expiresAt: request.deadline,
     alwaysSupported: suggestions.length > 0,
+    ...(suggestions.length > 0 && destinations.length > 1
+      ? { alwaysDestinations: [...destinations] }
+      : {}),
   });
   return parsed.success ? parsed.data : undefined;
 }

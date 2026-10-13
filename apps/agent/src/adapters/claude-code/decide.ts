@@ -1,6 +1,6 @@
 import { ASK_USER_QUESTION } from '../../core/hook-dispatcher.js';
 import type { PendingRequest } from '../../core/pending-store.js';
-import { sessionRules } from '../../core/session-rules.js';
+import { alwaysRules } from '../../core/session-rules.js';
 import type { AdapterDecision, QuestionAnswers } from '../../ports/agent-adapter.js';
 
 /** The deny reason when the phone gave none. */
@@ -14,11 +14,15 @@ type HookOutput = Readonly<Record<string, unknown>>;
 const NO_DECISION: HookOutput = Object.freeze({});
 
 /**
- * "Always" (D24): allow, plus `updatedPermissions` with the request's own suggested allow
- * rules, every one with `destination: "session"`. No usable suggestion: hand off.
+ * "Always" (D24, M2-07): allow, plus `updatedPermissions` with the request's own suggested
+ * allow rules, every one with the decision's checked destination (the session by default).
+ * No usable suggestion: hand off.
  */
-function alwaysVerdict(request: PendingRequest): Readonly<Record<string, unknown>> | undefined {
-  const updatedPermissions = sessionRules(request);
+function alwaysVerdict(
+  request: PendingRequest,
+  decision: AdapterDecision,
+): Readonly<Record<string, unknown>> | undefined {
+  const updatedPermissions = alwaysRules(request, decision.destination);
   return updatedPermissions.length === 0 ? undefined : { behavior: 'allow', updatedPermissions };
 }
 
@@ -30,7 +34,7 @@ function permissionVerdict(
     case 'allow':
       return { behavior: 'allow' };
     case 'always':
-      return alwaysVerdict(request);
+      return alwaysVerdict(request, decision);
     case 'deny':
       return {
         behavior: 'deny',
@@ -89,7 +93,8 @@ function questionOutput(request: PendingRequest, decision: AdapterDecision): Hoo
  * Builds the Claude Code hook output for a decision (04 §2.2–2.3). The only module the
  * argv gate lets emit `updatedInput` (D11), and it does so only to answer an
  * `AskUserQuestion`: a permission `allow` approves the tool input exactly as Claude Code
- * proposed it, and "Always" adds only session-scoped allow rules (D24). Anything that does not fit its request kind hands off (D10).
+ * proposed it, and "Always" adds only allow rules, at the destination the hub checked
+ * against `always.destinations` (D24, M2-07). Anything that does not fit its request kind hands off (D10).
  */
 export function decideClaudeCode(request: PendingRequest, decision: AdapterDecision): HookOutput {
   return request.kind === 'question'

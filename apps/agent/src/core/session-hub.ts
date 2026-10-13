@@ -13,6 +13,7 @@ import {
   PhoneMessage,
   VERSION_TABLE,
   type AgentMessage,
+  type AlwaysDestination,
   type Capabilities,
   type Envelope,
   type Machine,
@@ -32,7 +33,7 @@ import { fromBase64Url } from './from-base64url.js';
 import type { PendingEvent, PendingRequest, PendingStore } from './pending-store.js';
 import { createPushSealer, pushSummaryText } from './push-summary.js';
 import { questionAnswers, questionView } from './question-view.js';
-import { sessionRules } from './session-rules.js';
+import { alwaysDestination, alwaysRules } from './session-rules.js';
 import { uuidV7 } from './uuid.js';
 
 /** What the hub logs: event names and ids only, never a payload or a key (I3). */
@@ -55,6 +56,11 @@ export interface SessionHubOptions {
     request: PendingRequest,
     decision: AdapterDecision,
   ) => Readonly<Record<string, unknown>>;
+  /**
+   * Where "Always" may store rules (`always.destinations`, M2-07); the session when absent.
+   * An `always` decision naming any other destination is refused (`wrong_kind`).
+   */
+  readonly alwaysDestinations?: readonly AlwaysDestination[];
   /** The machine as the snapshot shows it; `id` comes from the relay's `hello_ok`. */
   readonly machine: Omit<Machine, 'id' | 'agents'>;
   readonly capabilities: readonly Capabilities[];
@@ -140,6 +146,7 @@ function header(envelope: Envelope): EnvelopeHeader {
 export function createSessionHub(options: SessionHubOptions): SessionHub {
   const { clock, random, store } = options;
   const log: HubLog = options.log ?? (() => undefined);
+  const alwaysAllowed = options.alwaysDestinations ?? ['session'];
   let agentId: string | undefined;
   let peers: readonly Peer[] = [];
   const sealer = createPushSealer(options.deviceKey.privateKey, random);
@@ -340,7 +347,7 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
       const question = questionView(request, hash);
       return question === undefined ? undefined : { t: 'question', question, ttlMs };
     }
-    const view = approvalView(request, hash);
+    const view = approvalView(request, hash, alwaysAllowed);
     return view === undefined ? undefined : { t: 'request', request: view, ttlMs };
   }
 
@@ -458,6 +465,9 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     // From here on synchronous: the checks and the store see the same state (decide-once).
     const shown = store.get(decision.request_id);
     let answer: QuestionAnswers | undefined;
+    // `always` fits only a destination the user turned on, with rules to put there.
+    const destination =
+      decision.kind === 'always' ? alwaysDestination(decision.payload, alwaysAllowed) : undefined;
     if (decision.kind === 'answer' && shown !== undefined) {
       const payload = parseAnswerPayload(decision.payload);
       answer = payload === undefined ? undefined : questionAnswers(shown, payload);
@@ -476,7 +486,8 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
               requestHash,
               deadline: shown.deadline,
               answerValid: answer !== undefined,
-              alwaysSupported: sessionRules(shown).length > 0,
+              alwaysSupported:
+                destination !== undefined && alwaysRules(shown, destination).length > 0,
             },
       ended: store.ended(decision.request_id),
       agentDeviceId: agentId ?? '',
@@ -501,6 +512,11 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     if (outcome === 'terminal') store.release(target.id, 'released');
     else if (outcome === 'answer') {
       store.resolve(target.id, options.decide(target, { behavior: outcome, answer: answer! }));
+    } else if (outcome === 'always') {
+      store.resolve(
+        target.id,
+        options.decide(target, { behavior: outcome, destination: destination! }),
+      );
     } else store.resolve(target.id, options.decide(target, { behavior: outcome }));
     log('decision_applied', {
       phone_device_id: session.phoneId,

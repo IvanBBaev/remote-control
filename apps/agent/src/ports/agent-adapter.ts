@@ -1,4 +1,4 @@
-import type { Capabilities } from '@remote-control/protocol';
+import type { AlwaysDestination, Capabilities } from '@remote-control/protocol';
 
 import type { PendingRequest } from '../core/pending-store.js';
 
@@ -70,8 +70,13 @@ export interface QuestionAnswers {
  * prompt appears in the terminal (D10). `answer` answers a question request (M1-01).
  */
 export interface AdapterDecision {
-  /** `always`: allow, plus the request's suggested rules for this session (D24). */
+  /** `always`: allow, plus the request's suggested rules for `destination` (D24). */
   readonly behavior: 'allow' | 'always' | 'deny' | 'handoff' | 'answer';
+  /**
+   * For `always`: where the rules go, already checked against `always.destinations`
+   * (M2-07); the session when absent.
+   */
+  readonly destination?: AlwaysDestination;
   /** For `deny`: the reason shown to the coding agent. */
   readonly message?: string;
   /** For `answer`: the checked answers. */

@@ -7,6 +7,7 @@ import { seededRandom } from '@remote-control/fake-claude-code';
 import {
   decodePushSummary,
   encodeAnswerPayload,
+  type AlwaysDestination,
   type ApprovalRequest,
   type Envelope,
   type ProjectHistory,
@@ -77,6 +78,7 @@ async function setup(
   names: readonly string[] = ['Pixel'],
   seed = 11,
   history?: () => Promise<readonly ProjectHistory[]>,
+  alwaysDestinations?: readonly AlwaysDestination[],
 ) {
   const time = manualTime();
   const random = seededRandom(seed);
@@ -115,6 +117,7 @@ async function setup(
     webSocket: relay.webSocket,
     log: (event, fields) => logs.push({ event, fields }),
     ...(history === undefined ? {} : { history }),
+    ...(alwaysDestinations === undefined ? {} : { alwaysDestinations }),
   }));
   const started = link;
   started.start();
@@ -319,6 +322,61 @@ describe('relay link (fake relay, fake phones)', () => {
     await phone.decide('deny', request);
     expect(await t.resultOn(phone, 2)).toMatchObject({ result: 'accepted' });
     await expect(registration.settled).resolves.toMatchObject({ type: 'decided' });
+  });
+
+  describe('"Always" destinations (M2-07, D24)', () => {
+    const suggesting = () =>
+      permission('npm test', {
+        payload: {
+          ...permission().payload,
+          permission_suggestions: [
+            {
+              type: 'addRules',
+              rules: [{ toolName: 'Bash', ruleContent: 'npm test' }],
+              behavior: 'allow',
+              destination: 'projectSettings',
+            },
+          ],
+        },
+      });
+
+    it('AC: a destination outside `always.destinations` is rejected and never emitted', async () => {
+      const t = await setup(['Pixel'], 11, undefined, ['session', 'localSettings']);
+      const [phone] = t.phones as [FakePhone];
+      await t.open(phone);
+      const registration = t.store.register(suggesting());
+      const request = await t.requestOn(phone, registration.request.id);
+      expect(request.alwaysDestinations).toEqual(['session', 'localSettings']);
+
+      await phone.decide('always', request, { decision: { payload: 'projectSettings' } });
+      expect(await t.resultOn(phone)).toMatchObject({ result: 'rejected', reason: 'wrong_kind' });
+      expect(t.decided).toEqual([]);
+      expect(t.store.get(request.id)).toBe(registration.request);
+
+      await phone.decide('always', request, { decision: { payload: 'localSettings' } });
+      expect(await t.resultOn(phone, 2)).toMatchObject({ result: 'accepted' });
+      const settled = await registration.settled;
+      const text = JSON.stringify(settled);
+      expect(text).toContain('"destination":"localSettings"');
+      expect(text).not.toMatch(/projectSettings|"destination":"session"/);
+    });
+
+    it('sends the session only, and refuses settings, with the default setting', async () => {
+      const t = await setup();
+      const [phone] = t.phones as [FakePhone];
+      await t.open(phone);
+      const registration = t.store.register(suggesting());
+      const request = await t.requestOn(phone, registration.request.id);
+      expect(request).not.toHaveProperty('alwaysDestinations');
+
+      await phone.decide('always', request, { decision: { payload: 'localSettings' } });
+      expect(await t.resultOn(phone)).toMatchObject({ result: 'rejected', reason: 'wrong_kind' });
+      await phone.decide('always', request);
+      expect(await t.resultOn(phone, 2)).toMatchObject({ result: 'accepted' });
+      const text = JSON.stringify(await registration.settled);
+      expect(text).toContain('"destination":"session"');
+      expect(text).not.toMatch(/localSettings|projectSettings/);
+    });
   });
 
   it('rejects a command whose envelope hash is not the decision hash (unverified)', async () => {

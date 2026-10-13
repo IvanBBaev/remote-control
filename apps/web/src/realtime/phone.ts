@@ -1,6 +1,7 @@
 import { pairingFingerprint } from '@remote-control/crypto';
 import { DECISION_TTL_SECONDS, VERSION_TABLE, encodeAnswerPayload } from '@remote-control/protocol';
 import type {
+  AlwaysDestination,
   AnswerPayload,
   ApprovalRequest,
   CanonicalDecision,
@@ -90,12 +91,15 @@ export interface PhoneService {
   /**
    * Answers `request` on `machineId`: builds the canonical decision, asks for the passkey
    * assertion when the kind needs one (Allow, Always, D7), then queues it for the agent.
-   * Call it from the tap handler, so iOS lets the passkey sheet open.
+   * Call it from the tap handler, so iOS lets the passkey sheet open. For `always`,
+   * `destination` is where the rules go (M2-07), signed in the payload; the session by
+   * default.
    */
   decide(
     machineId: string,
     request: ApprovalRequest | Question,
     kind: 'allow' | 'always' | 'deny',
+    destination?: AlwaysDestination,
   ): Promise<AssertDecisionResult>;
   /**
    * Answers an `AskUserQuestion` (M1-01): the answer rides in the decision's payload, so
@@ -321,8 +325,13 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
         connect(userId).catch(() => undefined);
     },
     enroll: (name) => relay.enrollAgent(name),
-    async decide(machineId, request, kind) {
-      const result = await send(machineId, request, kind, null);
+    async decide(machineId, request, kind, destination) {
+      // The session is the signed default (`null`); a settings destination is named.
+      const payload =
+        kind === 'always' && destination !== undefined && destination !== 'session'
+          ? destination
+          : null;
+      const result = await send(machineId, request, kind, payload);
       // "Always" counts as an approval, like the agent's counters (M2-05).
       if (result.ok) sent.set(request.id, kind === 'deny' ? 'deny' : 'allow');
       return result;

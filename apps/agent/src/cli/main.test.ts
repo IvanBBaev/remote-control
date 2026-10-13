@@ -464,6 +464,7 @@ describe('runCli', () => {
         repositories: [],
         hooks: { holdSeconds: 1800 },
         agent: { onExpire: 'handoff' },
+        always: { destinations: ['session'] },
         notifications: { turnFinished: false, needsInput: false },
       });
       expect((await stat(configPath)).mode & 0o777).toBe(0o600);
