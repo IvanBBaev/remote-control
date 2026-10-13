@@ -64,7 +64,7 @@ named, so nobody re-derives it.
 | M1-01 | AskUserQuestion end-to-end | §4 M1-01 | `done` | 2 |
 | M1-02 | "Always" from the phone (session scope) | §4 M1-02 | `done` | 1 |
 | M1-03 | "Reply in terminal", early handoff, remotectl pause | §4 M1-03 | `done` | 1 |
-| M1-04 | Session registry, launcher, follow-up, J9–J11 — deps M0-23 | §4 M1-04 | `blocked-owner` | 4 |
+| M1-04 | Session registry, launcher, follow-up, J9–J11 — deps M0-23 | §4 M1-04 | `doing — code done f25cfea; real-CLI check pending M0-23 (ADR 0005)` | 4 |
 | M1-05 | Live feed and thin session view, J8 — deps M1-04 | §4 M1-05 | `blocked-owner` | 4 |
 | M1-06 | Encrypted push summary | §4 M1-06 | `done` | 2 |
 | M1-07 | Machines screen, checklist, onboarding self-test — deps M1-05 | §4 M1-07 | `blocked-owner` | 2 |
@@ -887,7 +887,7 @@ AC: journey J5 variant: release from the phone within 1 s; pause test: a held re
 answered immediately with no decision.
 
 #### M1-04 — Session registry, launcher, follow-up
-Size L · Deps M0-22, M0-23 · Status todo · Sources 04 W6–W7, 04 §5.3–5.4, 01 W10, 02 W11, 03 §5.6
+Size L · Deps M0-22, M0-23 · Status doing — code done f25cfea; real-CLI check pending M0-23 (ADR 0005) · Sources 04 W6–W7, 04 §5.3–5.4, 01 W10, 02 W11, 03 §5.6
 Scope: `SessionRegistry` fed by hooks + `claude agents --json --all` poll every 10 s
 while sessions exist (`kind`, `name`, `state`, `status`, `waitingFor`, `pid`), stale after
 24 h; `Launcher`: allow-list + trust canary, `spawn("claude", ["--bg", "--name", name,
