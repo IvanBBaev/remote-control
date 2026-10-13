@@ -67,7 +67,7 @@ named, so nobody re-derives it.
 | M1-04 | Session registry, launcher, follow-up, J9–J11 — deps M0-23 | §4 M1-04 | `doing — code done f25cfea; real-CLI check pending M0-23 (ADR 0005)` | 4 |
 | M1-05 | Live feed and thin session view, J8 — deps M1-04 | §4 M1-05 | `doing — code done d22c187; real-CLI check pending M0-23 (ADR 0005)` | 4 |
 | M1-06 | Encrypted push summary | §4 M1-06 | `done` | 2 |
-| M1-07 | Machines screen, checklist, onboarding self-test — deps M1-05 | §4 M1-07 | `blocked-owner` | 2 |
+| M1-07 | Machines screen, checklist, onboarding self-test — deps M1-05 | §4 M1-07 | `doing — code done b69ecf3; real-CLI check pending M0-23 (ADR 0006)` | 2 |
 | M1-08 | Linux and Windows services, uninstall, logs, update | §4 M1-08 | `done` | 2 |
 | M1-09a | Tag-driven release pipeline (code part) | §4 M1-09 | `done` | 1 |
 | M1-09b | First tagged publish remotectl@0.1.0 + release checklist executed | §4 M1-09, §3 M1 (2)(6) | `blocked-owner` | 1.5 |
@@ -924,7 +924,7 @@ AC: SW tests at 100 % incl. the fallback path; J7 variant asserts the push body 
 ciphertext (privacy gate canary); ADR present.
 
 #### M1-07 — Machines screen, "Can't connect?" checklist, onboarding self-test
-Size M · Deps M1-05 · Status todo · Sources 01 W8, 01 W12, 05 Rec-3, 04 §4.1
+Size M · Deps M1-05 · Status doing — code done b69ecf3; real-CLI check pending M0-23 (ADR 0006) · Sources 01 W8, 01 W12, 05 Rec-3, 04 §4.1
 Scope: `/machines` with presence (last seen from relay timestamps), paired devices,
 revoke entry point (M1-10), per-repo hook status ("no hook seen yet — trust the folder
 in Claude Code"), checklist (daemon running? relay reachable? repo trusted? hooks
