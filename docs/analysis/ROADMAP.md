@@ -784,7 +784,7 @@ outside home (date, network, device), journeys and gates green (CI run links).
 ### M1 — Second user
 
 #### M1-01 — AskUserQuestion end-to-end
-Size M · Deps M0-22 · Status todo · Sources 04 W4, 04 §2.3, 01 W7, 05 W9, 02 W11, D11
+Size M · Deps M0-22 · Status done 03f06e2 (answers require UV per scope; 01 says no biometric, owner to confirm) · Sources 04 W4, 04 §2.3, 01 W7, 05 W9, 02 W11, D11
 Scope: adapter `PreToolUse` mapping for `AskUserQuestion` → `question` (1–4 questions,
 2–4 options, `multiSelect`, free-text `response`); `decide` emits `permissionDecision:
 allow` + `updatedInput {questions (verbatim), answers, response?}` from exactly one
