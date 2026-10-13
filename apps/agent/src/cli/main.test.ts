@@ -170,8 +170,7 @@ describe('runCli', () => {
       };
       const run = (argv: readonly string[], signal = new AbortController().signal) =>
         runCli(argv, c, { signal });
-      const login = () =>
-        run(['login', `rc-enroll:${relay.agent.token}`, '--user-id', relay.userId]);
+      const login = () => run(['login', `rc-enroll:${relay.agent.token}`]);
       /** The code `pair` printed, once the slot is open. */
       async function code(): Promise<string> {
         await waitFor(() => /Pairing code: (\S+)/.test(h.out()));
@@ -183,7 +182,7 @@ describe('runCli', () => {
     it('login trades the enrolment token and stores relay.json owner-only', async () => {
       const r = relayHarness();
       expect(await r.run(['login'])).toBe(EXIT_USAGE);
-      expect(await r.run(['login', 'a', 'b', '--user-id', r.relay.userId])).toBe(EXIT_USAGE);
+      expect(await r.run(['login', 'a', 'b'])).toBe(EXIT_USAGE);
       expect(await r.run(['login', 'rc-enroll:x', '--user-id', 'NOT-A-UUID'])).toBe(EXIT_USAGE);
       expect(h.err()).toContain('--user-id must be the lower-case account UUID');
       // No relay configured yet.
@@ -192,9 +191,7 @@ describe('runCli', () => {
       await writeConfig('{');
       expect(await r.login()).toBe(EXIT_ERROR);
       await writeConfig({ relay: { url: RELAY_URL } });
-      expect(await r.run(['login', 'rc-enroll:wrong', '--user-id', r.relay.userId])).toBe(
-        EXIT_ERROR,
-      );
+      expect(await r.run(['login', 'rc-enroll:wrong'])).toBe(EXIT_ERROR);
       expect(h.err()).toContain('the relay refused the token (unauthorized)');
       expect(await r.login()).toBe(EXIT_OK);
       const stored = await h.c.keyStore.readRelayCredentials();
@@ -205,6 +202,22 @@ describe('runCli', () => {
       }
       // The enrolment token is spent.
       expect(await r.login()).toBe(EXIT_ERROR);
+    });
+
+    it('login --user-id cross-checks the account the relay reports', async () => {
+      await writeConfig({ relay: { url: RELAY_URL } });
+      const other = '11111111-2222-4333-8444-555555555555';
+      const r = relayHarness();
+      expect(await r.run(['login', `rc-enroll:${r.relay.agent.token}`, '--user-id', other])).toBe(
+        EXIT_ERROR,
+      );
+      expect(h.err()).toContain(`belongs to account ${r.relay.userId}, not ${other}`);
+      expect(await h.c.keyStore.readRelayCredentials()).toBeUndefined();
+      const s = relayHarness();
+      expect(
+        await s.run(['login', `rc-enroll:${s.relay.agent.token}`, '--user-id', s.relay.userId]),
+      ).toBe(EXIT_OK);
+      expect(await h.c.keyStore.readRelayCredentials()).toMatchObject({ userId: s.relay.userId });
     });
 
     it('pair needs a relay and a login', async () => {

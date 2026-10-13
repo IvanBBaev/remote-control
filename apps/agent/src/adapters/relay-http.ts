@@ -7,7 +7,10 @@ import type { FetchFn } from './npm-registry.js';
 const TIMEOUT_MS = 10_000;
 
 const SlotIdSchema = z.uuid();
-const TokenBody = z.object({ token: z.string().min(1).max(512) });
+const TokenBody = z.object({
+  token: z.string().min(1).max(512),
+  userId: z.uuid().regex(/^[0-9a-f-]+$/),
+});
 const OpenedBody = z.object({ slotId: SlotIdSchema, expiresAt: EpochMs });
 const StatusBody = z.object({
   slotId: SlotIdSchema,

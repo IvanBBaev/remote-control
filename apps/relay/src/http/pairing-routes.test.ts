@@ -336,7 +336,8 @@ describe('agent enrolment and token rotation (02 §5.5)', () => {
 
     const rotated = await s.agent('POST', '/api/agents/token');
     expect(rotated.statusCode).toBe(200);
-    const { token } = rotated.json<{ token: string }>();
+    const { token, userId } = rotated.json<{ token: string; userId: string }>();
+    expect(userId).toBe(s.userId);
     expect(token).not.toBe(s.agentToken);
     expect((await s.agent('GET', `/api/pairings/${s.agentId}`)).statusCode).toBe(401);
     const fresh = agentCall(relay, token);

@@ -24,6 +24,12 @@ export interface SlotStatus {
   readonly expiresAt: number;
 }
 
+export interface RotatedToken {
+  readonly token: string;
+  /** Lower-case account UUID, used in the D3/D6 prologues. */
+  readonly userId: string;
+}
+
 export interface CompletedSlot {
   readonly pairingId: string;
   readonly phoneDeviceId: string;
@@ -36,8 +42,11 @@ export interface FailedSlot {
 
 /** The relay's agent-side HTTP API (M0-10): token rotation and pairing slots (D6). */
 export interface RelayApi {
-  /** `POST /api/agents/token`: a new bearer token; the presented one stops working. */
-  rotateToken(): Promise<RelayResult<{ readonly token: string }>>;
+  /**
+   * `POST /api/agents/token`: a new bearer token (the presented one stops working) and
+   * the account id the agent belongs to.
+   */
+  rotateToken(): Promise<RelayResult<RotatedToken>>;
   /** `POST /api/pairings`: opens a slot matched by `codeHash`; 409 `code_in_use`. */
   openSlot(codeHash: string): Promise<RelayResult<OpenedSlot>>;
   slotStatus(slotId: string): Promise<RelayResult<SlotStatus>>;

@@ -5,6 +5,7 @@ import { createRelayHttp } from './relay-http.js';
 
 const SLOT = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d';
 const PHONE = '6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f';
+const USER_ID = '0f0e0d0c-0b0a-4908-8706-050403020100';
 
 interface Call {
   readonly url: string;
@@ -35,7 +36,7 @@ function api(respond: (call: Call) => Response | Promise<Response>) {
 describe('createRelayHttp', () => {
   it('calls each route with the bearer token and parses the bodies', async () => {
     const { calls, relay } = api(({ url }) => {
-      if (url.endsWith('/agents/token')) return json(200, { token: 'new' });
+      if (url.endsWith('/agents/token')) return json(200, { token: 'new', userId: USER_ID });
       if (url.endsWith('/pairings')) return json(201, { slotId: SLOT, expiresAt: 5 });
       if (url.endsWith('/complete')) return json(200, { pairingId: 'p', phoneDeviceId: PHONE });
       if (url.endsWith('/fail')) return json(200, { state: 'open', failedAttempts: 1 });
@@ -47,7 +48,10 @@ describe('createRelayHttp', () => {
         expiresAt: 5,
       });
     });
-    expect(await relay.rotateToken()).toEqual({ ok: true, value: { token: 'new' } });
+    expect(await relay.rotateToken()).toEqual({
+      ok: true,
+      value: { token: 'new', userId: USER_ID },
+    });
     expect(await relay.openSlot('h')).toEqual({ ok: true, value: { slotId: SLOT, expiresAt: 5 } });
     expect(await relay.slotStatus(SLOT)).toMatchObject({ ok: true, value: { state: 'joined' } });
     expect(await relay.completeSlot(SLOT)).toEqual({

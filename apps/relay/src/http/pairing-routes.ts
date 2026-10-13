@@ -155,7 +155,8 @@ export function registerPairingRoutes(app: FastifyInstance, deps: PairingRouteDe
           { event: 'agent_token_rotated', outcome: 'ok', device_id: agent.identity.deviceId },
           'agent token rotated',
         );
-        return { token };
+        // The agent needs its account id for the pairing and session prologues (D3, D6).
+        return { token, userId: agent.identity.userId };
       });
 
       scope.post('/pairings', post, async (request, reply) => {

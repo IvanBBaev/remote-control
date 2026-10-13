@@ -47,7 +47,7 @@ Commands:
                            Task Scheduler)
   uninstall [--dry-run]    Stop and remove the login service
   status                   Show configuration, allowed repositories and keys
-  login <rc-enroll:token> --user-id <uuid>
+  login <rc-enroll:token> [--user-id <uuid>]
                            Store the relay credentials from the enrolment token
   pair                     Pair a phone with this agent
   devices                  List paired phones
@@ -363,9 +363,10 @@ async function relayUrl(c: Container): Promise<string | undefined> {
 }
 
 /**
- * `remotectl login <rc-enroll:token> --user-id <uuid>`: trades the one-time enrolment
- * token for a fresh agent token (the enrolment token stops working) and stores both
- * with the user id in `relay.json` (0600).
+ * `remotectl login <rc-enroll:token> [--user-id <uuid>]`: trades the one-time enrolment
+ * token for a fresh agent token (the enrolment token stops working) and stores it with
+ * the account id the relay reports in `relay.json` (0600). `--user-id` is an optional
+ * cross-check: when given, it must match the relay's answer.
  */
 async function loginCommand(args: readonly string[], c: Container): Promise<number> {
   const { values, positionals } = parse(args, {
@@ -376,8 +377,8 @@ async function loginCommand(args: readonly string[], c: Container): Promise<numb
   if (enroll === undefined || extra.length > 0) {
     throw new UsageError('expects exactly one enrolment token');
   }
-  const userId = values['user-id'];
-  if (typeof userId !== 'string' || !UUID_PATTERN.test(userId)) {
+  const expected = values['user-id'];
+  if (expected !== undefined && (typeof expected !== 'string' || !UUID_PATTERN.test(expected))) {
     throw new UsageError('--user-id must be the lower-case account UUID');
   }
   const url = await relayUrl(c);
@@ -388,7 +389,14 @@ async function loginCommand(args: readonly string[], c: Container): Promise<numb
     c.output.stderr(`remotectl login: the relay refused the token (${rotated.error})\n`);
     return EXIT_ERROR;
   }
-  await c.keyStore.writeRelayCredentials({ token: rotated.value.token, userId });
+  const { token: agentToken, userId } = rotated.value;
+  if (expected !== undefined && expected !== userId) {
+    c.output.stderr(
+      `remotectl login: the token belongs to account ${userId}, not ${expected}; nothing stored, ask for a new enrolment token\n`,
+    );
+    return EXIT_ERROR;
+  }
+  await c.keyStore.writeRelayCredentials({ token: agentToken, userId });
   c.output.stdout('Logged in; relay credentials stored. Run `remotectl pair` next.\n');
   return EXIT_OK;
 }

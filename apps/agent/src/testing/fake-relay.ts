@@ -268,7 +268,7 @@ export function createFakeRelay(clock: Clock): FakeRelay {
       next += 1;
       const token = `token-rotated-${next}`;
       byToken.set(token, caller);
-      return Promise.resolve(json(200, { token }));
+      return Promise.resolve(json(200, { token, userId: FAKE_USER_ID }));
     }
     if (method === 'POST' && path === '/api/pairings/join') {
       const { codeHash } = body as { codeHash: string };
