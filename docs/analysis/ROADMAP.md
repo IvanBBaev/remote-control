@@ -885,7 +885,7 @@ AC: J12 green: a revoked phone's frames are rejected by the agent and its socket
 by the relay; deletion leaves no row for the user (schema-wide assertion).
 
 #### M1-11 — Tool-label dictionary, card polish, local stats
-Size S · Deps M0-21 · Status todo · Sources 01 W4, 01 W6, 01 W13
+Size S · Deps M0-21 · Status done 15e5117 · Sources 01 W4, 01 W6, 01 W13
 Scope: `packages/protocol/tool-labels.ts` (Bash → "Run command", Edit → "Edit file", …,
 MCP tools by server name), card rules finalised, local counters (approvals, denials,
 sessions started, per project) kept on the phone + agent, surfaced on `/machines`.
