@@ -1058,7 +1058,7 @@ notifications with the encrypted summary.
 AC: setting off → no push (test); on → push body is ciphertext.
 
 #### M2-09 — Bounded `--permission-mode` for phone-started sessions
-Size S · Deps M1-04 · Status todo · Sources 04 W10, 04 §5.4
+Size S · Deps M1-04 · Status done c0bac79 (real-CLI check pending M0-23; ADR 0006) · Sources 04 W10, 04 §5.4
 Scope: per-repo `maxPermissionMode` in agent config; phone picker limited to it; argv
 module extended by one literal flag; gate updated.
 AC: argv test; a mode above the bound is refused before spawn.
