@@ -878,7 +878,7 @@ AC: test shows the rule is emitted only with `destination: session` and only whe
 suggestions exist; J2 variant green.
 
 #### M1-03 — "Reply in terminal", early handoff, `remotectl pause`
-Size S · Deps M0-22 · Status todo · Sources 01 W9, 04 §5.8, D10
+Size S · Deps M0-22 · Status done 5b1d670 · Sources 01 W9, 04 §5.8, D10
 Scope: phone action "Reply in terminal" (no biometrics) → agent answers the hook with
 `handoff` immediately, request `released`, other phones dismiss; `remotectl pause
 [--for 2h]` / `resume` makes the receiver answer every blocking hook with `handoff`
