@@ -159,7 +159,36 @@ importers:
         specifier: 4.6.5
         version: 4.6.5
 
-  packages/test-harness: {}
+  packages/test-harness:
+    dependencies:
+      '@electric-sql/pglite':
+        specifier: 0.5.8
+        version: 0.5.8
+      '@remote-control/crypto':
+        specifier: workspace:*
+        version: link:../crypto
+      '@remote-control/fake-claude-code':
+        specifier: workspace:*
+        version: link:../fake-claude-code
+      '@remote-control/log':
+        specifier: workspace:*
+        version: link:../log
+      '@remote-control/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@remote-control/relay':
+        specifier: workspace:*
+        version: link:../../apps/relay
+      remotectl:
+        specifier: workspace:*
+        version: link:../../apps/agent
+      ws:
+        specifier: 8.22.0
+        version: 8.22.0
+    devDependencies:
+      '@types/ws':
+        specifier: 8.18.2
+        version: 8.18.2
 
 packages:
 

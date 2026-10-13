@@ -1,0 +1,403 @@
+import {
+  generateX25519KeyPair,
+  hkdfSha256,
+  HandshakeState,
+  KK,
+  pairingPrologue,
+  PSK_LENGTH,
+  sessionPrologue,
+  TransportSession,
+  utf8,
+  webCryptoRandom,
+  XXPSK0,
+  type X25519KeyPair,
+} from '@remote-control/crypto';
+import {
+  AgentMessage,
+  DECISION_TTL_SECONDS,
+  decisionHash,
+  encodeFrame,
+  HANDSHAKE_TAG,
+  PairingHello,
+  parseFrame,
+  requiresAssertion,
+  toBase64Url,
+  toHex,
+  VERSION_TABLE,
+  type ApprovalRequest,
+  type CanonicalDecision,
+  type DecisionKind,
+  type Envelope,
+  type Frame,
+} from '@remote-control/protocol';
+import { SoftwareAuthenticator } from '@remote-control/relay/testing';
+import WebSocket from 'ws';
+
+import { eventually } from './eventually.js';
+import type { FakeClock } from './fake-clock.js';
+import type { HarnessRelay } from './relay.js';
+
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+const EMPTY = new Uint8Array(0);
+const SESSION_COOKIE = /^__Host-rc_session=([^;]+);/;
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+type CreationOptions = Parameters<SoftwareAuthenticator['create']>[0];
+type RequestOptions = Parameters<SoftwareAuthenticator['get']>[0];
+
+export interface Received {
+  readonly envelope: Envelope;
+  readonly message: AgentMessage;
+}
+
+export interface Paired {
+  readonly agentDeviceId: string;
+  readonly agentPublicKey: Uint8Array;
+  /** The name the agent told the phone inside the handshake. */
+  readonly name: string;
+}
+
+export interface CreatePhoneOptions {
+  readonly relay: HarnessRelay;
+  readonly clock: FakeClock;
+  /** The device name the agent sees. */
+  readonly name: string;
+}
+
+export interface HeadlessPhone {
+  readonly keyPair: X25519KeyPair;
+  readonly authenticator: SoftwareAuthenticator;
+  /** Set by `register`. */
+  readonly userId: string;
+  /** Set by `bind`. */
+  readonly deviceId: string;
+  /** Decrypted agent messages, in arrival order. */
+  readonly messages: Received[];
+  /** Empty `cls: request` envelopes (doorbells). */
+  readonly doorbells: Envelope[];
+  /** Redeems an invite with a software passkey; keeps the session cookie. */
+  register(inviteCode: string): Promise<void>;
+  /** `POST /api/devices/phone`. */
+  bind(): Promise<void>;
+  /** `POST /api/agents`: the enrolment token `remotectl login` takes. */
+  enrollAgent(name: string): Promise<{ deviceId: string; enrollToken: string }>;
+  /** Subscribes at the relay's fake push service. */
+  subscribePush(): Promise<void>;
+  /** Opens `/ws` with the session cookie and waits for `hello_ok`. */
+  connect(): Promise<void>;
+  disconnect(): void;
+  /** Joins the agent's pairing slot with the code and runs the XXpsk0 initiator (D6). */
+  pair(code: string): Promise<Paired>;
+  /** Runs the KK initiator (D3) and waits for the agent's snapshot. */
+  handshake(agentDeviceId: string, agentPublicKey: Uint8Array): Promise<void>;
+  /**
+   * Sends a decision on the open session, with the passkey ceremony at the relay first
+   * for the kinds that need one (D7); returns the command envelope id.
+   */
+  decide(kind: DecisionKind, request: Pick<ApprovalRequest, 'id' | 'requestHash'>): Promise<string>;
+  /** Messages of type `t`. */
+  of<T extends AgentMessage['t']>(t: T): Extract<AgentMessage, { t: T }>[];
+}
+
+function header(envelope: Envelope): Omit<Envelope, 'payload'> {
+  return Object.fromEntries(Object.entries(envelope).filter(([key]) => key !== 'payload')) as Omit<
+    Envelope,
+    'payload'
+  >;
+}
+
+/** The PWA's own derivations (D6), kept apart from the agent's on purpose. */
+async function pairingSecrets(code: string): Promise<{ psk: Uint8Array; codeHash: string }> {
+  const normalized = code
+    .toUpperCase()
+    .replace(/[\s-]/g, '')
+    .replace(/O/g, '0')
+    .replace(/[IL]/g, '1');
+  if (normalized.length !== 12 || [...normalized].some((char) => !CROCKFORD.includes(char))) {
+    throw new Error(`phone: not a pairing code: ${code}`);
+  }
+  const psk = await hkdfSha256(utf8(normalized), EMPTY, utf8('rc/v1/pair-psk'), PSK_LENGTH);
+  const codeHash = toBase64Url(await hkdfSha256(psk, EMPTY, utf8('rc/v1/pair-slot'), 32));
+  return { psk, codeHash };
+}
+
+function uuidV7(clock: FakeClock): string {
+  const bytes = webCryptoRandom.bytes(16);
+  let ms = clock.now();
+  for (let i = 5; i >= 0; i--) {
+    bytes[i] = ms % 256;
+    ms = Math.floor(ms / 256);
+  }
+  bytes[6] = (bytes[6]! & 0x0f) | 0x70;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = toHex(bytes);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/**
+ * The phone headless (07 §5.6): what the PWA does, over real HTTP and a real WebSocket
+ * with the `__Host-rc_session` cookie, a software passkey, and `packages/crypto`.
+ */
+export async function createPhone(options: CreatePhoneOptions): Promise<HeadlessPhone> {
+  const { relay, clock, name } = options;
+  const random = webCryptoRandom;
+  const keyPair = await generateX25519KeyPair(random);
+  const authenticator = new SoftwareAuthenticator(relay.rpId, relay.origin);
+  let cookie = '';
+  let userId = '';
+  let deviceId = '';
+  let socket: WebSocket | undefined;
+  let ready = false;
+  let seq = 0;
+  let agentId = '';
+  let transport: TransportSession | undefined;
+  let kk: HandshakeState | undefined;
+  let pairing:
+    { state: HandshakeState; done?: { name: string; agentPublicKey: Uint8Array } } | undefined;
+  let chain: Promise<void> = Promise.resolve();
+  let failure: unknown;
+  const messages: Received[] = [];
+  const doorbells: Envelope[] = [];
+
+  async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const response = await fetch(`${relay.url}${path}`, {
+      method,
+      headers: {
+        origin: relay.origin,
+        'sec-fetch-site': 'same-origin',
+        'x-rc-client': 'pwa',
+        ...(cookie === '' ? {} : { cookie: `__Host-rc_session=${cookie}` }),
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const setCookie = SESSION_COOKIE.exec(response.headers.get('set-cookie') ?? '');
+    if (setCookie !== null) cookie = setCookie[1]!;
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`phone: ${method} ${path} → ${String(response.status)} ${text}`);
+    }
+    return (text === '' ? undefined : JSON.parse(text)) as T;
+  }
+
+  function send(frame: Frame): void {
+    socket?.send(encodeFrame(frame));
+  }
+
+  function envelope(to: string, cls: Envelope['cls'], payload: Uint8Array): Envelope {
+    return {
+      v: VERSION_TABLE.v,
+      kind: 'data',
+      id: uuidV7(clock),
+      from: deviceId,
+      to,
+      session: null,
+      cls,
+      seq: seq++,
+      ts: clock.now(),
+      expiresAt: null,
+      payload: Buffer.from(payload).toString('base64'),
+    };
+  }
+
+  function control(to: string, tag: number, message: Uint8Array): void {
+    const bytes = new Uint8Array(message.length + 1);
+    bytes[0] = tag;
+    bytes.set(message, 1);
+    send(envelope(to, 'control', bytes));
+  }
+
+  async function onEnvelope(received: Envelope): Promise<void> {
+    const bytes = new Uint8Array(Buffer.from(received.payload, 'base64'));
+    if (received.cls === 'control') {
+      if (bytes[0] === HANDSHAKE_TAG.kk && kk !== undefined) {
+        await kk.readMessage(bytes.subarray(1));
+        transport = TransportSession.fromHandshake(kk.result());
+        kk = undefined;
+      } else if (bytes[0] === HANDSHAKE_TAG.pairing && pairing !== undefined) {
+        const { state } = pairing;
+        const hello = PairingHello.parse(
+          JSON.parse(decoder.decode(await state.readMessage(bytes.subarray(1)))),
+        );
+        const msg3 = await state.writeMessage(encoder.encode(JSON.stringify({ name })));
+        control(received.from, HANDSHAKE_TAG.pairing, msg3);
+        pairing.done = { name: hello.name, agentPublicKey: state.remoteStaticPublicKey! };
+      }
+      return;
+    }
+    if (bytes.length === 0) {
+      doorbells.push(received);
+      return;
+    }
+    if (transport === undefined) return;
+    const plaintext = await transport.decrypt(header(received), bytes);
+    messages.push({
+      envelope: received,
+      message: AgentMessage.parse(JSON.parse(decoder.decode(plaintext))),
+    });
+  }
+
+  /** Waits for `predicate`, surfacing a failure inside the frame handler instead. */
+  async function until(predicate: () => boolean, message: string): Promise<void> {
+    await eventually(() => failure !== undefined || predicate(), message);
+    if (failure !== undefined) {
+      throw failure instanceof Error
+        ? failure
+        : new Error('phone: frame handler failed', { cause: failure });
+    }
+  }
+
+  const phone: HeadlessPhone = {
+    keyPair,
+    authenticator,
+    get userId() {
+      return userId;
+    },
+    get deviceId() {
+      return deviceId;
+    },
+    messages,
+    doorbells,
+    async register(inviteCode) {
+      const creation = await call<CreationOptions>('POST', '/api/auth/register/options', {
+        inviteCode,
+      });
+      const registered = await call<{ userId: string }>(
+        'POST',
+        '/api/auth/register/verify',
+        await authenticator.create(creation),
+      );
+      userId = registered.userId;
+    },
+    async bind() {
+      deviceId = (await call<{ deviceId: string }>('POST', '/api/devices/phone', { name }))
+        .deviceId;
+    },
+    enrollAgent: (agentName) => call('POST', '/api/agents', { name: agentName }),
+    async subscribePush() {
+      const subscription = await relay.push.subscribe();
+      await call('PUT', '/api/push/subscription', {
+        endpoint: subscription.endpoint,
+        keys: { p256dh: subscription.p256dh, auth: subscription.auth },
+      });
+    },
+    async connect() {
+      ready = false;
+      const current = new WebSocket(`${relay.wsOrigin}/ws`, {
+        headers: { origin: relay.origin, cookie: `__Host-rc_session=${cookie}` },
+      });
+      socket = current;
+      current.on('open', () =>
+        send({
+          v: VERSION_TABLE.v,
+          kind: 'hello',
+          protocol: { min: 1, max: 1 },
+          client: { kind: 'phone', version: 'harness' },
+        }),
+      );
+      current.on('message', (data: Buffer) => {
+        const parsed = parseFrame(data.toString('utf8'));
+        if (!parsed.ok) return;
+        if (parsed.frame.kind === 'hello_ok') ready = true;
+        if (parsed.frame.kind !== 'data') return;
+        const frame = parsed.frame;
+        chain = chain
+          .then(() => onEnvelope(frame))
+          .catch((error: unknown) => {
+            failure ??= error;
+          });
+      });
+      current.on('error', (error) => {
+        failure ??= error;
+      });
+      current.on('close', () => {
+        if (socket === current) {
+          ready = false;
+          transport = undefined;
+        }
+      });
+      await until(() => ready, 'phone: no hello_ok');
+    },
+    disconnect() {
+      socket?.close(1000, 'bye');
+      socket = undefined;
+      transport = undefined;
+    },
+    async pair(code) {
+      const { psk, codeHash } = await pairingSecrets(code);
+      const joined = await call<{ agentDeviceId: string }>('POST', '/api/pairings/join', {
+        codeHash,
+      });
+      const state = await HandshakeState.initialize({
+        pattern: XXPSK0,
+        initiator: true,
+        prologue: pairingPrologue({ userId, agentDeviceId: joined.agentDeviceId }),
+        random,
+        staticKeyPair: keyPair,
+        psk,
+      });
+      const current = { state } as NonNullable<typeof pairing>;
+      pairing = current;
+      control(joined.agentDeviceId, HANDSHAKE_TAG.pairing, await state.writeMessage());
+      await until(() => current.done !== undefined, 'phone: pairing did not finish');
+      pairing = undefined;
+      return { agentDeviceId: joined.agentDeviceId, ...current.done! };
+    },
+    async handshake(agentDeviceId, agentPublicKey) {
+      agentId = agentDeviceId;
+      transport = undefined;
+      const before = messages.length;
+      kk = await HandshakeState.initialize({
+        pattern: KK,
+        initiator: true,
+        prologue: sessionPrologue({ userId, phoneDeviceId: deviceId, agentDeviceId }),
+        random,
+        staticKeyPair: keyPair,
+        remoteStaticPublicKey: agentPublicKey,
+      });
+      control(agentDeviceId, HANDSHAKE_TAG.kk, await kk.writeMessage());
+      await until(
+        () => messages.slice(before).some((received) => received.message.t === 'snapshot'),
+        'phone: no snapshot after the handshake',
+      );
+    },
+    async decide(kind, request) {
+      if (transport === undefined) throw new Error('phone: no session');
+      const issuedAt = Math.floor(clock.now() / 1000);
+      const decision: CanonicalDecision = {
+        v: VERSION_TABLE.v,
+        kind,
+        request_id: request.id,
+        request_hash: request.requestHash,
+        payload: null,
+        issued_at: issuedAt,
+        expires_at: issuedAt + DECISION_TTL_SECONDS,
+        phone_device_id: deviceId,
+        agent_device_id: agentId,
+      };
+      const hash = await decisionHash(decision);
+      if (requiresAssertion(kind)) {
+        const challenge = await call<RequestOptions>('POST', '/api/decisions/challenge', {
+          decisionHash: hash,
+        });
+        await call('POST', '/api/decisions/verify', {
+          response: await authenticator.get(challenge),
+        });
+      }
+      const head = {
+        ...envelope(agentId, 'command', EMPTY),
+        ...(requiresAssertion(kind) ? { decisionHash: hash } : {}),
+      };
+      const plaintext = encoder.encode(JSON.stringify({ t: 'decision', decision }));
+      const ciphertext = await transport.encrypt(header(head), plaintext);
+      send({ ...head, payload: Buffer.from(ciphertext).toString('base64') });
+      return head.id;
+    },
+    of: <T extends AgentMessage['t']>(t: T) =>
+      messages
+        .map((received) => received.message)
+        .filter((message): message is Extract<AgentMessage, { t: T }> => message.t === t),
+  };
+  return phone;
+}

@@ -163,7 +163,8 @@ export function createRelayClient(options: RelayClientOptions): RelayClient {
           open = false;
           helloTimer?.cancel();
           if (socket === connection) socket = undefined;
-          if (wasReady) {
+          // After `stop` the owner is shutting down (its log may be closed): no `onDown`.
+          if (wasReady && !stopped) {
             ready = false;
             options.onDown?.(code, reason);
           }

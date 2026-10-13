@@ -7,5 +7,18 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@remote-control/crypto": "workspace:*",
+    "@remote-control/fake-claude-code": "workspace:*",
+    "@remote-control/log": "workspace:*",
+    "@remote-control/protocol": "workspace:*",
+    "@remote-control/relay": "workspace:*",
+    "remotectl": "workspace:*",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.2"
   }
 }

@@ -6,5 +6,13 @@
     "lib": ["ES2023"],
     "types": ["node"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "references": [
+    { "path": "../../apps/relay" },
+    { "path": "../../apps/agent" },
+    { "path": "../../packages/protocol" },
+    { "path": "../../packages/crypto" },
+    { "path": "../../packages/log" },
+    { "path": "../../packages/fake-claude-code" }
+  ]
 }

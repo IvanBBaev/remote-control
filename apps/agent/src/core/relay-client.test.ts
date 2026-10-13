@@ -220,6 +220,7 @@ describe('createRelayClient', () => {
     await flush();
     expect(t.sockets).toHaveLength(1);
     expect(t.time.active()).toBe(0);
+    expect(t.events).not.toContain('down 1000');
   });
 
   it('does not connect when stopped during a held attempt', async () => {

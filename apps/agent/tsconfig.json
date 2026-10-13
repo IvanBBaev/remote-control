@@ -3,6 +3,9 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
+    // `pnpm build` cleans dist/ (the npm tarball holds the bundle only); keeping the
+    // build info there makes `tsc -b` re-emit the declarations other projects import.
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
     "lib": ["ES2023"],
     "types": ["node"]
   },
