@@ -107,6 +107,12 @@ export interface PhoneService {
     question: Question,
     answer: AnswerPayload,
   ): Promise<AssertDecisionResult>;
+  /**
+   * "Reply in terminal" (M1-03, D10): a sealed `terminal` decision that releases the
+   * request, so Claude Code shows its own prompt. No passkey (D7), and it counts as
+   * neither an approval nor a denial (M1-11).
+   */
+  release(machineId: string, request: ApprovalRequest | Question): Promise<AssertDecisionResult>;
 }
 
 /** What the relay's pairing answers mean to the user (D6, M0-10). */
@@ -322,6 +328,7 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
     },
     answer: (machineId, question, answer) =>
       send(machineId, question, 'answer', encodeAnswerPayload(answer)),
+    release: (machineId, request) => send(machineId, request, 'terminal', null),
     async pair(code) {
       const normalized = normalizePairingCode(code);
       if (normalized === undefined) throw new PairingError('Enter all 12 characters of the code.');

@@ -603,6 +603,95 @@ describe('runCli', () => {
     });
   });
 
+  describe('pause and resume (M1-03)', () => {
+    const NOW = 1_760_000_000_000;
+
+    async function hook(port: number, token: string) {
+      return fetch(`http://127.0.0.1:${port}/hook`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ hook_event_name: 'PermissionRequest', session_id: 's1' }),
+      });
+    }
+
+    const agentLog = () => readFile(join(h.c.paths.log, 'agent.1.log'), 'utf8').catch(() => '');
+
+    posixOnly('pauses until resumed, owner-only, and status shows it', async () => {
+      expect(await h.run(['status'])).toBe(EXIT_OK);
+      expect(h.out()).toContain('pause:           not paused\n');
+      expect(await h.run(['pause'])).toBe(EXIT_OK);
+      expect(h.out()).toContain('Paused: requests go straight to the terminal');
+      expect(h.out()).toContain('until `remotectl resume`.');
+      const path = join(h.c.paths.data, 'pause.json');
+      expect((await stat(path)).mode & 0o777).toBe(0o600);
+      expect(JSON.parse(await readFile(path, 'utf8'))).toEqual({
+        version: 1,
+        pausedAt: NOW,
+        until: null,
+      });
+      expect(await h.run(['status'])).toBe(EXIT_OK);
+      expect(h.out()).toContain('pause:           paused\n');
+
+      expect(await h.run(['resume'])).toBe(EXIT_OK);
+      expect(h.out()).toContain('Resumed: requests reach your phones again.');
+      await expect(stat(path)).rejects.toThrow();
+      expect(await h.run(['resume'])).toBe(EXIT_OK);
+      expect(h.out()).toContain('Not paused.');
+    });
+
+    it('pauses for a duration and shows the expiry', async () => {
+      expect(await h.run(['pause', '--for', '2h'])).toBe(EXIT_OK);
+      const until = new Date(NOW + 7_200_000).toISOString();
+      expect(h.out()).toContain(`until ${until}.`);
+      expect(await h.run(['status'])).toBe(EXIT_OK);
+      expect(h.out()).toContain(`pause:           paused until ${until}\n`);
+    });
+
+    it.each([['--for', '2'], ['--for', '1.5h'], ['--for', 'soon'], ['--for', '90d'], ['extra']])(
+      'rejects %j %j as a usage error',
+      async (...argv) => {
+        expect(await h.run(['pause', ...argv])).toBe(EXIT_USAGE);
+        expect(h.err()).toContain('remotectl pause: ');
+        expect(await h.c.fs.readText(join(h.c.paths.data, 'pause.json'))).toBeUndefined();
+      },
+    );
+
+    it('rejects arguments to resume', async () => {
+      expect(await h.run(['resume', 'now'])).toBe(EXIT_USAGE);
+    });
+
+    it('AC: a paused agent answers a held request at once with no decision', async () => {
+      await writeConfig({});
+      const controller = new AbortController();
+      const running = h.run(['run'], controller.signal);
+      await vi.waitFor(() => expect(h.out()).toContain('press Ctrl-C to stop'));
+      const { port, token } = JSON.parse(
+        await readFile(join(h.c.paths.data, 'agent.json'), 'utf8'),
+      ) as { port: number; token: string };
+
+      // Paused before the hook: answered `{}` without ever being held.
+      expect(await h.run(['pause'])).toBe(EXIT_OK);
+      const handedBack = await hook(port, token);
+      expect(handedBack.status).toBe(200);
+      expect(await handedBack.text()).toBe('{}');
+      expect(await agentLog()).not.toContain('pending_added');
+
+      // Resumed without a restart: the next hook is held again …
+      expect(await h.run(['resume'])).toBe(EXIT_OK);
+      const held = hook(port, token);
+      await vi.waitFor(async () => expect(await agentLog()).toContain('pending_added'));
+      // … and a pause while it is held hands it back to the terminal.
+      expect(await h.run(['pause'])).toBe(EXIT_OK);
+      const released = await held;
+      expect(released.status).toBe(200);
+      expect(await released.text()).toBe('{}');
+      expect(await agentLog()).toContain('"outcome":"paused"');
+
+      controller.abort();
+      expect(await running).toBe(EXIT_OK);
+    });
+  });
+
   describe('status', () => {
     it('reports a missing config and no key', async () => {
       expect(await h.run(['status'])).toBe(EXIT_OK);

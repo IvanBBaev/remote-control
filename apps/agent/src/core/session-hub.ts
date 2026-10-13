@@ -538,6 +538,9 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
       message = { t: 'resolved', requestId: request.id, outcome: winner.outcome };
     } else if (outcome.type === 'handoff' && outcome.reason === 'deadline') {
       message = { t: 'expired', requestId: request.id };
+    } else if (outcome.type === 'handoff' && outcome.reason === 'paused') {
+      // `remotectl pause` handed it back: the terminal answers it, like "Reply in terminal".
+      message = { t: 'resolved', requestId: request.id, outcome: 'terminal' };
     } else {
       message = { t: 'resolved', requestId: request.id, outcome: 'withdrawn' };
     }

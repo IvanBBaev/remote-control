@@ -87,6 +87,8 @@ async function setup(
   for (const name of names) phones.push(await createFakePhone(relay, name, time.clock, random));
   let peers: readonly Peer[] = phones.map((phone) => phone.peer(1));
   const ref: { link?: RelayLink } = {};
+  /** Every adapter `decide` call: the only path that counts approvals/denials (M1-11). */
+  const decided: string[] = [];
   const store = createPendingStore({
     clock: time.clock,
     timer: time.timer,
@@ -101,7 +103,10 @@ async function setup(
     deviceKey,
     store,
     listPeers: () => Promise.resolve(peers),
-    decide: (request, decision) => claudeCodeAdapter.decide(request, decision),
+    decide: (request, decision) => {
+      decided.push(decision.behavior);
+      return claudeCodeAdapter.decide(request, decision);
+    },
     machine: { name: 'mac', platform: 'darwin', agentVersion: '1.2.3' },
     capabilities: [CLAUDE_CODE_CAPABILITIES],
     url: 'ws://127.0.0.1:8787/ws',
@@ -154,6 +159,7 @@ async function setup(
     link: started,
     phones,
     logs,
+    decided,
     agentId,
     deviceKey,
     open,
@@ -399,8 +405,28 @@ describe('relay link (fake relay, fake phones)', () => {
     const request = await t.requestOn(first, registration.request.id);
     await first.decide('terminal', request);
     await expect(registration.settled).resolves.toEqual({ type: 'handoff', reason: 'released' });
+    expect(await t.resultOn(first)).toMatchObject({ result: 'accepted' });
     await waitFor(() => second.of('resolved').length === 1);
     expect(second.of('resolved')[0]).toMatchObject({ outcome: 'terminal' });
+    // A release never builds a hook decision, so it counts as neither approval nor denial.
+    expect(t.decided).toEqual([]);
+    // The winner already knows; a second decision on the released request is late.
+    expect(first.of('resolved')).toEqual([]);
+    await second.decide('allow', await t.requestOn(second, registration.request.id));
+    expect(await t.resultOn(second)).toMatchObject({ reason: 'already_resolved' });
+  });
+
+  it('tells the phones `resolved terminal` when `remotectl pause` hands a request back', async () => {
+    const t = await setup();
+    const [phone] = t.phones as [FakePhone];
+    await t.open(phone);
+    const registration = t.store.register(permission());
+    await t.requestOn(phone, registration.request.id);
+    t.store.releaseAll('paused');
+    await expect(registration.settled).resolves.toEqual({ type: 'handoff', reason: 'paused' });
+    await waitFor(() => phone.of('resolved').length === 1);
+    expect(phone.of('resolved')[0]).toMatchObject({ outcome: 'terminal' });
+    expect(t.decided).toEqual([]);
   });
 
   it('tells the phones when a request is withdrawn by its hook', async () => {
@@ -750,6 +776,24 @@ describe('relay link (fake relay, fake phones)', () => {
       await waitFor(() => second.of('resolved').length === 1);
       expect(second.of('resolved')[0]).toMatchObject({ outcome: 'answer' });
       expect(plaintextLeaks(t.relay.routed, 'CANARY-q1')).toBe(false);
+    });
+
+    it('AC: "Reply in terminal" releases a question with no decision (M1-03)', async () => {
+      const t = await setup(['Pixel', 'iPhone']);
+      const [first, second] = t.phones as [FakePhone, FakePhone];
+      await t.open(first);
+      await t.open(second);
+      const registration = t.store.register(askUserQuestion());
+      const question = await t.questionOn(first, registration.request.id);
+      await first.decide('terminal', question);
+      expect(await t.resultOn(first)).toMatchObject({ result: 'accepted' });
+      await expect(registration.settled).resolves.toEqual({
+        type: 'handoff',
+        reason: 'released',
+      });
+      await waitFor(() => second.of('resolved').length === 1);
+      expect(second.of('resolved')[0]).toMatchObject({ outcome: 'terminal' });
+      expect(t.decided).toEqual([]);
     });
 
     it('hands a question to a new session with the pending set', async () => {

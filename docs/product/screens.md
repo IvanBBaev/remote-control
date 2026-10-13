@@ -79,8 +79,8 @@ screens through their accessible names, which are part of the screen contract:
 - A tap focuses an open app and posts `{ t: 'navigate', url }`, or opens `/requests/<id>`.
 - Within 10 s of launch or of returning to the foreground, a pending request opens by
   itself, once; the home-screen badge shows the number of pending requests.
-- Deny and Allow ignore taps in the first 600 ms after the card appears; Allow asks for
-  the passkey (D7).
+- Deny, Allow and Reply in terminal ignore taps in the first 600 ms after the card
+  appears; Allow asks for the passkey (D7).
 
 ### Approval card rules (M1-11, 01 W4/W6)
 
@@ -121,6 +121,26 @@ screens through their accessible names, which are part of the screen contract:
   first 600 ms are ignored; an expired, answered or refused question has no buttons.
 - Answers are not counted as approvals or denials in the local counters; the asking
   session is.
+
+### Reply in terminal and pause (M1-03, D10)
+
+- The approval card and the question screen both offer "Reply in terminal" (a full-width
+  44 px target under Deny/Allow, or under Deny on a question). It needs no passkey:
+  it is a sealed `terminal` decision the relay only routes, and it never grants
+  anything. The same 600 ms tap guard applies.
+- The agent hands the request straight back to Claude Code's own prompt (the empty
+  handoff `{}`): it is neither an approval nor a denial, and neither side counts it.
+  While it travels the card says "Reply in terminal sent. Waiting for your computer…";
+  once the computer accepts it the card shows "Handed back to the terminal. Answer it on
+  your computer." without buttons or a countdown. Other phones show the same text
+  (`resolved` with outcome `terminal`, D25) and a later decision is `already_resolved`.
+- `remotectl pause [--for 30m|2h|1d]` hands every blocking hook straight back to the
+  terminal with nothing sent to the phones (no request, no push) until
+  `remotectl resume` or the expiry; requests already held when the pause starts are
+  released within a second and the phones see the same "Handed back to the terminal."
+  outcome. `remotectl status` prints `pause: paused` or `pause: paused until <time>`.
+  The running agent picks the switch up without a restart (`pause.json` in the data
+  directory, 0600, written atomically).
 
 ### Local counters (M1-11, M2-06, 01 W13)
 

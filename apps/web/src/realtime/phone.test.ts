@@ -341,6 +341,48 @@ describe('phone decisions', () => {
     });
   });
 
+  it('releases to the terminal without a passkey and never counts it (M1-03, M1-11)', async () => {
+    const credentials = mockCredentials();
+    try {
+      await releaseUncounted(credentials.get);
+    } finally {
+      credentials.restore();
+    }
+  });
+
+  async function releaseUncounted(get: ReturnType<typeof mockCredentials>['get']): Promise<void> {
+    const t = await setup();
+    await t.online();
+    const decide = vi.spyOn(t.phone.client!, 'decide').mockReturnValue(undefined);
+    const pending = {
+      machineId: AGENT,
+      request: { ...REQUEST, project: 'api' },
+      deadline: t.timer.now() + 60_000,
+      status: 'pending',
+    } as const;
+    t.phone.realtime.setState({ requests: { [REQUEST.id]: pending } });
+    const result = await t.phone.release(AGENT, REQUEST);
+    expect(result).toMatchObject({ ok: true, asserted: false });
+    expect(get).not.toHaveBeenCalled();
+    expect(decide).toHaveBeenCalledWith(
+      AGENT,
+      expect.objectContaining({ kind: 'terminal', payload: null, request_id: REQUEST.id }),
+      undefined,
+    );
+    t.phone.realtime.setState({
+      requests: {
+        [REQUEST.id]: {
+          ...pending,
+          result: { t: 'decision_result', requestId: REQUEST.id, result: 'accepted' },
+        },
+      },
+    });
+    expect(machineUsage(t.phone.usage.getState(), AGENT)).toMatchObject({
+      approvals: 0,
+      denials: 0,
+    });
+  }
+
   it('allows with a passkey assertion and sends its hash', async () => {
     const credentials = mockCredentials();
     try {

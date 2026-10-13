@@ -242,7 +242,11 @@ describe('approval card', () => {
   it.each<[string, RequestUpdate, string]>([
     ['allowed', { status: 'resolved', outcome: 'allow' }, 'Allowed.'],
     ['denied', { status: 'resolved', outcome: 'deny' }, 'Denied.'],
-    ['answered in the terminal', { status: 'resolved', outcome: 'terminal' }, 'terminal.'],
+    [
+      'handed back to the terminal',
+      { status: 'resolved', outcome: 'terminal' },
+      'Handed back to the terminal.',
+    ],
     ['withdrawn', { status: 'resolved', outcome: 'withdrawn' }, 'no longer needs'],
     ['expired by the agent', { status: 'expired' }, 'Expired.'],
     ['refused by the relay', { relayError: 'unverified' }, 'The relay refused'],
@@ -278,9 +282,47 @@ describe('approval card', () => {
     expect(text()).not.toContain('Time left');
   });
 
-  it('keeps a reply-in-terminal placeholder until M1-03', async () => {
-    await open(`/requests/${ID}`, (t) => [view(t, ID)]);
+  it('AC: "Reply in terminal" hands the request back without a passkey (M1-03)', async () => {
+    const { test, decide } = await open(`/requests/${ID}`, (t) => [view(t, ID)]);
+    let finish: (value: { ok: true; decisionHash: string; asserted: false }) => void = () =>
+      undefined;
+    const release = vi.spyOn(test.phone, 'release').mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    // The tap guard covers it like Allow and Deny.
+    await click(mounted!.button('Reply in terminal'));
+    expect(release).not.toHaveBeenCalled();
+    tick(test, TAP_GUARD_MS);
+    await click(mounted!.button('Reply in terminal'));
     expect(mounted!.button('Reply in terminal').disabled).toBe(true);
+    expect(mounted!.button('Allow').disabled).toBe(true);
+    await click(mounted!.button('Reply in terminal'));
+    expect(release).toHaveBeenCalledOnce();
+    expect(release).toHaveBeenCalledWith(AGENT, expect.objectContaining({ id: ID }));
+    expect(decide).not.toHaveBeenCalled();
+    await act(async () => {
+      finish({ ok: true, decisionHash: 'h', asserted: false });
+      await Promise.resolve();
+    });
+    await settle();
+    expect(text()).toContain('Reply in terminal sent. Waiting for your computer…');
+    expect(() => mounted!.button('Reply in terminal')).toThrow();
+
+    set(test, { result: { t: 'decision_result', requestId: ID, result: 'accepted' } });
+    expect(text()).toContain('Handed back to the terminal. Answer it on your computer.');
+    expect(text()).not.toContain('Time left');
+    expect(text()).not.toContain('Waiting for your computer');
+  });
+
+  it('lets the user retry a release that could not be sent', async () => {
+    const { test } = await open(`/requests/${ID}`, (t) => [view(t, ID)]);
+    vi.spyOn(test.phone, 'release').mockResolvedValue({ ok: false, failure: 'offline' });
+    tick(test, TAP_GUARD_MS);
+    await click(mounted!.button('Reply in terminal'));
+    expect(text()).toContain('You are offline. Nothing was sent.');
+    expect(mounted!.button('Reply in terminal').disabled).toBe(false);
   });
 });
 

@@ -9,10 +9,18 @@ import { pendingRequests } from '../realtime/realtime-store.js';
 import type { ApprovalView, RealtimeState } from '../realtime/realtime-store.js';
 import { Notice, Screen } from './layout.js';
 import { QuestionCard } from './question.js';
-import { closedText, countdown, failureText, TAP_GUARD_MS } from './request-status.js';
+import {
+  closedText,
+  countdown,
+  failureText,
+  RELEASED_TEXT,
+  TAP_GUARD_MS,
+} from './request-status.js';
 import type { Failure } from './request-status.js';
 
 export { countdown, TAP_GUARD_MS } from './request-status.js';
+
+const SENT_TEXT = { allow: 'Allow', deny: 'Deny', terminal: 'Reply in terminal' } as const;
 
 const mostUrgent = (state: RealtimeState): string | undefined =>
   pendingRequests(state)[0]?.request.id;
@@ -37,7 +45,8 @@ export function revealNoun(toolName: string): string {
  * What the agent wants to do, the countdown, and Deny / Allow (M0-21; card rules 01 W6,
  * M1-11): the content stays hidden until a tap, Allow stays disabled while the content is
  * truncated, taps in the first `TAP_GUARD_MS` are ignored, there is no "Always" button
- * yet, and a closed or expired card has no decision buttons.
+ * yet, and a closed or expired card has no decision buttons. "Reply in terminal" (M1-03)
+ * hands the request back to Claude Code's own prompt, without the passkey.
  */
 export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
   const { phone } = useAppState();
@@ -46,7 +55,7 @@ export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
   const [now, setNow] = useState(shownAt);
   const [details, setDetails] = useState(false);
   const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState<'allow' | 'deny'>();
+  const [sent, setSent] = useState<'allow' | 'deny' | 'terminal'>();
   const [failure, setFailure] = useState<Failure>();
   const busy = useRef(false);
   const { request } = view;
@@ -63,15 +72,20 @@ export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
   }, [phone, view.status, left]);
 
   const closed = closedText(view);
-  const expired = view.status === 'pending' && left <= 0;
-  const open = view.status === 'pending' && !expired && closed === undefined;
+  // This phone's "Reply in terminal" won: the request is over here, too.
+  const released = sent === 'terminal' && view.result?.result === 'accepted';
+  const expired = view.status === 'pending' && !released && left <= 0;
+  const open = view.status === 'pending' && !expired && !released && closed === undefined;
 
-  const decide = async (kind: 'allow' | 'deny') => {
+  const decide = async (kind: 'allow' | 'deny' | 'terminal') => {
     if (busy.current || phone.now() - shownAt < TAP_GUARD_MS) return;
     busy.current = true;
     setSending(true);
     setFailure(undefined);
-    const result = await phone.decide(view.machineId, request, kind);
+    const result =
+      kind === 'terminal'
+        ? await phone.release(view.machineId, request)
+        : await phone.decide(view.machineId, request, kind);
     busy.current = false;
     setSending(false);
     if (result.ok) setSent(kind);
@@ -107,8 +121,9 @@ export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
       {open && <p className="countdown meta">Time left: {countdown(left)}</p>}
       {expired && <Notice>Expired. The terminal is asking again.</Notice>}
       {closed !== undefined && <Notice>{closed}</Notice>}
+      {released && <Notice>{RELEASED_TEXT}</Notice>}
       {open && sent !== undefined && (
-        <Notice>{sent === 'allow' ? 'Allow' : 'Deny'} sent. Waiting for your computer…</Notice>
+        <Notice>{SENT_TEXT[sent]} sent. Waiting for your computer…</Notice>
       )}
       {failure !== undefined && <p className="notice error">{failureText(failure)}</p>}
       {open && sent === undefined && (
@@ -131,12 +146,13 @@ export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
           </button>
         </div>
       )}
-      <div className="actions">
-        {/* Typed replies arrive with M1-03. */}
-        <button type="button" disabled>
-          Reply in terminal
-        </button>
-      </div>
+      {open && sent === undefined && (
+        <div className="actions">
+          <button type="button" disabled={sending} onClick={() => void decide('terminal')}>
+            Reply in terminal
+          </button>
+        </div>
+      )}
     </article>
   );
 }

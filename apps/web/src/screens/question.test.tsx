@@ -270,6 +270,25 @@ describe('question card', () => {
     expect(text()).toContain('Deny sent. Waiting for your computer…');
   });
 
+  it('AC: "Reply in terminal" hands the question back without a passkey (M1-03)', async () => {
+    const { test, answer, decide } = await open();
+    const release = vi
+      .spyOn(test.phone, 'release')
+      .mockResolvedValue({ ok: true, decisionHash: 'h', asserted: false });
+    await click(mounted!.button('Reply in terminal'));
+    expect(release).not.toHaveBeenCalled();
+    tick(test, TAP_GUARD_MS);
+    await click(mounted!.button('Reply in terminal'));
+    expect(release).toHaveBeenCalledWith(AGENT, question());
+    expect(answer).not.toHaveBeenCalled();
+    expect(decide).not.toHaveBeenCalled();
+    expect(text()).toContain('Reply in terminal sent. Waiting for your computer…');
+    expect(() => mounted!.button('Reply in terminal')).toThrow();
+    set(test, { result: { t: 'decision_result', requestId: ID, result: 'accepted' } });
+    expect(text()).toContain('Handed back to the terminal. Answer it on your computer.');
+    expect(text()).not.toContain('Time left');
+  });
+
   it.each([
     ['cancelled', 'Face ID was cancelled. Nothing was sent.'],
     ['offline', 'You are offline. Nothing was sent.'],
@@ -295,7 +314,11 @@ describe('question card', () => {
   it.each<[string, RequestUpdate, string]>([
     ['answered', { status: 'resolved', outcome: 'answer' }, 'Answered.'],
     ['denied', { status: 'resolved', outcome: 'deny' }, 'Denied.'],
-    ['answered in the terminal', { status: 'resolved', outcome: 'terminal' }, 'terminal.'],
+    [
+      'handed back to the terminal',
+      { status: 'resolved', outcome: 'terminal' },
+      'Handed back to the terminal.',
+    ],
     [
       'with an answer the computer could not use',
       {

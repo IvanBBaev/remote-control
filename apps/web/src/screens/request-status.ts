@@ -19,11 +19,14 @@ export function failureText(failure: Failure): string {
   return 'Could not confirm with your passkey. Nothing was sent.';
 }
 
+/** A request handed back to the terminal ("Reply in terminal", D10). */
+export const RELEASED_TEXT = 'Handed back to the terminal. Answer it on your computer.';
+
 const OUTCOMES: Record<NonNullable<RequestView['outcome']>, string> = {
   allow: 'Allowed.',
   deny: 'Denied.',
   answer: 'Answered.',
-  terminal: 'Answered in the terminal.',
+  terminal: RELEASED_TEXT,
   withdrawn: 'The agent no longer needs this answer.',
 };
 

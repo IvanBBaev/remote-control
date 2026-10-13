@@ -5,6 +5,7 @@ import { toBase64Url } from '@remote-control/protocol';
 import { CLAUDE_CODE_CAPABILITIES, claudeCodeAdapter } from '../adapters/claude-code/adapter.js';
 import { NO_DECISION_MESSAGE } from '../adapters/claude-code/decide.js';
 import { KeyStoreError } from '../adapters/file-key-store.js';
+import { createFilePauseStore, type PauseStore } from '../adapters/file-pause-store.js';
 import { createFileStatsStore, type StatsStore } from '../adapters/file-stats-store.js';
 import { HookReceiverBindError, type HookReceiver } from '../adapters/hook-receiver.js';
 import { DEFAULT_HOLD_SECONDS } from '../core/agent-config.js';
@@ -19,6 +20,8 @@ import {
 import { loadConfig, type LoadConfigResult } from '../core/load-config.js';
 import { createPairingLock, PAIRING_LOCK_FILE } from '../core/pairing-lock.js';
 import { runPairing, type PairingOutcome } from '../core/pairing.js';
+import { isPaused, parseDuration, pauseAt, pauseStatusText } from '../core/pause-state.js';
+import { createPauseWatch } from '../core/pause-watch.js';
 import { createPendingStore } from '../core/pending-store.js';
 import { noticeKind, noticeSummaryText } from '../core/push-summary.js';
 import { createRelayLink, type RelayLink } from '../core/relay-link.js';
@@ -66,6 +69,10 @@ Commands:
   hooks status             Show whether the hooks are installed
   logs [-f] [-n <lines>]   Print the agent log (-f follows it)
   update                   Check npm for a newer remotectl (never installs it)
+  pause [--for <duration>] Hand every request straight back to the terminal; nothing
+                           reaches the phones (duration: 30m, 2h, 1d; default: until
+                           \`remotectl resume\`)
+  resume                   End a pause
 
 Options:
   -h, --help               Show this help
@@ -97,6 +104,8 @@ const COMMANDS: Readonly<Record<string, Command>> = {
   install: installCommand,
   uninstall: uninstallCommand,
   update: updateCliCommand,
+  pause: pauseCommand,
+  resume: resumeCommand,
 };
 
 /** Runs one CLI invocation and returns the process exit code. */
@@ -217,12 +226,18 @@ async function runCommand(
       if (Object.keys(delta).some((field) => field !== 'toolCalls')) link?.hub.historyChanged();
     });
   };
+  // `remotectl pause` is re-read per blocking hook (and polled while requests are held),
+  // so a running agent follows pause and resume without a restart.
+  const pauseStore = openPause(c);
+  const paused = async (): Promise<boolean> => isPaused(await pauseStore.read(), c.clock.now());
+  const pending: { changed?: () => void } = {};
   const store = createPendingStore({
     clock: c.clock,
     timer: c.timer,
     random: c.random,
     onEvent: (event) => {
       link?.hub.pendingEvent(event);
+      pending.changed?.();
       // Ids, kinds and outcomes only: hook payloads never reach the log.
       const { id, kind, sessionId } = event.request;
       if (event.type === 'added') {
@@ -239,8 +254,11 @@ async function runCommand(
       }
     },
   });
+  const pauseWatch = createPauseWatch({ store, timer: c.timer, paused });
+  pending.changed = () => pauseWatch.pendingChanged();
   const handler = createHookDispatcher({
     store,
+    paused,
     onEvent: (input) => {
       log.logger.debug({ event: 'hook', hook: input.hook_event_name });
       const delta = activity.observe(input, c.clock.now());
@@ -328,6 +346,7 @@ async function runCommand(
     return EXIT_ERROR;
   } finally {
     link?.stop();
+    pauseWatch.stop();
     // Held hooks get `{}` (handoff) instead of a dropped connection.
     store.releaseAll('shutdown');
     await receiver?.close();
@@ -368,6 +387,7 @@ async function statusCommand(args: readonly string[], c: Container): Promise<num
     `device key:      ${key === undefined ? '(not created yet)' : toBase64Url(key.keyPair.publicKey)}`,
   );
   out(`paired devices:  ${(await c.keyStore.listPeers()).length}`);
+  out(`pause:           ${pauseStatusText(await openPause(c).read(), c.clock.now())}`);
   const [statsHead, ...statsProjects] = formatStats(await openStats(c, () => undefined).read());
   out(`local counters:  ${statsHead!}`);
   for (const line of statsProjects) out(line);
@@ -385,6 +405,45 @@ function openStats(c: Container, onWarning: (message: string) => void): StatsSto
     clock: c.clock,
     onWarning,
   });
+}
+
+/** The `remotectl pause` switch (M1-03) in the data directory. */
+function openPause(c: Container): PauseStore {
+  return createFilePauseStore({ dir: c.paths.data, fs: c.fs, paths: c.pathPort });
+}
+
+/**
+ * `remotectl pause [--for <duration>]` (M1-03): a running agent hands every blocking hook
+ * straight back to the terminal (D10 handoff) and sends nothing to the phones.
+ */
+async function pauseCommand(args: readonly string[], c: Container): Promise<number> {
+  const { values } = parse(args, { options: { for: { type: 'string' } } });
+  let durationMs: number | undefined;
+  if (values.for !== undefined) {
+    durationMs = parseDuration(String(values.for));
+    if (durationMs === undefined) {
+      throw new UsageError(
+        `invalid duration '${String(values.for)}' (use minutes, hours or days: 30m, 2h, 1d; at most 30d)`,
+      );
+    }
+  }
+  const state = pauseAt(c.clock.now(), durationMs);
+  await openPause(c).write(state);
+  c.output.stdout(
+    `Paused: requests go straight to the terminal; nothing reaches your phones` +
+      `${state.until === null ? ' until `remotectl resume`' : ` until ${new Date(state.until).toISOString()}`}.\n`,
+  );
+  return EXIT_OK;
+}
+
+/** `remotectl resume` (M1-03): ends a pause; requests reach the phones again. */
+async function resumeCommand(args: readonly string[], c: Container): Promise<number> {
+  noArguments(args);
+  const pause = openPause(c);
+  const was = isPaused(await pause.read(), c.clock.now());
+  await pause.clear();
+  c.output.stdout(was ? 'Resumed: requests reach your phones again.\n' : 'Not paused.\n');
+  return EXIT_OK;
 }
 
 /** The snapshot's platform (D-protocol `Machine.platform`); other Unixes report `linux`. */

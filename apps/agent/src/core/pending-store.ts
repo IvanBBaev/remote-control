@@ -21,6 +21,8 @@ export type HandoffReason =
   | 'replaced'
   /** Released early (the phone's "Reply in terminal", 01 W9). */
   | 'released'
+  /** `remotectl pause` while the request was held (M1-03). */
+  | 'paused'
   /** The hook process went away (Claude Code killed it or the user answered locally). */
   | 'disconnected'
   /** The agent is stopping. */

@@ -6,7 +6,13 @@ import { useStore } from 'zustand';
 import { useAppState } from '../app-state.js';
 import type { QuestionView } from '../realtime/realtime-store.js';
 import { Notice } from './layout.js';
-import { closedText, countdown, failureText, TAP_GUARD_MS } from './request-status.js';
+import {
+  closedText,
+  countdown,
+  failureText,
+  RELEASED_TEXT,
+  TAP_GUARD_MS,
+} from './request-status.js';
 import type { Failure } from './request-status.js';
 
 /** What the user picked for one question: option labels and the "Other" text. */
@@ -51,12 +57,14 @@ function toggleOther(item: QuestionItem, pick: QuestionPick): QuestionPick {
   return { labels: pick.labels };
 }
 
+const SENT_TEXT = { answer: 'Answer', deny: 'Deny', terminal: 'Reply in terminal' } as const;
+
 /**
  * Claude Code's `AskUserQuestion` on the phone (M1-01, 04 §2.3): one question per step
  * with its options and their descriptions, radio buttons for single-select and
  * checkboxes for multi-select, an "Other" free-text choice, Back / Next, then Send with
- * the passkey (an answer always needs one, D7). Deny and the countdown work as on the
- * approval card; taps in the first `TAP_GUARD_MS` are ignored.
+ * the passkey (an answer always needs one, D7). Deny, "Reply in terminal" (M1-03) and the
+ * countdown work as on the approval card; taps in the first `TAP_GUARD_MS` are ignored.
  */
 export function QuestionCard({ view }: { readonly view: QuestionView }) {
   const { phone } = useAppState();
@@ -70,7 +78,7 @@ export function QuestionCard({ view }: { readonly view: QuestionView }) {
   );
   const [response, setResponse] = useState('');
   const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState<'answer' | 'deny'>();
+  const [sent, setSent] = useState<'answer' | 'deny' | 'terminal'>();
   const [failure, setFailure] = useState<Failure>();
   const busy = useRef(false);
   const id = useId();
@@ -87,8 +95,10 @@ export function QuestionCard({ view }: { readonly view: QuestionView }) {
   }, [phone, view.status, left]);
 
   const closed = closedText(view);
-  const expired = view.status === 'pending' && left <= 0;
-  const open = view.status === 'pending' && !expired && closed === undefined;
+  // This phone's "Reply in terminal" won: the question is over here, too.
+  const released = sent === 'terminal' && view.result?.result === 'accepted';
+  const expired = view.status === 'pending' && !released && left <= 0;
+  const open = view.status === 'pending' && !expired && !released && closed === undefined;
 
   const item = question.questions[step]!;
   const pick = picks[step]!;
@@ -99,7 +109,7 @@ export function QuestionCard({ view }: { readonly view: QuestionView }) {
     setPicks((current) => current.map((entry, index) => (index === step ? next : entry)));
   };
 
-  const send = async (kind: 'answer' | 'deny') => {
+  const send = async (kind: 'answer' | 'deny' | 'terminal') => {
     if (busy.current || phone.now() - shownAt < TAP_GUARD_MS) return;
     busy.current = true;
     setSending(true);
@@ -107,7 +117,9 @@ export function QuestionCard({ view }: { readonly view: QuestionView }) {
     const result =
       kind === 'answer'
         ? await phone.answer(view.machineId, question, answerPayload(picks, response))
-        : await phone.decide(view.machineId, question, 'deny');
+        : kind === 'terminal'
+          ? await phone.release(view.machineId, question)
+          : await phone.decide(view.machineId, question, 'deny');
     busy.current = false;
     setSending(false);
     if (result.ok) setSent(kind);
@@ -192,8 +204,9 @@ export function QuestionCard({ view }: { readonly view: QuestionView }) {
       {open && <p className="countdown meta">Time left: {countdown(left)}</p>}
       {expired && <Notice>Expired. The terminal is asking again.</Notice>}
       {closed !== undefined && <Notice>{closed}</Notice>}
+      {released && <Notice>{RELEASED_TEXT}</Notice>}
       {open && sent !== undefined && (
-        <Notice>{sent === 'answer' ? 'Answer' : 'Deny'} sent. Waiting for your computer…</Notice>
+        <Notice>{SENT_TEXT[sent]} sent. Waiting for your computer…</Notice>
       )}
       {failure !== undefined && <p className="notice error">{failureText(failure)}</p>}
       {open && sent === undefined && (
@@ -234,6 +247,9 @@ export function QuestionCard({ view }: { readonly view: QuestionView }) {
               onClick={() => void send('deny')}
             >
               Deny
+            </button>
+            <button type="button" disabled={sending} onClick={() => void send('terminal')}>
+              Reply in terminal
             </button>
           </div>
         </>

@@ -1,5 +1,5 @@
 import { seededRandom } from '@remote-control/fake-claude-code';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { Timer } from '../ports/timer.js';
 import {
@@ -123,6 +123,70 @@ describe('hook dispatcher', () => {
     controller.abort();
     await expect(disconnected).resolves.toEqual({ status: 200, body: {} });
     expect(seen).toHaveLength(1);
+  });
+
+  it('AC: while paused a held request is answered at once with no decision (M1-03)', async () => {
+    const store = createPendingStore({
+      clock: { now: () => 1_000 },
+      timer: idleTimer,
+      random: seededRandom(6),
+    });
+    const added: string[] = [];
+    let paused = true;
+    const handler = createHookDispatcher({
+      store: {
+        ...store,
+        register: (input) => {
+          added.push(input.kind);
+          return store.register(input);
+        },
+      },
+      paused: () => Promise.resolve(paused),
+    });
+    const context = { hookTimeoutMs: 1_800_000, signal: new AbortController().signal };
+    const question: HookInput = {
+      hook_event_name: 'PreToolUse',
+      session_id: 's1',
+      tool_name: 'AskUserQuestion',
+      tool_input: { questions: [] },
+    };
+    await expect(handler(permission, context)).resolves.toEqual({ status: 200, body: {} });
+    await expect(handler(question, context)).resolves.toEqual({ status: 200, body: {} });
+    // Never registered: no phone sees it, no doorbell rings.
+    expect(added).toEqual([]);
+    expect(store.list()).toEqual([]);
+    // Feed events are unaffected.
+    await expect(handler({ hook_event_name: 'Stop', session_id: 's1' }, context)).resolves.toEqual({
+      status: 204,
+    });
+
+    // `remotectl resume`: the next hook is held again, without a restart.
+    paused = false;
+    const held = handler(permission, context);
+    await vi.waitFor(() => expect(store.list()).toHaveLength(1));
+    expect(added).toEqual(['permission']);
+    store.releaseAll('shutdown');
+    await expect(held).resolves.toEqual({ status: 200, body: {} });
+  });
+
+  it('holds the request when the pause check fails', async () => {
+    const store = createPendingStore({
+      clock: { now: () => 1_000 },
+      timer: idleTimer,
+      random: seededRandom(7),
+    });
+    const handler = createHookDispatcher({
+      store,
+      paused: () => Promise.reject(new Error('EACCES')),
+    });
+    const held = handler(permission, {
+      hookTimeoutMs: 1_800_000,
+      signal: new AbortController().signal,
+    });
+    await vi.waitFor(() => expect(store.list()).toHaveLength(1));
+    const body = { hookSpecificOutput: { decision: { behavior: 'allow' } } };
+    store.resolve(store.list()[0]!.id, body);
+    await expect(held).resolves.toEqual({ status: 200, body });
   });
 
   it('hands off at once when the signal is already aborted', async () => {

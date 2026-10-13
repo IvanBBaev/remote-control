@@ -54,6 +54,21 @@ export interface HookDispatcherOptions {
    * still returns no decision.
    */
   readonly onDeadline?: (request: PendingRequest) => Readonly<Record<string, unknown>>;
+  /**
+   * `remotectl pause` (M1-03), asked per blocking hook so a running agent follows
+   * `pause`/`resume` without a restart. While it is `true` a blocking hook is handed back
+   * at once and never registered, so no phone sees it and no push goes out. A check that
+   * throws counts as not paused.
+   */
+  readonly paused?: () => Promise<boolean>;
+}
+
+async function isPaused(check: () => Promise<boolean>): Promise<boolean> {
+  try {
+    return (await check()) === true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -67,6 +82,8 @@ export function createHookDispatcher(options: HookDispatcherOptions): HookHandle
     options.onEvent?.(input);
     const kind = blockingKind(input);
     if (kind === undefined) return { status: 204 };
+    // Awaited only when a pause check is wired: without one a hook registers synchronously.
+    if (options.paused !== undefined && (await isPaused(options.paused))) return HANDOFF;
     const registration = store.register({
       sessionId: input.session_id,
       kind,
