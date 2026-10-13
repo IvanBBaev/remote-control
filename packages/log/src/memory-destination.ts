@@ -4,19 +4,26 @@ import type { DestinationStream } from 'pino';
 export interface MemoryDestination extends DestinationStream {
   /** Rendered lines in write order, without the trailing newline. */
   lines(): string[];
+  /** Like {@link lines}, then forgets them (long runs that must not grow, M1-15). */
+  take(): string[];
 }
 
 export function createMemoryDestination(): MemoryDestination {
   const chunks: string[] = [];
+  const lines = (): string[] =>
+    chunks
+      .join('')
+      .split('\n')
+      .filter((line) => line.length > 0);
   return {
     write(chunk: string): void {
       chunks.push(chunk);
     },
-    lines(): string[] {
-      return chunks
-        .join('')
-        .split('\n')
-        .filter((line) => line.length > 0);
+    lines,
+    take(): string[] {
+      const taken = lines();
+      chunks.length = 0;
+      return taken;
     },
   };
 }

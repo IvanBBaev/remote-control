@@ -111,6 +111,23 @@ describe('createLogger', () => {
   });
 });
 
+describe('createMemoryDestination', () => {
+  it('hands the lines over once with take() and keeps what comes after', () => {
+    const dest = createMemoryDestination();
+    const logger = createLogger({ destination: dest, timestamp: false });
+    logger.info('one');
+    logger.info('two');
+
+    expect(dest.take().map((line) => (JSON.parse(line) as { msg: string }).msg)).toEqual([
+      'one',
+      'two',
+    ]);
+    expect(dest.lines()).toEqual([]);
+    logger.info('three');
+    expect(dest.take()).toHaveLength(1);
+  });
+});
+
 describe('assertNoCanary', () => {
   it('passes clean lines and accepts a single string', () => {
     expect(() => assertNoCanary(['{"a":1}', '{"b":2}'], [CANARY])).not.toThrow();

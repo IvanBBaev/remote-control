@@ -96,6 +96,20 @@ jobs:
           packages/test-harness/src/journeys/j2-allow.test.ts
           packages/test-harness/src/journeys/j5-expiry.test.ts
 
+      # Load smoke (M1-15, 07 #15): a short soak per OS. It reports, it does not gate;
+      # the 24 h run is the owner's (docs/verification/soak.md).
+      - name: Soak load smoke
+        id: soak
+        continue-on-error: true
+        run: pnpm soak --rounds 30 --interval-s 5 --out soak-smoke.md
+
+      - name: Soak load smoke summary
+        if: always()
+        shell: bash
+        run: |
+          echo "### Soak load smoke (${{ matrix.os }}): ${{ steps.soak.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f soak-smoke.md ]; then cat soak-smoke.md >> "$GITHUB_STEP_SUMMARY"; fi
+
   # Single required status for branch protection (docs/ops/runbook.md).
   agent-os:
     needs: agent-os-matrix

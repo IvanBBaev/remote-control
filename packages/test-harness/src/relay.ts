@@ -68,6 +68,10 @@ export interface HarnessRelay {
   readonly push: FakePushService;
   /** Every relay log line (JSON), for canary scans. */
   logs(): string[];
+  /** The relay log lines since the last call, then forgets them (the soak, M1-15). */
+  takeLogs(): string[];
+  /** Closes a device's socket from the relay side, as a restart would (the soak, M1-15). */
+  drop(userId: string, deviceId: string, code: number): void;
   /**
    * Every row of every table, one line per row (`schema.table: {json}`, byte columns as
    * latin1), for canary scans (07 §5.12).
@@ -197,6 +201,10 @@ export async function startRelay(options: StartRelayOptions): Promise<HarnessRel
     rpId,
     push,
     logs: () => destination.lines(),
+    takeLogs: () => destination.take(),
+    drop(userId, deviceId, code) {
+      hub.connection(userId, deviceId)?.close(code, 'harness drop');
+    },
     dump: () => dumpTables(client),
     async mintInvite() {
       const [code] = await mintInvites({ store: accountStore, random, clock }, 1, INVITE_TTL_MS);

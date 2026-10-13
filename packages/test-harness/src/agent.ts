@@ -93,6 +93,8 @@ export interface HarnessAgent {
   claudeRuns(): Promise<ClaudeRun[]>;
   /** Every agent log line (JSON), for canary scans and the decision log. */
   logs(): string[];
+  /** The agent log lines since the last call, then forgets them (the soak, M1-15). */
+  takeLogs(): string[];
   /** The agent's X25519 public key (after `pair` or `run` created it). */
   publicKey(): Promise<Uint8Array>;
   close(): Promise<void>;
@@ -243,6 +245,7 @@ export async function startAgent(options: StartAgentOptions): Promise<HarnessAge
         });
     },
     logs: () => destination.lines(),
+    takeLogs: () => destination.take(),
     async publicKey() {
       const key = await container.keyStore.readDeviceKey();
       if (key === undefined) throw new Error('agent: no device key yet');
