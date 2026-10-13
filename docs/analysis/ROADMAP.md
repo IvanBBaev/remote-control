@@ -1037,7 +1037,7 @@ Scope: ≥ 900 px: sessions list left, detail right; keyboard shortcuts for Allo
 AC: layout test at 1280 px; Playwright desktop project added.
 
 #### M2-06 — History and cost per project
-Size M · Deps M1-11 · Status todo · Sources 01 §1.2 (f), 01 W13
+Size M · Deps M1-11 · Status done e005244 (token/cost not counted: the `Stop` hook payload carries no usage; duration is turn time UserPromptSubmit→Stop) · Sources 01 §1.2 (f), 01 W13
 Scope: agent keeps per-project counters (sessions, tool calls, approvals, duration;
 token/cost when `Stop` payloads expose usage) locally; phone shows history per
 repository; nothing stored on the relay.
