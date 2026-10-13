@@ -16,6 +16,7 @@ import {
 } from '@remote-control/protocol';
 import type {
   CanonicalDecision,
+  DiffRequestMessage,
   Envelope,
   Frame,
   HelloOk,
@@ -32,8 +33,10 @@ import type { Timer, TimerHandle } from '../ports/timer.js';
 import { fromBase64, header, toBase64, uuidV7 } from './envelope.js';
 import { createRelaySocket } from './relay-socket.js';
 import type { SocketFactory } from './relay-socket.js';
+import { diffKey } from './realtime-store.js';
 import type {
   CommandView,
+  DiffView,
   MachineView,
   RealtimeState,
   RealtimeStore,
@@ -45,6 +48,8 @@ export const POLL_AFTER_FAILURES = 2;
 export const POLL_INTERVAL_MS = 15_000;
 /** How long the phone waits for the agent's half of the pairing handshake. */
 export const PAIRING_TIMEOUT_MS = 60_000;
+/** How long the phone waits for a diff (M2-02); an older agent never answers one. */
+export const DIFF_TIMEOUT_MS = 15_000;
 
 /** The agent never sent its half of the pairing handshake. */
 export class PairingTimeoutError extends Error {
@@ -110,7 +115,15 @@ export interface RealtimeClient {
    * it in the store's `commands` under its `request_id` until the agent answers.
    */
   command(machineId: string, message: StartMessage | InstructMessage, decisionHash?: string): void;
+  /**
+   * Asks the machine for a changed file's diff (M2-02) on its open session, tracked in
+   * the store's `diffs`. Not queued: without a session it is `unavailable` at once.
+   */
+  requestDiff(machineId: string, sessionId: string, file: string): void;
 }
+
+/** A phone message that carries a D7 decision, so it can wait in the outbox. */
+type QueuedMessage = Exclude<PhoneMessage, DiffRequestMessage>;
 
 interface Peer {
   paired: PairedMachine;
@@ -120,7 +133,7 @@ interface Peer {
 
 interface Outgoing {
   readonly machineId: string;
-  readonly message: PhoneMessage;
+  readonly message: QueuedMessage;
   readonly decisionHash?: string;
   /** The envelope it went out in last; a re-send uses a new one. */
   envelopeId?: string;
@@ -177,6 +190,15 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
       const current = state.commands[requestId];
       if (current === undefined) return {};
       return { commands: { ...state.commands, [requestId]: { ...current, ...change } } };
+    });
+  };
+
+  /** Changes the diff under `key` only while it still belongs to `requestId`. */
+  const updateDiff = (key: string, requestId: string, change: Partial<DiffView>): void => {
+    update((state) => {
+      const current = state.diffs[key];
+      if (current?.requestId !== requestId) return {};
+      return { diffs: { ...state.diffs, [key]: { ...current, ...change } } };
     });
   };
 
@@ -483,7 +505,33 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
         updateRequest(message.requestId, { result: message });
         updateCommand(message.requestId, { result: message });
         return;
+      case 'diff': {
+        const key = diffKey(machineId, message.sessionId, message.file);
+        updateDiff(
+          key,
+          message.requestId,
+          message.patch === null
+            ? { status: 'unavailable' }
+            : { status: 'ready', patch: message.patch, truncated: message.truncated },
+        );
+        return;
+      }
     }
+  }
+
+  async function sendDiffRequest(machineId: string, message: DiffRequestMessage): Promise<void> {
+    const key = diffKey(machineId, message.sessionId, message.file);
+    const transport = peers.get(machineId)?.transport;
+    if (transport !== undefined) {
+      // A read, so no `decisionHash`: the relay passes it without a passkey (D21).
+      const head = envelope(machineId, 'command', EMPTY);
+      const ciphertext = await transport.encrypt(
+        header(head),
+        encoder.encode(JSON.stringify(message)),
+      );
+      if (socket.send({ ...head, payload: toBase64(ciphertext) })) return;
+    }
+    updateDiff(key, message.requestId, { status: 'unavailable' });
   }
 
   /** Sends every queued decision for the machine on its open session. */
@@ -508,7 +556,7 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
     }
   }
 
-  function queue(machineId: string, message: PhoneMessage, decisionHash?: string): void {
+  function queue(machineId: string, message: QueuedMessage, decisionHash?: string): void {
     outbox.set(message.decision.request_id, {
       machineId,
       message,
@@ -683,6 +731,19 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
         commands: { ...state.commands, [message.decision.request_id]: view },
       }));
       queue(machineId, message, decisionHash);
+    },
+    requestDiff(machineId, sessionId, file) {
+      const requestId = uuidV7(timer.now(), random);
+      const key = diffKey(machineId, sessionId, file);
+      update((state) => ({
+        diffs: { ...state.diffs, [key]: { requestId, status: 'loading' } },
+      }));
+      timer.after(DIFF_TIMEOUT_MS, () => {
+        if (store.getState().diffs[key]?.status === 'loading') {
+          updateDiff(key, requestId, { status: 'unavailable' });
+        }
+      });
+      enqueue(() => sendDiffRequest(machineId, { t: 'diff_request', requestId, sessionId, file }));
     },
   };
 }

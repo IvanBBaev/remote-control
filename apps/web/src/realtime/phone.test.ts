@@ -15,6 +15,7 @@ import { fakeRelay, mockCredentials, userCancelled } from '../auth/test-credenti
 import { pairingSecrets } from '../pairing/pairing-code.js';
 import { PairingError, phoneNameFrom, relaySocketUrl } from './phone.js';
 import { PAIRING_TIMEOUT_MS } from './realtime-client.js';
+import { diffKey } from './realtime-store.js';
 import { createTestAgent } from './test-agent.js';
 import { createTestPhone } from './test-phone.js';
 import { machineUsage } from './usage-stats.js';
@@ -134,6 +135,18 @@ describe('phone service', () => {
     t.phone.wake();
     expect(t.phone.client).toBeUndefined();
     expect(t.phone.realtime.getState().connection).toBe('stopped');
+  });
+
+  it('asks the client for a diff, and says unavailable when not connected (M2-02)', async () => {
+    const t = await setup();
+    t.phone.diff('m1', 's1', '/a.ts');
+    expect(t.phone.realtime.getState().diffs[diffKey('m1', 's1', '/a.ts')]?.status).toBe(
+      'unavailable',
+    );
+    await t.phone.connect(USER);
+    const requestDiff = vi.spyOn(t.phone.client!, 'requestDiff');
+    t.phone.diff('m1', 's1', '/a.ts');
+    expect(requestDiff).toHaveBeenCalledExactlyOnceWith('m1', 's1', '/a.ts');
   });
 
   it('pairs: join, handshake, fingerprint, then saves on confirm', async () => {

@@ -5,6 +5,7 @@ import {
   AgentMessage,
   DecisionRejection,
   HANDSHAKE_TAG,
+  MAX_DIFF_LENGTH,
   MAX_HISTORY_PROJECTS,
   PairingHello,
   PhoneMessage,
@@ -108,6 +109,22 @@ describe('AgentMessage', () => {
     },
     { t: 'decision_result', requestId: REQUEST_ID, result: 'rejected', reason: 'too_late' },
     { t: 'history', projects: [project, { ...project, project: 'web', lastActiveAt: null }] },
+    {
+      t: 'diff',
+      requestId: REQUEST_ID,
+      sessionId: 'sess-1',
+      file: '/src/api/a.ts',
+      patch: '@@ -1,1 +1,1 @@\n-a\n+b',
+      truncated: false,
+    },
+    {
+      t: 'diff',
+      requestId: REQUEST_ID,
+      sessionId: 'sess-1',
+      file: '/src/api/a.ts',
+      patch: null,
+      truncated: false,
+    },
   ])('accepts $t', (message) => {
     expect(AgentMessage.parse(message)).toEqual(message);
   });
@@ -142,6 +159,17 @@ describe('AgentMessage', () => {
     [
       'too many history projects',
       { t: 'history', projects: Array.from({ length: MAX_HISTORY_PROJECTS + 1 }, () => project) },
+    ],
+    [
+      'a diff over the length cap',
+      {
+        t: 'diff',
+        requestId: REQUEST_ID,
+        sessionId: 'sess-1',
+        file: 'a.ts',
+        patch: 'x'.repeat(MAX_DIFF_LENGTH + 1),
+        truncated: true,
+      },
     ],
   ])('refuses %s', (_name, message) => {
     expect(AgentMessage.safeParse(message).success).toBe(false);
@@ -216,8 +244,18 @@ describe('PhoneMessage', () => {
       { t: 'instruct', instruction: { sessionId: 'sess-1', text: 'go' } },
     ],
     ['an unknown message', { t: 'stop', decision }],
+    ['a diff request without a file', { t: 'diff_request', requestId: REQUEST_ID, sessionId: 's' }],
+    [
+      'a diff request with a phone-chosen non-uuid id',
+      { t: 'diff_request', requestId: 'x', sessionId: 's', file: 'a.ts' },
+    ],
   ])('refuses %s', (_name, message) => {
     expect(PhoneMessage.safeParse(message).success).toBe(false);
+  });
+
+  it('accepts a diff request (M2-02): no decision, nothing to sign', () => {
+    const message = { t: 'diff_request', requestId: REQUEST_ID, sessionId: 'sess-1', file: 'a.ts' };
+    expect(PhoneMessage.parse(message)).toEqual(message);
   });
 
   it('refuses a decision that is not canonical', () => {

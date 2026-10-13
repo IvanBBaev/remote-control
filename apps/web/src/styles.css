@@ -606,3 +606,44 @@ button.link {
 .qr-hint {
   margin: 0;
 }
+
+/* A changed file's diff (M2-02): monospace, long lines scroll inside the block. */
+.diff-view {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  min-width: 0;
+}
+
+button.diff-header {
+  border: 0;
+  background: var(--color-bg);
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  text-align: left;
+  padding: 4px 8px;
+  border-radius: var(--radius);
+}
+
+pre.diff {
+  margin: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+pre.diff span {
+  display: block;
+  white-space: pre;
+}
+
+pre.diff .add {
+  color: var(--color-success, #1a7f37);
+}
+
+pre.diff .del {
+  color: var(--color-danger, #cf222e);
+}

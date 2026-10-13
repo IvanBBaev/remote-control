@@ -162,6 +162,41 @@ export const EventMessage = z.strictObject({
 });
 export type EventMessage = z.infer<typeof EventMessage>;
 
+/** Lines of one diff the agent sends and the phone renders (M2-02, 05 W11). */
+export const MAX_DIFF_LINES = 2000;
+/** Characters of one diff's patch text: it must fit one frame with its message. */
+export const MAX_DIFF_LENGTH = 60_000;
+
+const DiffFile = z.string().min(1).max(4096);
+
+/**
+ * The phone asks for one changed file's diff (M2-02, `cls: command`, no `decisionHash`):
+ * diff bodies are fetched on demand, never pushed (D21). `requestId` is the phone's own.
+ */
+export const DiffRequestMessage = z.strictObject({
+  t: z.literal('diff_request'),
+  requestId: RequestId,
+  sessionId: SessionId,
+  file: DiffFile,
+});
+export type DiffRequestMessage = z.infer<typeof DiffRequestMessage>;
+
+/**
+ * The agent's answer to a `diff_request` (`cls: reply`): the file's unified diff hunks
+ * (`@@ -a,b +c,d @@` and their lines, no file header), oldest edit first. `patch` is
+ * `null` when the agent does not keep a diff for the file (restarted, evicted, unknown).
+ * `truncated`: older hunks or lines were left out to fit the caps.
+ */
+export const DiffMessage = z.strictObject({
+  t: z.literal('diff'),
+  requestId: RequestId,
+  sessionId: SessionId,
+  file: DiffFile,
+  patch: z.string().max(MAX_DIFF_LENGTH).nullable(),
+  truncated: z.boolean(),
+});
+export type DiffMessage = z.infer<typeof DiffMessage>;
+
 /** Everything the agent sends to a phone inside a session. */
 export const AgentMessage = z.union([
   RequestMessage,
@@ -172,6 +207,7 @@ export const AgentMessage = z.union([
   DecisionResultMessage,
   HistoryMessage,
   EventMessage,
+  DiffMessage,
 ]);
 export type AgentMessage = z.infer<typeof AgentMessage>;
 
@@ -211,7 +247,12 @@ export const InstructMessage = z.strictObject({
 export type InstructMessage = z.infer<typeof InstructMessage>;
 
 /** Everything a phone sends to the agent inside a session. */
-export const PhoneMessage = z.union([DecisionMessage, StartMessage, InstructMessage]);
+export const PhoneMessage = z.union([
+  DecisionMessage,
+  StartMessage,
+  InstructMessage,
+  DiffRequestMessage,
+]);
 export type PhoneMessage = z.infer<typeof PhoneMessage>;
 
 /** The device name each side tells the other inside the XXpsk0 pairing handshake (D6). */

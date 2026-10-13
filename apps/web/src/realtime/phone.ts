@@ -31,7 +31,7 @@ import { uuidV7 } from './envelope.js';
 import { createRealtimeClient, PairingTimeoutError } from './realtime-client.js';
 import type { RealtimeClient } from './realtime-client.js';
 import type { SocketFactory } from './relay-socket.js';
-import { createRealtimeStore } from './realtime-store.js';
+import { createRealtimeStore, diffKey } from './realtime-store.js';
 import type { RealtimeStore } from './realtime-store.js';
 import { createUsageStatsStore, memoryUsageStorage, trackUsage } from './usage-stats.js';
 import type { UsageStatsStorage, UsageStatsStore } from './usage-stats.js';
@@ -144,6 +144,11 @@ export interface PhoneService {
   ): Promise<CommandResult>;
   /** Sends a follow-up prompt to a running session (M1-04), with a passkey assertion. */
   instruct(machineId: string, sessionId: string, text: string): Promise<CommandResult>;
+  /**
+   * Asks for a changed file's diff (M2-02); it lands in `realtime.diffs` under `diffKey`.
+   * A read, so no passkey; `unavailable` right away when not connected.
+   */
+  diff(machineId: string, sessionId: string, file: string): void;
 }
 
 /** What the relay's pairing answers mean to the user (D6, M0-10). */
@@ -411,6 +416,16 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
         },
       );
       return { ...result, requestId: id };
+    },
+    diff(machineId, sessionId, file) {
+      if (client !== undefined) {
+        client.requestDiff(machineId, sessionId, file);
+        return;
+      }
+      const key = diffKey(machineId, sessionId, file);
+      realtime.setState((state) => ({
+        diffs: { ...state.diffs, [key]: { requestId: '', status: 'unavailable' } },
+      }));
     },
     async pair(code) {
       const normalized = normalizePairingCode(code);

@@ -218,9 +218,9 @@ screens through their accessible names, which are part of the screen contract:
   Ended) and the status line (what it waits for, e.g. "Waiting for approval").
 - Session (`/sessions/:id`) adds the thin view under the state line: the last prompt,
   the steps of the current turn (at most 20), the changed files and the last answer.
-  A changed file shows its file name and `+N −M`; a tap shows the full path. There are
-  no diff bodies anywhere (D21). With none of these: "Nothing has happened in this
-  session yet."
+  A changed file shows its file name and `+N −M`; a tap shows the full path and its diff
+  (M2-02). Diff bodies are never in the feed, a snapshot or a push (D21). With none of
+  these: "Nothing has happened in this session yet."
 - The agent builds the content from `UserPromptSubmit`, `PostToolUse`, `Stop`,
   `SubagentStop`, `PreCompact` and `Notification` hooks and sends each as a sealed
   `event` message with a per-session `seq`. A snapshot carries the content with
@@ -245,6 +245,24 @@ screens through their accessible names, which are part of the screen contract:
   the hook path and prints the phone's answer. Nothing runs whatever the answer; the
   self-test is not a session and is left out of the feed, the counters and the "hooks
   seen" record. A paused or stopped agent fails at once with the fix.
+
+### Diff view (M2-02, 05 W11, D21)
+
+- Opening a changed file sends a sealed `diff_request` (a read, so no passkey) and shows
+  "Loading the diff…"; the agent answers only the asking phone with a `diff` reply. No
+  diff body is ever pushed or kept by the relay.
+- The agent keeps each file's hunks in memory per session, from the `PostToolUse` of
+  `Edit`, `MultiEdit` and `Write` (Claude Code's `structuredPatch` when present, else
+  computed from the tool input). Caps: 256 KiB per file, 50 files per session, 8 MiB in
+  all, least recently updated sessions dropped first; lost on restart.
+- A reply holds the newest hunks within 2,000 lines and 60,000 characters (lines cut at
+  1,000), shortened further to fit one frame; then the view says "Only the latest
+  changes are shown; older ones were left out."
+- Each hunk has a header button that collapses it. Lines are monospace, coloured by
+  kind, with no syntax highlighting; long lines scroll sideways inside the block. At
+  most 2,000 lines render ("N more lines not shown.").
+- "The diff is not available." when the agent kept nothing for the file, the computer is
+  not connected, or no answer came within 15 s.
 
 ## Planned (no route yet)
 

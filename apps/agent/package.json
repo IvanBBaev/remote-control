@@ -38,6 +38,7 @@
     "@remote-control/fake-claude-code": "workspace:*",
     "@remote-control/log": "workspace:*",
     "@remote-control/protocol": "workspace:*",
+    "diff": "9.0.0",
     "fastify": "5.12.5",
     "tsdown": "^0.23.0",
     "uqr": "0.1.3",

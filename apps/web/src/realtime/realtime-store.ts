@@ -85,6 +85,24 @@ export interface CommandView {
   readonly relayError?: RelayErrorCode;
 }
 
+/**
+ * One changed file's diff, asked for from the session screen (M2-02). Diff bodies are
+ * fetched on demand, never pushed (D21); `unavailable` when the agent kept none, the
+ * computer is not connected, or it did not answer in time.
+ */
+export interface DiffView {
+  readonly requestId: string;
+  readonly status: 'loading' | 'ready' | 'unavailable';
+  readonly patch?: string;
+  /** The agent left out older hunks or lines to fit its caps. */
+  readonly truncated?: boolean;
+}
+
+/** The `diffs` key of one machine's session's changed file. */
+export function diffKey(machineId: string, sessionId: string, file: string): string {
+  return JSON.stringify([machineId, sessionId, file]);
+}
+
 export interface RealtimeState {
   readonly connection: SocketStatus;
   /** Consecutive socket attempts that never reached `hello_ok`. */
@@ -99,6 +117,8 @@ export interface RealtimeState {
   readonly requests: Readonly<Record<string, RequestView>>;
   /** Starts and instructions by `request_id` (M1-04). */
   readonly commands: Readonly<Record<string, CommandView>>;
+  /** Requested diffs by `diffKey` (M2-02), in memory only. */
+  readonly diffs: Readonly<Record<string, DiffView>>;
 }
 
 export type RealtimeStore = StoreApi<RealtimeState>;
@@ -113,6 +133,7 @@ export function createRealtimeStore(): RealtimeStore {
     machines: {},
     requests: {},
     commands: {},
+    diffs: {},
   }));
 }
 

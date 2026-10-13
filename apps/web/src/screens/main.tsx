@@ -8,6 +8,7 @@ import { useAppState } from '../app-state.js';
 import { presenceLabel } from '../realtime/realtime-store.js';
 import type { MachineView, RealtimeState } from '../realtime/realtime-store.js';
 import { historySummary, machineUsage, usageSummary } from '../realtime/usage-stats.js';
+import { DiffView } from './diff-view.js';
 import { Notice, Screen } from './layout.js';
 import { ComposeBox } from './session-commands.js';
 
@@ -203,8 +204,16 @@ const findSession = (machines: RealtimeState['machines'], id: string) => {
 /** The file name of a path (D21: the full path only on a tap). */
 export const baseName = (path: string): string => path.split(/[\\/]/).at(-1) || path;
 
-/** A changed file: its name and `+N −M`; a tap shows the full path. No diff (D21). */
-function ChangedFileItem({ file }: { readonly file: ChangedFile }) {
+/**
+ * A changed file: its name and `+N −M`; a tap shows the full path and fetches the diff
+ * on demand (D21, M2-02).
+ */
+function ChangedFileItem(props: {
+  readonly machineId: string;
+  readonly sessionId: string;
+  readonly file: ChangedFile;
+}) {
+  const { machineId, sessionId, file } = props;
   const [open, setOpen] = useState(false);
   return (
     <li>
@@ -213,13 +222,14 @@ function ChangedFileItem({ file }: { readonly file: ChangedFile }) {
       </button>{' '}
       <span className="added">+{file.added}</span> <span className="removed">−{file.removed}</span>
       {open && <code className="details">{file.name}</code>}
+      {open && <DiffView machineId={machineId} sessionId={sessionId} file={file.name} />}
     </li>
   );
 }
 
 /**
  * One session (M1-05, D21): its state, the last prompt, the steps of this turn, the files
- * changed and the last answer, plus the follow-up compose box (M1-04). No diff bodies.
+ * changed and the last answer, plus the follow-up compose box (M1-04). Diffs only on a tap.
  */
 export function SessionScreen() {
   const { id = '' } = useParams();
@@ -269,7 +279,12 @@ export function SessionScreen() {
           <h2>Changed files</h2>
           <ul className="changed-files">
             {session.changedFiles.map((file) => (
-              <ChangedFileItem key={file.name} file={file} />
+              <ChangedFileItem
+                key={file.name}
+                machineId={machineId}
+                sessionId={session.id}
+                file={file}
+              />
             ))}
           </ul>
         </div>

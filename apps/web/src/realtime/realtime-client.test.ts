@@ -19,11 +19,12 @@ import type { FakeSocket } from './fake-socket.js';
 import {
   bindLifecycle,
   createRealtimeClient,
+  DIFF_TIMEOUT_MS,
   PAIRING_TIMEOUT_MS,
   POLL_INTERVAL_MS,
 } from './realtime-client.js';
 import { BACKOFF_MIN_MS } from './relay-socket.js';
-import { createRealtimeStore, pendingRequests } from './realtime-store.js';
+import { createRealtimeStore, diffKey, pendingRequests } from './realtime-store.js';
 import { createTestAgent } from './test-agent.js';
 
 const USER = '0d6f8a52-3c5e-4f0b-9a4e-000000000000';
@@ -672,6 +673,66 @@ describe('realtime client', () => {
       });
       expect(sessions()).toHaveLength(2);
       expect(t.errors).toEqual([]);
+    });
+  });
+
+  describe('diffs (M2-02)', () => {
+    const KEY = diffKey(AGENT, 's1', '/a.ts');
+
+    it('asks for a diff without a decision hash and stores the answer', async () => {
+      const t = await setup();
+      await t.client.start();
+      const socket = await t.connect();
+      t.client.requestDiff(AGENT, 's1', '/a.ts');
+      await settle();
+      const [sent] = socket.of('data').filter((frame) => frame.cls === 'command');
+      expect(sent).toMatchObject({ to: AGENT });
+      expect(sent).not.toHaveProperty('decisionHash');
+      const request = await t.agent.read(sent!);
+      expect(request).toMatchObject({ t: 'diff_request', sessionId: 's1', file: '/a.ts' });
+      const requestId = t.store.getState().diffs[KEY]!.requestId;
+      expect(t.store.getState().diffs[KEY]).toMatchObject({ status: 'loading' });
+      // An answer to an older request changes nothing.
+      const answer = { t: 'diff', sessionId: 's1', file: '/a.ts', truncated: true } as const;
+      await t.agent.send(socket, { ...answer, requestId: RID, patch: 'stale' }, 'reply');
+      await t.agent.send(socket, { ...answer, requestId, patch: '@@ -1 +1 @@\n+b' }, 'reply');
+      await settle();
+      expect(t.store.getState().diffs[KEY]).toEqual({
+        requestId,
+        status: 'ready',
+        patch: '@@ -1 +1 @@\n+b',
+        truncated: true,
+      });
+      // The timeout no longer applies to an answered request.
+      t.timer.advance(DIFF_TIMEOUT_MS);
+      expect(t.store.getState().diffs[KEY]?.status).toBe('ready');
+      expect(t.errors).toEqual([]);
+    });
+
+    it('marks a diff unavailable on a null patch, a timeout or no session', async () => {
+      const t = await setup();
+      await t.client.start();
+      const socket = await t.connect();
+      t.client.requestDiff(AGENT, 's1', '/a.ts');
+      await settle();
+      const { requestId } = t.store.getState().diffs[KEY]!;
+      await t.agent.send(
+        socket,
+        { t: 'diff', requestId, sessionId: 's1', file: '/a.ts', patch: null, truncated: false },
+        'reply',
+      );
+      await settle();
+      expect(t.store.getState().diffs[KEY]?.status).toBe('unavailable');
+
+      t.client.requestDiff(AGENT, 's1', '/a.ts');
+      await settle();
+      expect(t.store.getState().diffs[KEY]?.status).toBe('loading');
+      t.timer.advance(DIFF_TIMEOUT_MS);
+      expect(t.store.getState().diffs[KEY]?.status).toBe('unavailable');
+
+      t.client.requestDiff(OTHER, 's1', '/a.ts');
+      await settle();
+      expect(t.store.getState().diffs[diffKey(OTHER, 's1', '/a.ts')]?.status).toBe('unavailable');
     });
   });
 

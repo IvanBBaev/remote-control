@@ -41,6 +41,7 @@ import type { PendingEvent, PendingRequest, PendingStore } from './pending-store
 import { createPushSealer, pushSummaryText } from './push-summary.js';
 import type { LaunchResult, SessionLauncher } from './launcher.js';
 import { questionAnswers, questionView } from './question-view.js';
+import { diffMessage, type StoredDiff } from './diff-store.js';
 import type { FeedEntry } from './session-feed.js';
 import { alwaysDestination, alwaysRules } from './session-rules.js';
 import { uuidV7 } from './uuid.js';
@@ -90,6 +91,8 @@ export interface SessionHubOptions {
    * carries neither `hookSeen` nor `hooksInstalled`. A failed read leaves both out.
    */
   readonly setup?: () => Promise<SetupFacts>;
+  /** A changed file's kept diff (M2-02), sent only when a phone asks for it. */
+  readonly diff?: (sessionId: string, file: string) => StoredDiff | undefined;
   readonly log?: HubLog;
 }
 
@@ -542,6 +545,20 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     }
     if (!parsed.success) {
       log('message_refused', { phone_device_id: session.phoneId, reason: 'bad_message' });
+      return;
+    }
+    if (parsed.data.t === 'diff_request') {
+      // Read-only, so no passkey (D21); the answer goes to the asking phone alone.
+      const message = diffMessage(
+        parsed.data,
+        options.diff?.(parsed.data.sessionId, parsed.data.file),
+      );
+      log('diff_sent', {
+        phone_device_id: session.phoneId,
+        request_id: parsed.data.requestId,
+        found: message.patch !== null,
+      });
+      enqueue(() => sendSealed(session, message, 'reply', null, envelope.id));
       return;
     }
     if (parsed.data.t !== 'decision') {

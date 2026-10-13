@@ -131,7 +131,7 @@ describe('session view (M1-05, D21)', () => {
     expect(text()).toContain('The test passes now.');
     expect(text()).not.toContain('Nothing has happened');
 
-    // File names only; the full path after a tap. No diff bodies anywhere.
+    // File names only; the full path (and the diff, M2-02) after a tap.
     const files = all('.changed-files li');
     expect(files.map((li) => li.textContent)).toEqual(['a.ts +2 −1', 'b.md +3 −0']);
     expect(text()).not.toContain('/Users/me/code');

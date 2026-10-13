@@ -23,6 +23,7 @@ describe('realtime store', () => {
       machines: {},
       requests: {},
       commands: {},
+      diffs: {},
     });
   });
 

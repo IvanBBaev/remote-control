@@ -75,6 +75,8 @@ export interface FakePhone {
   start(start: StartSession, path: string, overrides?: DecideOverrides): Promise<string>;
   /** Sends an `instruct` (M1-04) to `sessionId`; returns the command envelope id. */
   instruct(sessionId: string, text: string, overrides?: DecideOverrides): Promise<string>;
+  /** Asks for a changed file's diff (M2-02); returns the command envelope id. */
+  requestDiff(sessionId: string, file: string): Promise<string>;
   /** Joins a pairing slot with the code and runs the XXpsk0 initiator (D6). */
   pair(code: string): Promise<{ agentDeviceId: string; agentPublicKey: Uint8Array; name: string }>;
   /** The phone as the agent's `peers.json` should list it. */
@@ -283,6 +285,14 @@ export async function createFakePhone(
       const hash = await requestHash({ prompt: text, sessionId });
       const body = { t: 'instruct', instruction: { sessionId, text } };
       return command('instruct', uuidV7(clock, random), hash, text, body, overrides);
+    },
+    async requestDiff(sessionId, file) {
+      const head = envelope(agentId, 'command', new Uint8Array(0));
+      const body = { t: 'diff_request', requestId: uuidV7(clock, random), sessionId, file };
+      const plaintext = encoder.encode(JSON.stringify(body));
+      const ciphertext = await transport!.encrypt(header(head), plaintext);
+      send({ ...head, payload: Buffer.from(ciphertext).toString('base64') });
+      return head.id;
     },
     async pair(code) {
       const psk = await pairingPsk(normalizePairingCode(code)!);

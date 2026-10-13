@@ -37,6 +37,7 @@ import { noticeKind, noticeSummaryText } from '../core/push-summary.js';
 import { createRelayLink, type RelayLink } from '../core/relay-link.js';
 import { relayEndpoints } from '../core/relay-url.js';
 import { resolveRepository } from '../core/resolve-repository.js';
+import { createDiffStore } from '../core/diff-store.js';
 import { createSessionFeed } from '../core/session-feed.js';
 import { createSessionRegistry } from '../core/session-registry.js';
 import {
@@ -288,6 +289,8 @@ async function runCommand(
     store: createFileHookSeenStore({ dir: c.paths.data, fs: c.fs, paths: c.pathPort }),
     onChange: () => link?.hub.sessionsChanged(),
   });
+  // Diffs of changed files (M2-02): memory only, sent when a phone asks for one.
+  const diffs = createDiffStore();
   const handler = createHookDispatcher({
     store,
     paused,
@@ -304,6 +307,7 @@ async function runCommand(
       }
       const update = feed.observe(input);
       if (update !== undefined) link?.hub.feedEvent(input.session_id, update.seq, update.event);
+      diffs.observe(input);
       const delta = activity.observe(input, c.clock.now());
       if (delta !== undefined) count(cwd, delta);
       const notice = noticeKind(input, config.notifications);
@@ -354,6 +358,7 @@ async function runCommand(
       capabilities: [{ ...CLAUDE_CODE_CAPABILITIES, startSession: true, instructions: followUps }],
       launcher,
       feed: (sessionId) => feed.get(sessionId),
+      diff: (sessionId, file) => diffs.get(sessionId, file),
       alwaysDestinations: config.always.destinations,
       history: async () => statsHistory(await stats.read()),
       setup: async () => ({

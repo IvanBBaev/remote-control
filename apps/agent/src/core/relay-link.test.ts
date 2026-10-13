@@ -26,6 +26,7 @@ import { createFakePhone, type FakePhone } from '../testing/fake-phone.js';
 import { createFakeRelay } from '../testing/fake-relay.js';
 import { manualTime, waitFor } from '../testing/manual-time.js';
 import type { LaunchResult, SessionLauncher, SessionView } from './launcher.js';
+import { createDiffStore } from './diff-store.js';
 import { createPendingStore, type RegisterInput } from './pending-store.js';
 import { noticeSummaryText } from './push-summary.js';
 import { createRelayLink, type RelayLink, type RelayLinkOptions } from './relay-link.js';
@@ -1268,6 +1269,63 @@ describe('relay link (fake relay, fake phones)', () => {
         expect(snapshot!.sessions.map((session) => session.id)).toEqual(ids);
         expect(snapshot!.sessions.some((session) => session.changedFiles.length > 0)).toBe(true);
         expect(snapshot!.sessions.some((session) => session.lastPrompt === null)).toBe(true);
+      });
+
+      describe('on-demand diffs (M2-02)', () => {
+        async function diffing() {
+          const diffs = createDiffStore();
+          const linked = await setup(['Pixel'], 12, undefined, undefined, {
+            launcher: fakeLauncher([LIVE]).launcher,
+            feed: () => undefined,
+            diff: (sessionId, file) => diffs.get(sessionId, file),
+          });
+          const [phone] = linked.phones as [FakePhone];
+          return { ...linked, phone, diffs };
+        }
+
+        it('AC: the diff goes only to the asking phone, as a reply, never pushed', async () => {
+          const t = await diffing();
+          await t.open(t.phone);
+          const file = `${REPO.path}/a.ts`;
+          t.diffs.observe(
+            hook('PostToolUse', {
+              tool_name: 'Edit',
+              tool_input: { file_path: file, old_string: 'a', new_string: 'CANARY-diff' },
+            }),
+          );
+          await t.link.hub.idle();
+          // Observed but not asked for: nothing about it leaves the computer.
+          expect(plaintextLeaks(t.relay.routed, 'CANARY-diff')).toBe(false);
+          const routedBefore = t.relay.routed.length;
+          const id = await t.phone.requestDiff(SESSION, file);
+          await waitFor(() => t.phone.of('diff').length === 1);
+          expect(t.phone.of('diff')[0]).toMatchObject({
+            t: 'diff',
+            sessionId: SESSION,
+            file,
+            patch: '@@ -1,1 +1,1 @@\n-a\n+CANARY-diff',
+            truncated: false,
+          });
+          const reply = t.phone.messages.find((m) => m.message.t === 'diff')!.envelope;
+          expect(reply).toMatchObject({ cls: 'reply', replyTo: id });
+          expect(reply.pushBlob).toBeUndefined();
+          expect(t.phone.doorbells).toHaveLength(0);
+          expect(t.relay.routed.slice(routedBefore).every((e) => e.pushBlob === undefined)).toBe(
+            true,
+          );
+          expect(JSON.stringify(t.logs)).not.toContain('CANARY-diff');
+          expect(t.logs.find((l) => l.event === 'diff_sent')?.fields).toMatchObject({
+            found: true,
+          });
+        });
+
+        it('answers a file it kept nothing for with a null patch', async () => {
+          const t = await diffing();
+          await t.open(t.phone);
+          await t.phone.requestDiff(SESSION, '/nowhere.ts');
+          await waitFor(() => t.phone.of('diff').length === 1);
+          expect(t.phone.of('diff')[0]).toMatchObject({ patch: null, truncated: false });
+        });
       });
     });
   });
