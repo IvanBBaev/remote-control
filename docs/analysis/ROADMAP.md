@@ -689,7 +689,7 @@ AC: probe unit tests for each capability combination; the route table renders in
 Lighthouse PWA installability passes on the deployed build.
 
 #### M0-19 — PWA: passkeys and per-action assertion
-Size M · Deps M0-18, M0-09 · Status todo · Sources 05 W5–W6, 05 Rec-4, 02 W8
+Size M · Deps M0-18, M0-09 · Status done d67ee16 (Playwright P1 prepared, runs in M1-12; the tap → fetch → `credentials.get` gesture on iOS confirmed by the M0-03 device runs) · Sources 05 W5–W6, 05 Rec-4, 02 W8
 Scope: registration with invite code, conditional-UI login, recovery-code display with
 "I saved it" confirmation, session state in zustand, `assertDecision(decision)` helper
 (challenge = hash from `packages/protocol`, UV required, options requested on tap).
