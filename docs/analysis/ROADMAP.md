@@ -1020,7 +1020,7 @@ session screen (diff bodies are fetched from the agent on demand, not pushed).
 AC: renders the fixture diffs; cap test; no diff body in any push payload (privacy gate).
 
 #### M2-03 — Agent-side assertion verification (phase 2)
-Size M · Deps M1-10 · Status todo · Sources 02 W15, 02 §5.4, D7
+Size M · Deps M1-10 · Status done c506f5e (legacy peers keep relay trust; no passkey-add flow, re-pair instead — ADR 0010) · Sources 02 W15, 02 §5.4, D7
 Scope: passkey SPKI shared with the agent at pairing (and on passkey add), the WebAuthn
 assertion carried inside the encrypted decision, agent verifies ES256 signature, `rpIdHash`,
 UV flag, counter; relay verification kept as defence in depth.
