@@ -869,7 +869,7 @@ AC: `agent-os` matrix runs install/uninstall `--dry-run` + idempotency on all th
 mocked registry test shows the update notice and no download.
 
 #### M1-09 — Release pipeline and first public version
-Size S · Deps M0-27, M1-08 · Status todo · Sources 06 W15, 07 W21, 06 §5.3
+Size S · Deps M0-27, M1-08 · Status doing — code done 43a70c3 (tag-driven, ADR 0003); first tagged publish + checklist pending owner (npm trusted publisher, M0-27 placeholder, push) · Sources 06 W15, 07 W21, 06 §5.3
 Scope: release-please manifest, `release.yml` with npm trusted publishing (OIDC,
 provenance), `docs/release-checklist.md` (real iPhone push, Face ID, real Claude Code
 flow, Railway deploy, fixture refresh), README install section → `remotectl@0.1.0`.
