@@ -16,9 +16,13 @@ const FLAG_UV = 0x04;
 
 /**
  * A `PermissionRequest` hook input whose tool input, working directory and transcript
- * path all carry canaries (07 §5.12): the phone must see them, the relay never.
+ * path all carry canaries (07 §5.12): the phone must see them, the relay never. Pass
+ * `permissionSuggestions` for the rules Claude Code offers to "always" allow (04 §2.2).
  */
-export function permissionRequest(canaries: Canaries): Record<string, unknown> & {
+export function permissionRequest(
+  canaries: Canaries,
+  permissionSuggestions?: readonly unknown[],
+): Record<string, unknown> & {
   hook_event_name: string;
 } {
   return permissionRequestPayload(
@@ -34,6 +38,7 @@ export function permissionRequest(canaries: Canaries): Record<string, unknown> &
         command: `echo ${canaries.mint('TOOLINPUT')}`,
         description: canaries.mint('DESCRIPTION'),
       },
+      ...(permissionSuggestions !== undefined ? { permissionSuggestions } : {}),
     },
   );
 }

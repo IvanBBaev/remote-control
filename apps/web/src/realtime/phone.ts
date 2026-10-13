@@ -89,13 +89,13 @@ export interface PhoneService {
   readonly client: RealtimeClient | undefined;
   /**
    * Answers `request` on `machineId`: builds the canonical decision, asks for the passkey
-   * assertion when the kind needs one (Allow, D7), then queues it for the agent. Call it
-   * from the tap handler, so iOS lets the passkey sheet open.
+   * assertion when the kind needs one (Allow, Always, D7), then queues it for the agent.
+   * Call it from the tap handler, so iOS lets the passkey sheet open.
    */
   decide(
     machineId: string,
     request: ApprovalRequest | Question,
-    kind: 'allow' | 'deny',
+    kind: 'allow' | 'always' | 'deny',
   ): Promise<AssertDecisionResult>;
   /**
    * Answers an `AskUserQuestion` (M1-01): the answer rides in the decision's payload, so
@@ -323,7 +323,8 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
     enroll: (name) => relay.enrollAgent(name),
     async decide(machineId, request, kind) {
       const result = await send(machineId, request, kind, null);
-      if (result.ok) sent.set(request.id, kind);
+      // "Always" counts as an approval, like the agent's counters (M2-05).
+      if (result.ok) sent.set(request.id, kind === 'deny' ? 'deny' : 'allow');
       return result;
     },
     answer: (machineId, question, answer) =>

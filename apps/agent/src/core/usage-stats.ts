@@ -183,7 +183,7 @@ export function isSessionStart(input: HookInput): boolean {
 
 /** The counter a phone decision moves; a handoff counts as neither. */
 export function decisionStat(behavior: AdapterDecision['behavior']): StatField | undefined {
-  if (behavior === 'allow') return 'approvals';
+  if (behavior === 'allow' || behavior === 'always') return 'approvals';
   if (behavior === 'deny') return 'denials';
   return undefined;
 }

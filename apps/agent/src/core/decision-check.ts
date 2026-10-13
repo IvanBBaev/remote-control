@@ -8,11 +8,13 @@ import {
 import type { PendingKind } from './pending-store.js';
 
 /**
- * The decision kinds the agent can apply; the rest are `unsupported` (M1-02..04).
- * `answer` answers a question request (M1-01).
+ * The decision kinds the agent can apply; the rest are `unsupported` (M1-04).
+ * `answer` answers a question request (M1-01); `always` a permission request that
+ * offered session rules (M1-02).
  */
 export const DECISION_KINDS: ReadonlySet<DecisionKind> = new Set([
   'allow',
+  'always',
   'deny',
   'terminal',
   'answer',
@@ -36,6 +38,8 @@ export interface CheckedRequest {
    * last check, so a wrong answer never hides a stale or unverified decision.
    */
   readonly answerValid?: boolean;
+  /** The request offered at least one session rule, so `always` fits it (D24). */
+  readonly alwaysSupported?: boolean;
 }
 
 export interface DecisionCheckInput {
@@ -65,7 +69,7 @@ export type DecisionCheckResult =
 /**
  * The D7 checks, in order, as a pure function: KK session; supported kind; pending and
  * unresolved; a kind that fits the request (`answer` only for a question, `allow` only
- * for a permission); request hash; decision expiry; the request's deadline (`T − 10 s`); the
+ * for a permission, `always` only for one that offered session rules); request hash; decision expiry; the request's deadline (`T − 10 s`); the
  * peer named in the decision; and, for every kind that needs a passkey, the relay's
  * verification (in M0: the envelope carries `decisionHash`, which the relay forwards
  * only after a verified assertion over it, and it equals the recomputed hash); and, for
@@ -79,6 +83,9 @@ export function checkDecision(input: DecisionCheckInput): DecisionCheckResult {
     return { ok: false, reason: input.ended ? 'already_resolved' : 'unknown_request' };
   }
   if (!KINDS_FOR[request.kind].has(decision.kind)) return { ok: false, reason: 'wrong_kind' };
+  if (decision.kind === 'always' && request.alwaysSupported !== true) {
+    return { ok: false, reason: 'wrong_kind' };
+  }
   if (decision.request_hash !== request.requestHash) return { ok: false, reason: 'hash_mismatch' };
   if (input.now >= decision.expires_at * 1000) return { ok: false, reason: 'expired' };
   if (input.now >= request.deadline) return { ok: false, reason: 'too_late' };

@@ -162,6 +162,43 @@ describe('approval card', () => {
     expect(labels).toEqual(['Show command', 'Deny', 'Allow', 'Reply in terminal']);
   });
 
+  describe('"Always" for this session (M1-02, D24)', () => {
+    const offered = (t: TestPhone, change: Partial<ApprovalRequest> = {}) =>
+      view(t, ID, {
+        request: approval(ID, {
+          suggestions: ['Bash(npm test)', 'Read'],
+          alwaysSupported: true,
+          ...change,
+        }),
+      });
+
+    it('lists every rule it grants next to the button', async () => {
+      await open(`/requests/${ID}`, (t) => [offered(t)]);
+      const rules = [...(mounted?.container.querySelectorAll('.always-rules li') ?? [])].map(
+        (item) => item.textContent,
+      );
+      expect(rules).toEqual(['Bash(npm test)', 'Read']);
+      expect(text()).toContain('Always allow in this session:');
+      expect(mounted!.button('Always (this session)').disabled).toBe(false);
+    });
+
+    it('sends "always" and waits for the computer', async () => {
+      const { test, decide } = await open(`/requests/${ID}`, (t) => [offered(t)]);
+      tick(test, TAP_GUARD_MS);
+      decide.mockResolvedValue({ ok: true, decisionHash: 'h', asserted: true });
+      await click(mounted!.button('Always (this session)'));
+      expect(decide).toHaveBeenCalledWith(AGENT, expect.objectContaining({ id: ID }), 'always');
+      await settle();
+      expect(text()).toContain('Always (this session) sent. Waiting for your computer…');
+      expect(() => mounted!.button('Always (this session)')).toThrow();
+    });
+
+    it('disables "Always" when the content was truncated', async () => {
+      await open(`/requests/${ID}`, (t) => [offered(t, { truncated: true })]);
+      expect(mounted!.button('Always (this session)').disabled).toBe(true);
+    });
+  });
+
   it('names an unknown computer', async () => {
     await open(`/requests/${ID}`, (t) => [view(t, ID, { machineId: 'gone' })]);
     expect(text()).toContain('Unknown computer');

@@ -1,5 +1,6 @@
 import { ASK_USER_QUESTION } from '../../core/hook-dispatcher.js';
 import type { PendingRequest } from '../../core/pending-store.js';
+import { sessionRules } from '../../core/session-rules.js';
 import type { AdapterDecision, QuestionAnswers } from '../../ports/agent-adapter.js';
 
 /** The deny reason when the phone gave none. */
@@ -12,16 +13,38 @@ type HookOutput = Readonly<Record<string, unknown>>;
 /** No decision: Claude Code shows its own prompt (D10 handoff). */
 const NO_DECISION: HookOutput = Object.freeze({});
 
-function permissionOutput(decision: AdapterDecision): HookOutput {
-  if (decision.behavior !== 'allow' && decision.behavior !== 'deny') return NO_DECISION;
-  const verdict =
-    decision.behavior === 'allow'
-      ? { behavior: 'allow' }
-      : {
-          behavior: 'deny',
-          message: decision.message ?? DEFAULT_DENY_MESSAGE,
-          interrupt: false,
-        };
+/**
+ * "Always" (D24): allow, plus `updatedPermissions` with the request's own suggested allow
+ * rules, every one with `destination: "session"`. No usable suggestion: hand off.
+ */
+function alwaysVerdict(request: PendingRequest): Readonly<Record<string, unknown>> | undefined {
+  const updatedPermissions = sessionRules(request);
+  return updatedPermissions.length === 0 ? undefined : { behavior: 'allow', updatedPermissions };
+}
+
+function permissionVerdict(
+  request: PendingRequest,
+  decision: AdapterDecision,
+): Readonly<Record<string, unknown>> | undefined {
+  switch (decision.behavior) {
+    case 'allow':
+      return { behavior: 'allow' };
+    case 'always':
+      return alwaysVerdict(request);
+    case 'deny':
+      return {
+        behavior: 'deny',
+        message: decision.message ?? DEFAULT_DENY_MESSAGE,
+        interrupt: false,
+      };
+    default:
+      return undefined;
+  }
+}
+
+function permissionOutput(request: PendingRequest, decision: AdapterDecision): HookOutput {
+  const verdict = permissionVerdict(request, decision);
+  if (verdict === undefined) return NO_DECISION;
   return { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: verdict } };
 }
 
@@ -66,10 +89,10 @@ function questionOutput(request: PendingRequest, decision: AdapterDecision): Hoo
  * Builds the Claude Code hook output for a decision (04 §2.2–2.3). The only module the
  * argv gate lets emit `updatedInput` (D11), and it does so only to answer an
  * `AskUserQuestion`: a permission `allow` approves the tool input exactly as Claude Code
- * proposed it. Anything that does not fit its request kind hands off (D10).
+ * proposed it, and "Always" adds only session-scoped allow rules (D24). Anything that does not fit its request kind hands off (D10).
  */
 export function decideClaudeCode(request: PendingRequest, decision: AdapterDecision): HookOutput {
   return request.kind === 'question'
     ? questionOutput(request, decision)
-    : permissionOutput(decision);
+    : permissionOutput(request, decision);
 }

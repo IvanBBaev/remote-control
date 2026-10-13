@@ -2,6 +2,7 @@ import { ApprovalRequest, requestHash, toolInfo } from '@remote-control/protocol
 import type { ToolKind } from '@remote-control/protocol';
 
 import type { PendingRequest } from './pending-store.js';
+import { sessionRuleLabels, sessionRules } from './session-rules.js';
 
 /** `ApprovalRequest.content` cap (04 §5.2): longer content is cut and flagged. */
 export const MAX_CONTENT_LENGTH = 4000;
@@ -86,6 +87,8 @@ export function approvalView(request: PendingRequest, hash: string): ApprovalReq
   const content = toolContent(toolInput, toolName);
   const project = projectName(request.payload['cwd']);
   const truncated = content.length > MAX_CONTENT_LENGTH;
+  // The rules "Always (this session)" would grant, shown in full on the card (D24).
+  const suggestions = sessionRuleLabels(sessionRules(request));
   const parsed = ApprovalRequest.safeParse({
     id: request.id,
     sessionId: request.sessionId,
@@ -95,9 +98,9 @@ export function approvalView(request: PendingRequest, hash: string): ApprovalReq
     ...(project === undefined ? {} : { project }),
     content: truncated ? content.slice(0, MAX_CONTENT_LENGTH) : content,
     truncated,
-    suggestions: [],
+    suggestions,
     expiresAt: request.deadline,
-    alwaysSupported: false,
+    alwaysSupported: suggestions.length > 0,
   });
   return parsed.success ? parsed.data : undefined;
 }

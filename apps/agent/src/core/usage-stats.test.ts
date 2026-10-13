@@ -180,6 +180,7 @@ describe('what is counted', () => {
 
   it('maps a phone decision to its counter', () => {
     expect(decisionStat('allow')).toBe('approvals');
+    expect(decisionStat('always')).toBe('approvals');
     expect(decisionStat('deny')).toBe('denials');
     expect(decisionStat('handoff')).toBeUndefined();
   });

@@ -50,7 +50,7 @@ describe('checkDecision', () => {
 
   it.each<[string, Partial<DecisionCheckInput>]>([
     ['no_session', { session: false }],
-    ['unsupported', { decision: { ...decision, kind: 'always' } }],
+    ['unsupported', { decision: { ...decision, kind: 'instruct', payload: 'x' } }],
     ['unknown_request', { request: undefined }],
     ['already_resolved', { request: undefined, ended: true }],
     ['wrong_kind', { decision: { ...decision, kind: 'answer', payload: '{}' } }],
@@ -70,6 +70,42 @@ describe('checkDecision', () => {
     ['unverified', { envelopeDecisionHash: 'e'.repeat(64) }],
   ])('rejects with %s', (reason, overrides) => {
     expect(checkDecision(input(overrides))).toEqual({ ok: false, reason });
+  });
+
+  describe('always (M1-02, D24)', () => {
+    const always: CanonicalDecision = { ...decision, kind: 'always' };
+    const offered = { kind: 'permission', requestHash: HASH, deadline: NOW + 60_000 } as const;
+
+    it('accepts a verified Always for a request that offered session rules', () => {
+      expect(
+        checkDecision(input({ decision: always, request: { ...offered, alwaysSupported: true } })),
+      ).toEqual({ ok: true });
+    });
+
+    it('refuses Always for a request without session rules, and for a question', () => {
+      for (const request of [
+        offered,
+        { ...offered, alwaysSupported: false },
+        { ...offered, kind: 'question', alwaysSupported: true },
+      ] as const) {
+        expect(checkDecision(input({ decision: always, request }))).toEqual({
+          ok: false,
+          reason: 'wrong_kind',
+        });
+      }
+    });
+
+    it('needs the passkey like Allow', () => {
+      expect(
+        checkDecision(
+          input({
+            decision: always,
+            request: { ...offered, alwaysSupported: true },
+            envelopeDecisionHash: undefined,
+          }),
+        ),
+      ).toEqual({ ok: false, reason: 'unverified' });
+    });
   });
 
   describe('answer (M1-01)', () => {

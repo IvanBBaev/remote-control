@@ -330,6 +330,16 @@ label.confirm input {
   font-size: 1.25rem;
 }
 
+.approval-card .always-rules {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+/* Every rule "Always" grants is on screen in full, however long. */
+.approval-card .always-rules code {
+  overflow-wrap: anywhere;
+}
+
 .approval-card pre.details {
   white-space: pre-wrap;
   overflow-wrap: anywhere;

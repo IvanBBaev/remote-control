@@ -126,6 +126,7 @@ describe('decideClaudeCode', () => {
         { behavior: 'allow', message: 'x', answer: answer.answer },
         { behavior: 'deny' },
         { behavior: 'handoff' },
+        { behavior: 'always' },
       ] satisfies AdapterDecision[]) {
         const text = JSON.stringify(decideClaudeCode(bash, decision));
         expect(text).not.toContain('updatedInput');
@@ -142,6 +143,57 @@ describe('decideClaudeCode', () => {
       expect(output).toEqual({
         hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } },
       });
+    });
+  });
+
+  describe('"Always" from the phone (M1-02, D24)', () => {
+    const suggested = pending('permission', {
+      ...bash.payload,
+      permission_suggestions: [
+        {
+          type: 'addRules',
+          rules: [{ toolName: 'Bash', ruleContent: 'ls' }],
+          behavior: 'allow',
+          destination: 'localSettings',
+        },
+        { type: 'setMode', mode: 'acceptEdits', destination: 'session' },
+      ],
+    });
+
+    it('allows with the suggested rules, every one for this session only', () => {
+      expect(decideClaudeCode(suggested, { behavior: 'always' })).toEqual({
+        hookSpecificOutput: {
+          hookEventName: 'PermissionRequest',
+          decision: {
+            behavior: 'allow',
+            updatedPermissions: [
+              {
+                type: 'addRules',
+                rules: [{ toolName: 'Bash', ruleContent: 'ls' }],
+                behavior: 'allow',
+                destination: 'session',
+              },
+            ],
+          },
+        },
+      });
+      const text = JSON.stringify(decideClaudeCode(suggested, { behavior: 'always' }));
+      expect(text).not.toMatch(/localSettings|projectSettings|userSettings|setMode/);
+      expect(text).not.toContain('updatedInput');
+    });
+
+    it('hands off "Always" when the request suggested no rule (D10)', () => {
+      expect(decideClaudeCode(bash, { behavior: 'always' })).toEqual({});
+    });
+
+    it('emits no rule for a plain allow, even when rules were suggested', () => {
+      expect(JSON.stringify(decideClaudeCode(suggested, { behavior: 'allow' }))).not.toContain(
+        'updatedPermissions',
+      );
+    });
+
+    it('hands off "Always" for a question', () => {
+      expect(decideClaudeCode(question, { behavior: 'always' })).toEqual({});
     });
   });
 });

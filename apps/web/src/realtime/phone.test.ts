@@ -383,25 +383,28 @@ describe('phone decisions', () => {
     });
   }
 
-  it('allows with a passkey assertion and sends its hash', async () => {
-    const credentials = mockCredentials();
-    try {
-      const relay = assertingRelay();
-      const t = await setup(relay);
-      await t.online();
-      const decide = vi.spyOn(t.phone.client!, 'decide');
-      const result = await t.phone.decide(AGENT, REQUEST, 'allow');
-      expect(result).toMatchObject({ ok: true, asserted: true });
-      expect(credentials.get).toHaveBeenCalledOnce();
-      expect(decide).toHaveBeenCalledWith(
-        AGENT,
-        expect.objectContaining({ kind: 'allow' }),
-        result.ok ? result.decisionHash : 'never',
-      );
-    } finally {
-      credentials.restore();
-    }
-  });
+  it.each(['allow', 'always'] as const)(
+    'sends %s with a passkey assertion and its hash',
+    async (kind) => {
+      const credentials = mockCredentials();
+      try {
+        const relay = assertingRelay();
+        const t = await setup(relay);
+        await t.online();
+        const decide = vi.spyOn(t.phone.client!, 'decide');
+        const result = await t.phone.decide(AGENT, REQUEST, kind);
+        expect(result).toMatchObject({ ok: true, asserted: true });
+        expect(credentials.get).toHaveBeenCalledOnce();
+        expect(decide).toHaveBeenCalledWith(
+          AGENT,
+          expect.objectContaining({ kind, payload: null }),
+          result.ok ? result.decisionHash : 'never',
+        );
+      } finally {
+        credentials.restore();
+      }
+    },
+  );
 
   it('sends nothing when the user cancels the passkey sheet', async () => {
     const credentials = mockCredentials();

@@ -20,7 +20,13 @@ import type { Failure } from './request-status.js';
 
 export { countdown, TAP_GUARD_MS } from './request-status.js';
 
-const SENT_TEXT = { allow: 'Allow', deny: 'Deny', terminal: 'Reply in terminal' } as const;
+const SENT_TEXT = {
+  allow: 'Allow',
+  always: 'Always (this session)',
+  deny: 'Deny',
+  terminal: 'Reply in terminal',
+} as const;
+type SentKind = keyof typeof SENT_TEXT;
 
 const mostUrgent = (state: RealtimeState): string | undefined =>
   pendingRequests(state)[0]?.request.id;
@@ -44,9 +50,11 @@ export function revealNoun(toolName: string): string {
 /**
  * What the agent wants to do, the countdown, and Deny / Allow (M0-21; card rules 01 W6,
  * M1-11): the content stays hidden until a tap, Allow stays disabled while the content is
- * truncated, taps in the first `TAP_GUARD_MS` are ignored, there is no "Always" button
- * yet, and a closed or expired card has no decision buttons. "Reply in terminal" (M1-03)
- * hands the request back to Claude Code's own prompt, without the passkey.
+ * truncated, taps in the first `TAP_GUARD_MS` are ignored, and a closed or expired card has
+ * no decision buttons. "Always (this session)" (M1-02, D24) appears only when the agent
+ * offered session rules; it lists every rule it grants, needs the passkey like Allow, and
+ * is disabled with it while the content is truncated. "Reply in terminal" (M1-03) hands
+ * the request back to Claude Code's own prompt, without the passkey.
  */
 export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
   const { phone } = useAppState();
@@ -55,7 +63,7 @@ export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
   const [now, setNow] = useState(shownAt);
   const [details, setDetails] = useState(false);
   const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState<'allow' | 'deny' | 'terminal'>();
+  const [sent, setSent] = useState<SentKind>();
   const [failure, setFailure] = useState<Failure>();
   const busy = useRef(false);
   const { request } = view;
@@ -77,7 +85,7 @@ export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
   const expired = view.status === 'pending' && !released && left <= 0;
   const open = view.status === 'pending' && !expired && !released && closed === undefined;
 
-  const decide = async (kind: 'allow' | 'deny' | 'terminal') => {
+  const decide = async (kind: SentKind) => {
     if (busy.current || phone.now() - shownAt < TAP_GUARD_MS) return;
     busy.current = true;
     setSending(true);
@@ -144,6 +152,27 @@ export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
           >
             Allow
           </button>
+        </div>
+      )}
+      {open && sent === undefined && request.alwaysSupported && (
+        <div className="always">
+          <p className="meta">Always allow in this session:</p>
+          <ul className="always-rules">
+            {request.suggestions.map((rule) => (
+              <li key={rule}>
+                <code>{rule}</code>
+              </li>
+            ))}
+          </ul>
+          <div className="actions">
+            <button
+              type="button"
+              disabled={sending || request.truncated}
+              onClick={() => void decide('always')}
+            >
+              Always (this session)
+            </button>
+          </div>
         </div>
       )}
       {open && sent === undefined && (

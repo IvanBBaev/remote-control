@@ -32,6 +32,7 @@ import { fromBase64Url } from './from-base64url.js';
 import type { PendingEvent, PendingRequest, PendingStore } from './pending-store.js';
 import { createPushSealer, pushSummaryText } from './push-summary.js';
 import { questionAnswers, questionView } from './question-view.js';
+import { sessionRules } from './session-rules.js';
 import { uuidV7 } from './uuid.js';
 
 /** What the hub logs: event names and ids only, never a payload or a key (I3). */
@@ -97,7 +98,7 @@ interface PhoneSession {
 /** Why a request left the phones' view, by the decision that ended it. */
 type Winner = {
   readonly phoneId: string;
-  readonly outcome: 'allow' | 'deny' | 'terminal' | 'answer';
+  readonly outcome: 'allow' | 'always' | 'deny' | 'terminal' | 'answer';
 };
 
 /** How long a turn notice's push stays deliverable (M2-08): stale news after that. */
@@ -475,6 +476,7 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
               requestHash,
               deadline: shown.deadline,
               answerValid: answer !== undefined,
+              alwaysSupported: sessionRules(shown).length > 0,
             },
       ended: store.ended(decision.request_id),
       agentDeviceId: agentId ?? '',
@@ -535,7 +537,9 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     const { outcome } = event;
     let message: AgentMessage;
     if (winner !== undefined) {
-      message = { t: 'resolved', requestId: request.id, outcome: winner.outcome };
+      // "Always" is an allow to the other phones; the rule lives in this session only.
+      const outcome = winner.outcome === 'always' ? 'allow' : winner.outcome;
+      message = { t: 'resolved', requestId: request.id, outcome };
     } else if (outcome.type === 'handoff' && outcome.reason === 'deadline') {
       message = { t: 'expired', requestId: request.id };
     } else if (outcome.type === 'handoff' && outcome.reason === 'paused') {

@@ -70,7 +70,8 @@ export interface QuestionAnswers {
  * prompt appears in the terminal (D10). `answer` answers a question request (M1-01).
  */
 export interface AdapterDecision {
-  readonly behavior: 'allow' | 'deny' | 'handoff' | 'answer';
+  /** `always`: allow, plus the request's suggested rules for this session (D24). */
+  readonly behavior: 'allow' | 'always' | 'deny' | 'handoff' | 'answer';
   /** For `deny`: the reason shown to the coding agent. */
   readonly message?: string;
   /** For `answer`: the checked answers. */

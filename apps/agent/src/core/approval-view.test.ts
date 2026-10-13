@@ -112,6 +112,25 @@ describe('approvalView', () => {
     });
   });
 
+  it('offers "Always" with every session rule it would grant (D24)', () => {
+    const view = approvalView(
+      pending({
+        tool_name: 'Bash',
+        tool_input: { command: 'npm test' },
+        permission_suggestions: [
+          {
+            type: 'addRules',
+            rules: [{ toolName: 'Bash', ruleContent: 'npm test' }],
+            behavior: 'allow',
+            destination: 'localSettings',
+          },
+        ],
+      }),
+      HASH,
+    );
+    expect(view).toMatchObject({ suggestions: ['Bash(npm test)'], alwaysSupported: true });
+  });
+
   it('names the project by its folder, never the full path (D21)', () => {
     const view = approvalView(
       pending({
