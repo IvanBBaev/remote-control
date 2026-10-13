@@ -8,6 +8,7 @@ import {
   MAX_DIFF_LENGTH,
   MAX_HISTORY_PROJECTS,
   PairingHello,
+  PhonePairingHello,
   PhoneMessage,
 } from './messages.js';
 
@@ -258,6 +259,25 @@ describe('PhoneMessage', () => {
     expect(PhoneMessage.parse(message)).toEqual(message);
   });
 
+  it('carries a passkey assertion inside the decision (M2-03) and refuses a malformed one', () => {
+    const assertion = {
+      credentialId: 'Y3JlZC0x',
+      authenticatorData: 'YXV0aA',
+      clientDataJSON: 'e30',
+      signature: 'MEQ',
+    };
+    const message = { t: 'decision', decision, assertion };
+    expect(PhoneMessage.parse(message)).toEqual(message);
+    for (const bad of [
+      { ...assertion, signature: 'a+b=' },
+      { ...assertion, signature: '' },
+      { ...assertion, signature: 'a'.repeat(129) },
+      { ...assertion, extra: 'x' },
+    ]) {
+      expect(PhoneMessage.safeParse({ ...message, assertion: bad }).success).toBe(false);
+    }
+  });
+
   it('refuses a decision that is not canonical', () => {
     const result = PhoneMessage.safeParse({
       t: 'decision',
@@ -272,6 +292,30 @@ describe('PairingHello', () => {
     expect(PairingHello.parse({ name: '  Pixel ' })).toEqual({ name: 'Pixel' });
     expect(PairingHello.safeParse({ name: ' ' }).success).toBe(false);
     expect(PairingHello.safeParse({ name: 'x'.repeat(65) }).success).toBe(false);
+  });
+});
+
+describe('PhonePairingHello', () => {
+  const passkey = { id: 'Y3JlZC0x', publicKey: 'MFkwEwYHKoZIzj0CAQ', rpId: 'rc.example' };
+
+  it('carries the name and the passkey keys the phone knows (M2-03)', () => {
+    expect(PhonePairingHello.parse({ name: 'Pixel' })).toEqual({ name: 'Pixel' });
+    expect(PhonePairingHello.parse({ name: 'Pixel', passkeys: [passkey] })).toEqual({
+      name: 'Pixel',
+      passkeys: [passkey],
+    });
+  });
+
+  it('refuses a malformed passkey and too many of them', () => {
+    for (const bad of [
+      { ...passkey, id: 'not base64url!' },
+      { ...passkey, rpId: '' },
+      { ...passkey, publicKey: 'a'.repeat(513) },
+    ]) {
+      expect(PhonePairingHello.safeParse({ name: 'Pixel', passkeys: [bad] }).success).toBe(false);
+    }
+    const many = Array.from({ length: 17 }, () => passkey);
+    expect(PhonePairingHello.safeParse({ name: 'Pixel', passkeys: many }).success).toBe(false);
   });
 });
 

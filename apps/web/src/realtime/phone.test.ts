@@ -13,7 +13,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { RelayError } from '../auth/relay-api.js';
 import type { RelayApi } from '../auth/relay-api.js';
-import { fakeRelay, mockCredentials, userCancelled } from '../auth/test-credentials.js';
+import {
+  FAKE_CREDENTIAL_ID,
+  fakeRelay,
+  mockCredentials,
+  userCancelled,
+} from '../auth/test-credentials.js';
 import { pairingSecrets } from '../pairing/pairing-code.js';
 import { PairingError, phoneNameFrom, relaySocketUrl } from './phone.js';
 import { PAIRING_TIMEOUT_MS } from './realtime-client.js';
@@ -26,6 +31,17 @@ const USER = '0d6f8a52-3c5e-4f0b-9a4e-000000000000';
 const PHONE = '0d6f8a52-3c5e-4f0b-9a4e-111111111111';
 const AGENT = '0d6f8a52-3c5e-4f0b-9a4e-222222222222';
 const CODE = '0123-4567-89AB';
+
+/** What a passkey-approved decision carries: the relay's hash and the agent's assertion (M2-03). */
+const signed = (decisionHash: unknown) => ({
+  decisionHash,
+  assertion: {
+    credentialId: FAKE_CREDENTIAL_ID,
+    authenticatorData: expect.any(String) as unknown,
+    clientDataJSON: expect.any(String) as unknown,
+    signature: expect.any(String) as unknown,
+  },
+});
 
 const settle = async (): Promise<void> => {
   for (let i = 0; i < 20; i++) await new Promise((resolve) => setTimeout(resolve, 0));
@@ -43,7 +59,7 @@ async function setup(overrides: Partial<RelayApi> = {}) {
     enrollAgent: vi.fn(() => Promise.resolve({ deviceId: AGENT, enrollToken: 'rc-enroll:abc' })),
   };
   const relay = fakeRelay({ ...mocks, ...overrides });
-  const { phone, keyStore, sockets, timer } = createTestPhone(relay);
+  const { phone, keyStore, passkeys, sockets, timer } = createTestPhone(relay);
   const identity = await keyStore.identity();
   const agent = await createTestAgent({
     deviceId: AGENT,
@@ -59,7 +75,7 @@ async function setup(overrides: Partial<RelayApi> = {}) {
     sockets.last.helloOk(PHONE, timer.now(), []);
     await settle();
   };
-  return { timer, sockets, keyStore, mocks, agent, phone, identity, online };
+  return { timer, sockets, keyStore, passkeys, mocks, agent, phone, identity, online };
 }
 
 describe('phone service', () => {
@@ -163,6 +179,7 @@ describe('phone service', () => {
         return t.agent.acceptPairing(t.sockets.last, psk, 'Studio Mac');
       })(),
     ]);
+    // No passkey registered on this phone: the agent keeps relying on the relay's check.
     expect(agentSide).toEqual({ name: 'iPhone' });
     expect(pending).toMatchObject({ agentDeviceId: AGENT, name: 'Studio Mac' });
     expect(pending.fingerprint).toBe(
@@ -184,6 +201,23 @@ describe('phone service', () => {
       name: 'Studio Mac',
       session: 'handshaking',
     });
+  });
+
+  it("hands the account's passkey public keys to the agent at pairing (M2-03)", async () => {
+    const t = await setup();
+    const passkey = { id: 'cred', publicKey: 'spki', rpId: 'rc.test' };
+    t.passkeys.add(USER, passkey);
+    t.passkeys.add('another-account', { ...passkey, id: 'other' });
+    await t.online();
+    const { psk } = await pairingSecrets('0123456789AB');
+    const [, agentSide] = await Promise.all([
+      t.phone.pair(CODE),
+      (async () => {
+        await settle();
+        return t.agent.acceptPairing(t.sockets.last, psk, 'Studio Mac');
+      })(),
+    ]);
+    expect(agentSide).toEqual({ name: 'iPhone', passkeys: [passkey] });
   });
 
   it('refuses a short code and pairing while offline, without using the slot', async () => {
@@ -374,7 +408,7 @@ describe('phone decisions', () => {
       decisionHash: await decisionHash(decision),
       asserted: false,
     });
-    expect(decide).toHaveBeenCalledWith(AGENT, decision, undefined);
+    expect(decide).toHaveBeenCalledWith(AGENT, decision, {});
   });
 
   it('counts a decision locally once the computer accepted it (M1-11)', async () => {
@@ -433,7 +467,7 @@ describe('phone decisions', () => {
     expect(decide).toHaveBeenCalledWith(
       AGENT,
       expect.objectContaining({ kind: 'terminal', payload: null, request_id: REQUEST.id }),
-      undefined,
+      {},
     );
     t.phone.realtime.setState({
       requests: {
@@ -464,7 +498,7 @@ describe('phone decisions', () => {
         expect(decide).toHaveBeenCalledWith(
           AGENT,
           expect.objectContaining({ kind, payload: null }),
-          result.ok ? result.decisionHash : 'never',
+          result.ok ? signed(result.decisionHash) : 'never',
         );
       } finally {
         credentials.restore();
@@ -486,7 +520,7 @@ describe('phone decisions', () => {
       expect(decide).toHaveBeenCalledWith(
         AGENT,
         expect.objectContaining({ kind: 'always', payload }),
-        expect.any(String),
+        signed(expect.any(String)),
       );
     } finally {
       credentials.restore();
@@ -546,7 +580,7 @@ describe('phone decisions', () => {
           request_hash: question.requestHash,
           payload: encodeAnswerPayload(answer),
         }),
-        result.ok ? result.decisionHash : 'never',
+        result.ok ? signed(result.decisionHash) : 'never',
       );
       // An answer is neither an approval nor a denial; only the asking session counts.
       t.phone.realtime.setState({
@@ -616,7 +650,7 @@ describe('phone decisions', () => {
             agent_device_id: AGENT,
           },
         },
-        result.ok ? result.decisionHash : 'never',
+        result.ok ? signed(result.decisionHash) : 'never',
       );
       // A fresh request id per start, tracked until the agent answers.
       const again = await t.phone.start(AGENT, REPOSITORY, 'Fix the tests');
@@ -670,8 +704,11 @@ describe('phone decisions', () => {
       const command = vi.spyOn(t.phone.client!, 'command');
       const result = await t.phone.instruct(AGENT, REQUEST.sessionId, 'Now run lint');
       expect(result).toMatchObject({ ok: true, asserted: true });
-      const [machineId, message, decisionHash] = command.mock.calls[0]!;
-      expect([machineId, decisionHash]).toEqual([AGENT, result.ok ? result.decisionHash : 'never']);
+      const [machineId, message, proof] = command.mock.calls[0]!;
+      expect([machineId, proof]).toEqual([
+        AGENT,
+        result.ok ? signed(result.decisionHash) : 'never',
+      ]);
       expect(message).toMatchObject({
         t: 'instruct',
         instruction: { sessionId: REQUEST.sessionId, text: 'Now run lint' },

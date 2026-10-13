@@ -2,9 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createAuthStore, isSignedIn, noSessionHint, storageSessionHint } from './auth-store.js';
 import type { SessionHint } from './auth-store.js';
+import { memoryPasskeyKeys } from './passkey-keys.js';
 import { OfflineError, RelayError } from './relay-api.js';
 import type { RelayApi } from './relay-api.js';
-import { fakeRelay, mockCredentials, userCancelled } from './test-credentials.js';
+import {
+  FAKE_CREDENTIAL_ID,
+  FAKE_PUBLIC_KEY,
+  fakeRelay,
+  mockCredentials,
+  userCancelled,
+} from './test-credentials.js';
 import type { MockedCredentials } from './test-credentials.js';
 
 const CREATION = {
@@ -62,6 +69,25 @@ describe('register', () => {
 
     store.getState().confirmRecoverySaved();
     expect(isSignedIn(store.getState())).toBe(true);
+  });
+
+  it("keeps the new passkey's public key for pairing (M2-03)", async () => {
+    const registerOptions = vi.fn<RelayApi['registerOptions']>(() => Promise.resolve(CREATION));
+    const registerVerify = vi.fn<RelayApi['registerVerify']>(() =>
+      Promise.resolve({ userId: 'user-1', recoveryCode: 'ABCD-EFGH', backedUp: true }),
+    );
+    const passkeys = memoryPasskeyKeys();
+    const store = createAuthStore({
+      api: fakeRelay({ registerOptions, registerVerify }),
+      passkeys,
+    });
+
+    await store.getState().register({ inviteCode: 'INV' });
+
+    expect(passkeys.list('user-1')).toEqual([
+      { id: FAKE_CREDENTIAL_ID, publicKey: FAKE_PUBLIC_KEY, rpId: 'localhost' },
+    ]);
+    expect(passkeys.list('user-2')).toEqual([]);
   });
 
   it('omits an absent display name', async () => {

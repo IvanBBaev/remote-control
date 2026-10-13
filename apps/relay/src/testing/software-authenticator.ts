@@ -113,6 +113,13 @@ export class SoftwareAuthenticator {
       response: {
         clientDataJSON: toBase64Url(clientDataJSON),
         attestationObject: toBase64Url(attestationObject),
+        authenticatorData: toBase64Url(authData),
+        // What `getPublicKey()` gives a browser: SPKI, so the phone can hand it to its
+        // agents at pairing (D7 phase 2, M2-03).
+        publicKey: toBase64Url(
+          new Uint8Array(await crypto.subtle.exportKey('spki', keys.publicKey)),
+        ),
+        publicKeyAlgorithm: -7,
         transports: ['internal'],
       },
       authenticatorAttachment: 'platform',

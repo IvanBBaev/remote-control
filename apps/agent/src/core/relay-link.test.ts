@@ -25,6 +25,7 @@ import type { Peer } from '../ports/key-store.js';
 import { createFakePhone, type FakePhone } from '../testing/fake-phone.js';
 import { createFakeRelay } from '../testing/fake-relay.js';
 import { manualTime, waitFor } from '../testing/manual-time.js';
+import { createTestPasskey } from '../testing/test-passkey.js';
 import type { LaunchResult, SessionLauncher, SessionView } from './launcher.js';
 import { createDiffStore } from './diff-store.js';
 import { createPendingStore, type RegisterInput } from './pending-store.js';
@@ -87,6 +88,8 @@ async function setup(
   history?: () => Promise<readonly ProjectHistory[]>,
   alwaysDestinations?: readonly AlwaysDestination[],
   extra: Partial<RelayLinkOptions> = {},
+  /** Phones with a passkey they hand the agent (M2-03); otherwise phase-1 phones. */
+  withPasskeys = false,
 ) {
   const time = manualTime();
   const random = seededRandom(seed);
@@ -94,7 +97,10 @@ async function setup(
   const deviceKey = await generateX25519KeyPair(random);
   const logs: { event: string; fields: Readonly<Record<string, unknown>> }[] = [];
   const phones: FakePhone[] = [];
-  for (const name of names) phones.push(await createFakePhone(relay, name, time.clock, random));
+  for (const name of names) {
+    const passkey = withPasskeys ? await createTestPasskey() : undefined;
+    phones.push(await createFakePhone(relay, name, time.clock, random, passkey));
+  }
   let peers: readonly Peer[] = phones.map((phone) => phone.peer(1));
   const ref: { link?: RelayLink } = {};
   /** Every adapter `decide` call: the only path that counts approvals/denials (M1-11). */
@@ -484,6 +490,94 @@ describe('relay link (fake relay, fake phones)', () => {
     await phone.decide('allow', request, { envelopeHash: forged });
     expect(await t.resultOn(phone)).toMatchObject({ result: 'rejected', reason: 'unverified' });
     expect(t.store.get(request.id)).toBeDefined();
+  });
+
+  describe('agent-side assertion check (M2-03, D7 phase 2)', () => {
+    /** One phone with a passkey, a session, and a request shown on it. */
+    async function shown(extra: Partial<RelayLinkOptions> = {}) {
+      const t = await setup(['Pixel'], 11, undefined, undefined, extra, true);
+      const [phone] = t.phones as [FakePhone];
+      await t.open(phone);
+      const registration = t.store.register(permission());
+      const request = await t.requestOn(phone, registration.request.id);
+      return { ...t, phone, registration, request };
+    }
+
+    it('applies an allow whose assertion the agent verified and saves the counter', async () => {
+      const saved: [string, string, number][] = [];
+      const t = await shown({
+        recordPasskeyUse: (...args) => {
+          saved.push(args);
+          return Promise.resolve();
+        },
+      });
+      await t.phone.decide('allow', t.request);
+      expect(await t.resultOn(t.phone)).toMatchObject({ result: 'accepted' });
+      expect(await t.registration.settled).toMatchObject({ type: 'decided' });
+      await t.link.hub.idle();
+      expect(saved).toEqual([[t.phone.device.id, expect.any(String), 1]]);
+    });
+
+    it('AC: rejects a tampered signature even though the relay forwards it (W15)', async () => {
+      const t = await shown();
+      await t.phone.decide('allow', t.request, {
+        tamper: (assertion) => {
+          const signature = Buffer.from(assertion.signature, 'base64url');
+          signature[signature.length - 1]! ^= 0x01;
+          return { ...assertion, signature: signature.toString('base64url') };
+        },
+      });
+      expect(await t.resultOn(t.phone)).toMatchObject({ result: 'rejected', reason: 'unverified' });
+      expect(t.store.get(t.request.id)).toBeDefined();
+      expect(t.logs).toContainEqual({
+        event: 'assertion_refused',
+        fields: expect.objectContaining({ reason: 'bad_signature' }) as unknown,
+      });
+    });
+
+    it.each([
+      ['no assertion', { tamper: () => undefined }, 'missing'],
+      ['no user verification', { assertion: { userVerified: false } }, 'not_user_verified'],
+      ['another relying party', { assertion: { rpId: 'evil.test' } }, 'wrong_rp'],
+      ['another challenge', { assertion: { challenge: 'A'.repeat(43) } }, 'wrong_challenge'],
+    ] as const)('rejects an allow with %s', async (_label, overrides, reason) => {
+      const t = await shown();
+      await t.phone.decide('allow', t.request, overrides);
+      expect(await t.resultOn(t.phone)).toMatchObject({ result: 'rejected', reason: 'unverified' });
+      expect(t.logs).toContainEqual({
+        event: 'assertion_refused',
+        fields: expect.objectContaining({ reason }) as unknown,
+      });
+    });
+
+    it('ignores the relay: a valid assertion counts without its decision hash', async () => {
+      const t = await shown();
+      // A relay that vouches for the wrong hash: the agent no longer asks it.
+      t.relay.verified.add('c'.repeat(64));
+      await t.phone.decide('allow', t.request, { envelopeHash: 'c'.repeat(64) });
+      expect(await t.resultOn(t.phone)).toMatchObject({ result: 'accepted' });
+    });
+
+    it('refuses a replayed counter, also on a new session', async () => {
+      const t = await shown();
+      await t.phone.decide('allow', t.request, { assertion: { counter: 7 } });
+      expect(await t.resultOn(t.phone)).toMatchObject({ result: 'accepted' });
+      await t.phone.handshake(t.agentId, t.deviceKey.publicKey);
+      const second = t.store.register(permission('npm run lint'));
+      const request = await t.requestOn(t.phone, second.request.id);
+      await t.phone.decide('allow', request, { assertion: { counter: 7 } });
+      expect(await t.resultOn(t.phone, 2)).toMatchObject({ reason: 'unverified' });
+      expect(t.logs).toContainEqual({
+        event: 'assertion_refused',
+        fields: expect.objectContaining({ reason: 'counter_replay' }) as unknown,
+      });
+    });
+
+    it('takes a deny without an assertion', async () => {
+      const t = await shown();
+      await t.phone.decide('deny', t.request);
+      expect(await t.resultOn(t.phone)).toMatchObject({ result: 'accepted' });
+    });
   });
 
   it('answers an instruct or start sent as a plain decision with unsupported', async () => {
@@ -1047,14 +1141,21 @@ describe('relay link (fake relay, fake phones)', () => {
       return { launcher, sessions, finish: (result: LaunchResult) => finish!(result) };
     }
 
-    async function launching(followUps = true, sessions: SessionView[] = []) {
+    async function launching(followUps = true, sessions: SessionView[] = [], withPasskeys = false) {
       const fake = fakeLauncher(sessions);
-      const t = await setup(['Pixel'], 11, undefined, undefined, {
-        launcher: fake.launcher,
-        capabilities: [
-          { ...CLAUDE_CODE_CAPABILITIES, startSession: true, instructions: followUps },
-        ],
-      });
+      const t = await setup(
+        ['Pixel'],
+        11,
+        undefined,
+        undefined,
+        {
+          launcher: fake.launcher,
+          capabilities: [
+            { ...CLAUDE_CODE_CAPABILITIES, startSession: true, instructions: followUps },
+          ],
+        },
+        withPasskeys,
+      );
       const [phone] = t.phones as [FakePhone];
       await t.open(phone);
       return { ...t, ...fake, phone };
@@ -1218,6 +1319,21 @@ describe('relay link (fake relay, fake phones)', () => {
       t.relay.verified.add('c'.repeat(64));
       await t.phone.start(start, REPO.path, { envelopeHash: 'c'.repeat(64) });
       expect(await t.resultOn(t.phone)).toMatchObject({ reason: 'unverified' });
+    });
+
+    it('checks a start and an instruct against the passkey itself (M2-03)', async () => {
+      const t = await launching(true, [], true);
+      const start = { machineId: t.agentId, repositoryId: REPO.id, prompt: 'go' };
+      await t.phone.start(start, REPO.path, {
+        tamper: (assertion) => ({ ...assertion, credentialId: 'AAAA' }),
+      });
+      expect(await t.resultOn(t.phone)).toMatchObject({ reason: 'unverified' });
+      await t.phone.instruct(SESSION, 'now the tests', { assertion: { userVerified: false } });
+      expect(await t.resultOn(t.phone, 2)).toMatchObject({ reason: 'unverified' });
+      expect(t.launcher.start).not.toHaveBeenCalled();
+      expect(t.launcher.instruct).not.toHaveBeenCalled();
+      await t.phone.instruct(SESSION, 'now the tests');
+      expect(await t.resultOn(t.phone, 3)).toMatchObject({ result: 'accepted' });
     });
 
     it('AC: sends a follow-up to a session that takes one (J9)', async () => {

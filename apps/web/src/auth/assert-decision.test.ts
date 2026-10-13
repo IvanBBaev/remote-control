@@ -5,7 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { assertDecision } from './assert-decision.js';
 import { OfflineError, RelayError } from './relay-api.js';
 import type { RelayApi } from './relay-api.js';
-import { fakeRelay, mockCredentials, userCancelled } from './test-credentials.js';
+import {
+  FAKE_CREDENTIAL_ID,
+  fakeRelay,
+  mockCredentials,
+  userCancelled,
+} from './test-credentials.js';
 import type { MockedCredentials } from './test-credentials.js';
 
 const ISSUED = 1_791_763_200;
@@ -80,6 +85,13 @@ describe('assertDecision', () => {
       ok: true,
       decisionHash: relay.hash,
       asserted: true,
+      // Sealed into the decision so the agent checks it itself (D7 phase 2, M2-03).
+      assertion: {
+        credentialId: FAKE_CREDENTIAL_ID,
+        authenticatorData: 'YXV0aC1kYXRh', // auth-data
+        clientDataJSON: 'eyJ0eXBlIjoid2ViYXV0aG4uZ2V0In0', // {"type":"webauthn.get"}
+        signature: 'c2lnbmF0dXJl', // signature
+      },
     });
     expect(relay.decisionChallengeCall).toHaveBeenCalledWith(relay.hash);
     const publicKey = credentials.get.mock.calls[0]?.[0].publicKey;

@@ -73,4 +73,78 @@ describe('J2 — PermissionRequest allowed with a user-verifying passkey (M0-22)
       await running.assertNoLeaks();
     },
   );
+
+  it(
+    "is allowed on the agent's own passkey check, with no relay `verified` flag (M2-03)",
+    JOURNEY,
+    async () => {
+      running = await scenario({ relayCheck: false });
+      const { phone, agent } = running;
+      // The phone handed its passkey's public key to the agent inside the pairing handshake.
+      expect(phone.passkeys).toHaveLength(1);
+
+      const hook = agent.fire(permissionRequest(running.canaries));
+      const { request } = await nextRequest(phone);
+      const fetch = vi.spyOn(globalThis, 'fetch');
+      await phone.decide('allow', request);
+      // Nothing at the relay vouched for it: the phone never called `/api/decisions/*`.
+      expect(fetch).not.toHaveBeenCalled();
+      fetch.mockRestore();
+
+      expect(await decisionResult(phone, request.id)).toMatchObject({ result: 'accepted' });
+      await expect(hook).resolves.toMatchObject({
+        output: {
+          hookSpecificOutput: { decision: { behavior: 'allow' } },
+        },
+      });
+
+      await running.assertNoLeaks();
+    },
+  );
+
+  it(
+    'refuses a tampered signature at the agent even when the relay vouches for it (W15)',
+    JOURNEY,
+    async () => {
+      running = await scenario();
+      const { phone, agent } = running;
+
+      const hook = agent.fire(permissionRequest(running.canaries));
+      const { request } = await nextRequest(phone);
+      // The relay verifies the real assertion and forwards the decision hash; the agent
+      // receives a broken signature, as a lying relay could hand it.
+      await phone.decide('allow', request, null, {
+        tamper: (assertion) => ({ ...assertion, signature: flipLastByte(assertion.signature) }),
+      });
+      expect(await decisionResult(phone, request.id)).toMatchObject({
+        result: 'rejected',
+        reason: 'unverified',
+      });
+      expect(agent.logs().some((line) => line.includes('bad_signature'))).toBe(true);
+
+      // The request stays open: an honest assertion over a fresh decision (the relay takes
+      // each decision hash once) still allows it.
+      running.clock.advance(1_000);
+      await phone.decide('allow', request);
+      await eventually(
+        () => phone.of('decision_result').filter((r) => r.requestId === request.id).length === 2,
+        'phone: no second decision_result',
+      );
+      expect(
+        phone.of('decision_result').filter((r) => r.requestId === request.id)[1],
+      ).toMatchObject({ result: 'accepted' });
+      await expect(hook).resolves.toMatchObject({
+        output: { hookSpecificOutput: { decision: { behavior: 'allow' } } },
+      });
+
+      await running.assertNoLeaks();
+    },
+  );
 });
+
+/** The base64url signature with its last byte changed. */
+function flipLastByte(signature: string): string {
+  const bytes = Buffer.from(signature, 'base64url');
+  bytes[bytes.length - 1]! ^= 0x01;
+  return bytes.toString('base64url');
+}

@@ -14,10 +14,12 @@ import {
   parseAnswerPayload,
   PhoneMessage,
   requestHash,
+  requiresAssertion,
   VERSION_TABLE,
   type AgentMessage,
   type AlwaysDestination,
   type CanonicalDecision,
+  type DecisionAssertion,
   type Capabilities,
   type Envelope,
   type FeedEvent,
@@ -31,9 +33,10 @@ import {
 
 import type { AdapterDecision, QuestionAnswers } from '../ports/agent-adapter.js';
 import type { Clock } from '../ports/clock.js';
-import type { Peer } from '../ports/key-store.js';
+import type { Peer, PeerPasskey } from '../ports/key-store.js';
 import type { Random } from '../ports/random.js';
 import { approvalView, pendingRequestHash } from './approval-view.js';
+import { checkAssertion } from './assertion-check.js';
 import { checkCommand, type CommandTarget } from './command-check.js';
 import { checkDecision, DECISION_KINDS } from './decision-check.js';
 import { fromBase64Url } from './from-base64url.js';
@@ -59,6 +62,16 @@ export interface SessionHubOptions {
   readonly store: PendingStore;
   /** The paired phones (`peers.json`); re-read at every relay connect and handshake. */
   readonly listPeers: () => Promise<readonly Peer[]>;
+  /**
+   * Persists a passkey's signature counter after an assertion the agent verified itself
+   * (M2-03), so a replayed assertion stays refused across restarts. Without it the
+   * counter is kept in memory only.
+   */
+  readonly recordPasskeyUse?: (
+    deviceId: string,
+    credentialId: string,
+    counter: number,
+  ) => Promise<void>;
   /** Sends one envelope on the relay link; `false` when the link is down. */
   readonly send: (envelope: Envelope) => boolean;
   /** The adapter's hook output for a phone decision (`claudeCodeAdapter.decide`). */
@@ -140,6 +153,11 @@ export interface SessionHub {
 interface PhoneSession {
   readonly phoneId: string;
   readonly transport: TransportSession;
+  /**
+   * The passkeys the phone handed over at pairing, with their last counters (M2-03);
+   * `undefined` for a phone paired without them, whose assertions only the relay checks.
+   */
+  passkeys: readonly PeerPasskey[] | undefined;
 }
 
 /** Why a request left the phones' view, by the decision that ended it. */
@@ -192,6 +210,8 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
   let peers: readonly Peer[] = [];
   /** Phones the relay revoked (M1-10); a re-paired phone gets a new device id. */
   const revoked = new Set<string>();
+  /** The last verified counter per `phone/credential` (M2-03), ahead of `peers.json`. */
+  const counters = new Map<string, number>();
   const sealer = createPushSealer(options.deviceKey.privateKey, random);
   let seq = 0;
   const live = new Map<string, PhoneSession>();
@@ -500,7 +520,12 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     }
     if (agentId !== me) return;
     endSession(phoneId, 'replaced');
-    const session: PhoneSession = { phoneId, transport };
+    // A counter this process saw beats the file's, which may not be written yet.
+    const passkeys = peer.passkeys?.map((passkey) => ({
+      ...passkey,
+      counter: Math.max(passkey.counter, counters.get(`${phoneId}/${passkey.id}`) ?? 0),
+    }));
+    const session: PhoneSession = { phoneId, transport, passkeys };
     const reply = new Uint8Array(msg2.length + 1);
     reply[0] = HANDSHAKE_TAG.kk;
     reply.set(msg2, 1);
@@ -537,6 +562,46 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
         replyTo,
       ),
     );
+  }
+
+  /**
+   * Whether the user's passkey approved `decision` (D7). For a phone that handed over
+   * its passkeys at pairing the agent checks the assertion itself (phase 2, M2-03) and
+   * the relay's word counts for nothing; for one paired without them it falls back to
+   * the relay's check, the envelope's `decisionHash` (phase 1). A verified assertion
+   * moves the passkey's counter forward, so it cannot be replayed.
+   */
+  async function verify(
+    session: PhoneSession,
+    envelope: Envelope,
+    decision: CanonicalDecision,
+    assertion: DecisionAssertion | undefined,
+  ): Promise<boolean> {
+    if (session.passkeys === undefined) {
+      return envelope.decisionHash === (await decisionHash(decision));
+    }
+    const result = await checkAssertion({ assertion, decision, passkeys: session.passkeys });
+    if (!result.ok) {
+      log('assertion_refused', {
+        phone_device_id: session.phoneId,
+        request_id: decision.request_id,
+        reason: result.reason,
+      });
+      return false;
+    }
+    counters.set(`${session.phoneId}/${result.credentialId}`, result.counter);
+    session.passkeys = session.passkeys.map((passkey) =>
+      passkey.id === result.credentialId ? { ...passkey, counter: result.counter } : passkey,
+    );
+    const record = options.recordPasskeyUse;
+    if (record !== undefined) {
+      track(
+        record(session.phoneId, result.credentialId, result.counter).catch(() => {
+          log('passkey_counter_unsaved', { phone_device_id: session.phoneId });
+        }),
+      );
+    }
+    return true;
   }
 
   /** Decrypts a phone's command and runs the D7 checks; applies it at most once. */
@@ -580,7 +645,10 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     const { decision } = parsed.data;
     const pending = store.get(decision.request_id);
     const requestHash = pending === undefined ? undefined : await hashOf(pending);
-    const computed = await decisionHash(decision);
+    // Deny and terminal need no assertion (D7): nothing to verify, no counter to move.
+    const verified =
+      requiresAssertion(decision.kind) &&
+      (await verify(session, envelope, decision, parsed.data.assertion));
     // From here on synchronous: the checks and the store see the same state (decide-once).
     const shown = store.get(decision.request_id);
     let answer: QuestionAnswers | undefined;
@@ -595,8 +663,7 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
       session: live.get(session.phoneId) === session,
       decision,
       from: envelope.from,
-      envelopeDecisionHash: envelope.decisionHash,
-      computedDecisionHash: computed,
+      verified,
       request:
         shown === undefined || requestHash === undefined || shown !== pending
           ? undefined
@@ -658,11 +725,13 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
           t: 'start';
           start: StartSession;
           decision: CanonicalDecision;
+          assertion?: DecisionAssertion | undefined;
         }
       | {
           t: 'instruct';
           instruction: { sessionId: string; text: string };
           decision: CanonicalDecision;
+          assertion?: DecisionAssertion | undefined;
         },
   ): Promise<void> {
     const { decision } = message;
@@ -684,7 +753,7 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
         ? { ok: true, requestHash: await requestHash({ prompt: text, sessionId }) }
         : { ok: false, reason: 'follow_up_unsupported' };
     }
-    const computed = await decisionHash(decision);
+    const verified = await verify(session, envelope, decision, message.assertion);
     const result = checkCommand({
       session: live.get(session.phoneId) === session,
       message: message.t,
@@ -697,8 +766,7 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
       machineMatches: message.t !== 'start' || message.start.machineId === agentId,
       used: used.has(decision.request_id),
       from: envelope.from,
-      envelopeDecisionHash: envelope.decisionHash,
-      computedDecisionHash: computed,
+      verified,
       agentDeviceId: agentId ?? '',
       target,
       now: clock.now(),

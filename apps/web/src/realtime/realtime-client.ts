@@ -16,12 +16,14 @@ import {
 } from '@remote-control/protocol';
 import type {
   CanonicalDecision,
+  DecisionAssertion,
   DiffRequestMessage,
   Envelope,
   Frame,
   HelloOk,
   InstructMessage,
   PhoneMessage,
+  PhonePairingHello,
   PresenceEntry,
   Random,
   StartMessage,
@@ -103,23 +105,34 @@ export interface RealtimeClient {
   wake(): void;
   /** Re-reads the key store, e.g. after a pairing was confirmed. */
   reloadMachines(): Promise<void>;
-  /** Runs the XXpsk0 initiator against the agent whose slot the phone joined (D6). */
-  pair(agentDeviceId: string, psk: Uint8Array, phoneName: string): Promise<PairingResult>;
+  /**
+   * Runs the XXpsk0 initiator against the agent whose slot the phone joined (D6); msg3
+   * carries `hello`, with this phone's passkey public keys (M2-03).
+   */
+  pair(agentDeviceId: string, psk: Uint8Array, hello: PhonePairingHello): Promise<PairingResult>;
   /**
    * Queues a decision for the machine and sends it on the open session; it is re-sent on
    * every new session until the agent receives it, answers it, or it expires.
    */
-  decide(machineId: string, decision: CanonicalDecision, decisionHash?: string): void;
+  decide(machineId: string, decision: CanonicalDecision, signed?: Signed): void;
   /**
    * Queues a session start or follow-up instruction (M1-04) like a decision, and tracks
    * it in the store's `commands` under its `request_id` until the agent answers.
    */
-  command(machineId: string, message: StartMessage | InstructMessage, decisionHash?: string): void;
+  command(machineId: string, message: StartMessage | InstructMessage, signed?: Signed): void;
   /**
    * Asks the machine for a changed file's diff (M2-02) on its open session, tracked in
    * the store's `diffs`. Not queued: without a session it is `unavailable` at once.
    */
   requestDiff(machineId: string, sessionId: string, file: string): void;
+}
+
+/** What proves a decision the passkey approved (D7); empty for Deny and "Reply in terminal". */
+export interface Signed {
+  /** The relay's check (phase 1), in the envelope head. */
+  readonly decisionHash?: string | undefined;
+  /** The agent's own check (phase 2, M2-03), sealed into the message. */
+  readonly assertion?: DecisionAssertion | undefined;
 }
 
 /** A phone message that carries a D7 decision, so it can wait in the outbox. */
@@ -150,7 +163,7 @@ interface Outgoing {
 interface Pairing {
   readonly agentDeviceId: string;
   readonly state: HandshakeState;
-  readonly phoneName: string;
+  readonly hello: PhonePairingHello;
   readonly timeout: TimerHandle;
   resolve(result: PairingResult): void;
   reject(error: Error): void;
@@ -434,9 +447,7 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
       const hello = PairingHello.parse(
         JSON.parse(decoder.decode(await current.state.readMessage(message))),
       );
-      const msg3 = await current.state.writeMessage(
-        encoder.encode(JSON.stringify({ name: current.phoneName })),
-      );
+      const msg3 = await current.state.writeMessage(encoder.encode(JSON.stringify(current.hello)));
       if (!control(from, HANDSHAKE_TAG.pairing, msg3)) throw new Error('relay socket closed');
       const result = current.state.result();
       current.resolve({
@@ -599,11 +610,12 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
     }
   }
 
-  function queue(machineId: string, message: QueuedMessage, decisionHash?: string): void {
+  function queue(machineId: string, message: QueuedMessage, signed: Signed): void {
+    const { decisionHash, assertion } = signed;
     decided.set(message.decision.request_id, message.decision.kind);
     outbox.set(message.decision.request_id, {
       machineId,
-      message,
+      message: assertion === undefined ? message : { ...message, assertion },
       ...(decisionHash === undefined ? {} : { decisionHash }),
     });
     enqueue(() => flush(machineId));
@@ -727,7 +739,7 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
       }
     },
     reloadMachines,
-    async pair(agentDeviceId, psk, phoneName) {
+    async pair(agentDeviceId, psk, hello) {
       if (socket.status !== 'open') throw new Error('Not connected to the relay');
       pairing?.reject(new Error('Pairing replaced'));
       pairing?.timeout.cancel();
@@ -745,7 +757,7 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
           pairing = undefined;
           reject(new PairingTimeoutError());
         });
-        pairing = { agentDeviceId, state, phoneName, timeout, resolve, reject };
+        pairing = { agentDeviceId, state, hello, timeout, resolve, reject };
       });
       if (!control(agentDeviceId, HANDSHAKE_TAG.pairing, await state.writeMessage())) {
         pairing?.timeout.cancel();
@@ -754,10 +766,10 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
       }
       return result;
     },
-    decide(machineId, decision, decisionHash) {
-      queue(machineId, { t: 'decision', decision }, decisionHash);
+    decide(machineId, decision, signed = {}) {
+      queue(machineId, { t: 'decision', decision }, signed);
     },
-    command(machineId, message, decisionHash) {
+    command(machineId, message, signed = {}) {
       const view: CommandView =
         message.t === 'start'
           ? {
@@ -775,7 +787,7 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
       update((state) => ({
         commands: { ...state.commands, [message.decision.request_id]: view },
       }));
-      queue(machineId, message, decisionHash);
+      queue(machineId, message, signed);
     },
     requestDiff(machineId, sessionId, file) {
       const requestId = uuidV7(timer.now(), random);

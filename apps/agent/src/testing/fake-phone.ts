@@ -22,6 +22,7 @@ import {
   VERSION_TABLE,
   type ApprovalRequest,
   type CanonicalDecision,
+  type DecisionAssertion,
   type DecisionKind,
   type Envelope,
   type Frame,
@@ -36,6 +37,7 @@ import type { Random } from '../ports/random.js';
 import type { WebSocketConnection } from '../ports/web-socket.js';
 import { FAKE_RELAY_ORIGIN, type FakeDevice, type FakeRelay } from './fake-relay.js';
 import { waitFor } from './manual-time.js';
+import type { AssertionOverrides, TestPasskey } from './test-passkey.js';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -44,6 +46,10 @@ export interface DecideOverrides {
   readonly decision?: Partial<CanonicalDecision>;
   /** The envelope's `decisionHash`; default: the true hash for kinds that need one. */
   readonly envelopeHash?: string;
+  /** Deviations in the passkey assertion (phones with a passkey only). */
+  readonly assertion?: AssertionOverrides;
+  /** Rewrites the signed assertion before it is sealed; `undefined` drops it. */
+  readonly tamper?: (assertion: DecisionAssertion) => DecisionAssertion | undefined;
 }
 
 export interface Received {
@@ -98,6 +104,11 @@ export async function createFakePhone(
   name: string,
   clock: Clock,
   random: Random,
+  /**
+   * The phone's passkey (M2-03): handed to the agent at pairing, and every decision that
+   * needs one carries its assertion. Without it the phone is one paired before M2-03.
+   */
+  passkey?: TestPasskey,
 ): Promise<FakePhone> {
   const device = relay.addPhone(name);
   const keyPair = await generateX25519KeyPair(random);
@@ -152,7 +163,9 @@ export async function createFakePhone(
         const hello = PairingHello.parse(
           JSON.parse(decoder.decode(await state.readMessage(bytes.subarray(1)))),
         );
-        const msg3 = await state.writeMessage(encoder.encode(JSON.stringify({ name })));
+        const msg3 = await state.writeMessage(
+          encoder.encode(JSON.stringify({ name, ...(passkey && { passkeys: [passkey.paired] }) })),
+        );
         control(received.from, HANDSHAKE_TAG.pairing, msg3);
         pairing.done = { name: hello.name, agentPublicKey: state.remoteStaticPublicKey! };
       }
@@ -199,7 +212,14 @@ export async function createFakePhone(
       ...envelope(agentId, 'command', new Uint8Array(0)),
       ...(envelopeHash === undefined ? {} : { decisionHash: envelopeHash }),
     };
-    const plaintext = encoder.encode(JSON.stringify({ t: 'decision', ...body, decision }));
+    let assertion =
+      passkey && requiresAssertion(kind)
+        ? await passkey.assert(decision, overrides.assertion)
+        : undefined;
+    if (assertion !== undefined && overrides.tamper) assertion = overrides.tamper(assertion);
+    const plaintext = encoder.encode(
+      JSON.stringify({ t: 'decision', ...body, decision, ...(assertion && { assertion }) }),
+    );
     const ciphertext = await transport!.encrypt(header(head), plaintext);
     send({ ...head, payload: Buffer.from(ciphertext).toString('base64') });
     return head.id;
@@ -322,6 +342,7 @@ export async function createFakePhone(
       name,
       publicKey: toBase64Url(keyPair.publicKey),
       pairedAt,
+      ...(passkey && { passkeys: [{ ...passkey.paired, counter: 0 }] }),
     }),
     of: <T extends AgentMessage['t']>(t: T) =>
       messages

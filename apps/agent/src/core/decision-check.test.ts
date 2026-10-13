@@ -7,7 +7,6 @@ const PHONE = '0190a1b2-0000-7000-8000-0000000000a1';
 const AGENT = '0190a1b2-0000-7000-8000-0000000000b2';
 const NOW = 1_760_000_000_000;
 const HASH = 'a'.repeat(64);
-const DECISION_HASH = 'd'.repeat(64);
 
 const decision: CanonicalDecision = {
   v: 1,
@@ -26,8 +25,7 @@ function input(overrides: Partial<DecisionCheckInput> = {}): DecisionCheckInput 
     session: true,
     decision,
     from: PHONE,
-    envelopeDecisionHash: DECISION_HASH,
-    computedDecisionHash: DECISION_HASH,
+    verified: true,
     request: { kind: 'permission', requestHash: HASH, deadline: NOW + 60_000 },
     ended: false,
     agentDeviceId: AGENT,
@@ -40,11 +38,11 @@ function input(overrides: Partial<DecisionCheckInput> = {}): DecisionCheckInput 
 describe('checkDecision', () => {
   it('accepts a decision that passes every check', () => {
     expect(checkDecision(input())).toEqual({ ok: true });
-    // Deny and terminal need no assertion: the relay forwards them without a hash.
+    // Deny and terminal need no assertion: nothing signs them.
     for (const kind of ['deny', 'terminal'] as const) {
-      expect(
-        checkDecision(input({ decision: { ...decision, kind }, envelopeDecisionHash: undefined })),
-      ).toEqual({ ok: true });
+      expect(checkDecision(input({ decision: { ...decision, kind }, verified: false }))).toEqual({
+        ok: true,
+      });
     }
   });
 
@@ -66,8 +64,7 @@ describe('checkDecision', () => {
     ['too_late', { now: NOW + 60_000 }],
     ['wrong_peer', { from: AGENT }],
     ['wrong_peer', { agentDeviceId: PHONE }],
-    ['unverified', { envelopeDecisionHash: undefined }],
-    ['unverified', { envelopeDecisionHash: 'e'.repeat(64) }],
+    ['unverified', { verified: false }],
   ])('rejects with %s', (reason, overrides) => {
     expect(checkDecision(input(overrides))).toEqual({ ok: false, reason });
   });
@@ -101,7 +98,7 @@ describe('checkDecision', () => {
           input({
             decision: always,
             request: { ...offered, alwaysSupported: true },
-            envelopeDecisionHash: undefined,
+            verified: false,
           }),
         ),
       ).toEqual({ ok: false, reason: 'unverified' });
@@ -125,7 +122,7 @@ describe('checkDecision', () => {
             input({
               decision: { ...decision, kind },
               request: question,
-              envelopeDecisionHash: undefined,
+              verified: false,
             }),
           ),
         ).toEqual({ ok: true });
@@ -143,9 +140,7 @@ describe('checkDecision', () => {
 
     it('needs the passkey assertion before it looks at the answer (D7)', () => {
       expect(
-        checkDecision(
-          input({ decision: answer, request: question, envelopeDecisionHash: undefined }),
-        ),
+        checkDecision(input({ decision: answer, request: question, verified: false })),
       ).toEqual({ ok: false, reason: 'unverified' });
     });
 
@@ -168,7 +163,7 @@ describe('checkDecision', () => {
           session: false,
           request: undefined,
           from: AGENT,
-          envelopeDecisionHash: undefined,
+          verified: false,
         }),
       ),
     ).toEqual({ ok: false, reason: 'no_session' });

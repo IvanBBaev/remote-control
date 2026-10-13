@@ -16,6 +16,7 @@ import {
   accountDeletionHash,
   AgentMessage,
   DECISION_TTL_SECONDS,
+  decisionChallenge,
   decisionHash,
   encodeFrame,
   HANDSHAKE_TAG,
@@ -28,9 +29,11 @@ import {
   VERSION_TABLE,
   type ApprovalRequest,
   type CanonicalDecision,
+  type DecisionAssertion,
   type DecisionKind,
   type Envelope,
   type Frame,
+  type PairedPasskey,
   type StartSession,
 } from '@remote-control/protocol';
 import { SoftwareAuthenticator } from '@remote-control/relay/testing';
@@ -66,6 +69,17 @@ export interface CreatePhoneOptions {
   readonly clock: HarnessClock;
   /** The device name the agent sees. */
   readonly name: string;
+  /**
+   * Run the relay's passkey check (D7 phase 1) before each decision that needs one and
+   * name the decision hash in the envelope (default: yes). `false` leaves the agent's own
+   * check (phase 2, M2-03) as the only one: the relay forwards with no `verified` flag.
+   */
+  readonly relayCheck?: boolean;
+}
+
+export interface DecideOptions {
+  /** Alters the assertion after the ceremony, before it is sealed (tamper tests, W15). */
+  readonly tamper?: (assertion: DecisionAssertion) => DecisionAssertion;
 }
 
 export interface HeadlessPhone {
@@ -73,6 +87,8 @@ export interface HeadlessPhone {
   readonly authenticator: SoftwareAuthenticator;
   /** Set by `register`. */
   readonly userId: string;
+  /** The passkey public keys `register` kept, handed to the agent at pairing (M2-03). */
+  readonly passkeys: readonly PairedPasskey[];
   /** Set by `bind`. */
   readonly deviceId: string;
   /** The `__Host-rc_session` value `register` got, for a browser to sign in with (M1-12). */
@@ -99,14 +115,16 @@ export interface HeadlessPhone {
   /** Runs the KK initiator (D3) and waits for the agent's snapshot. */
   handshake(agentDeviceId: string, agentPublicKey: Uint8Array): Promise<void>;
   /**
-   * Sends a decision on the open session, with the passkey ceremony at the relay first
-   * for the kinds that need one (D7); returns the command envelope id. `payload` is the
-   * decision's signed payload (an encoded `AnswerPayload` for `answer`, M1-01).
+   * Sends a decision on the open session, with the passkey ceremony (at the relay unless
+   * `relayCheck` is off) for the kinds that need one and the assertion sealed in for the
+   * agent (D7); returns the command envelope id. `payload` is the decision's signed
+   * payload (an encoded `AnswerPayload` for `answer`, M1-01).
    */
   decide(
     kind: DecisionKind,
     request: Pick<ApprovalRequest, 'id' | 'requestHash'>,
     payload?: string | null,
+    options?: DecideOptions,
   ): Promise<string>;
   /**
    * Asks the agent to start a session (M1-04): a `start` decision over the repository id,
@@ -172,6 +190,8 @@ function uuidV7(clock: HarnessClock): string {
  */
 export async function createPhone(options: CreatePhoneOptions): Promise<HeadlessPhone> {
   const { relay, clock, name } = options;
+  const relayCheck = options.relayCheck ?? true;
+  const passkeys: PairedPasskey[] = [];
   const random = webCryptoRandom;
   const keyPair = await generateX25519KeyPair(random);
   const authenticator = new SoftwareAuthenticator(relay.rpId, relay.origin);
@@ -252,7 +272,9 @@ export async function createPhone(options: CreatePhoneOptions): Promise<Headless
         const hello = PairingHello.parse(
           JSON.parse(decoder.decode(await state.readMessage(bytes.subarray(1)))),
         );
-        const msg3 = await state.writeMessage(encoder.encode(JSON.stringify({ name })));
+        const msg3 = await state.writeMessage(
+          encoder.encode(JSON.stringify({ name, ...(passkeys.length > 0 && { passkeys }) })),
+        );
         control(received.from, HANDSHAKE_TAG.pairing, msg3);
         pairing.done = { name: hello.name, agentPublicKey: state.remoteStaticPublicKey! };
       }
@@ -281,9 +303,36 @@ export async function createPhone(options: CreatePhoneOptions): Promise<Headless
   }
 
   /**
-   * Signs a decision, runs the passkey ceremony at the relay for the kinds that need one
-   * (D7) and sends it on the open session; `body` replaces the plain `decision` message
-   * (`start`, `instruct`). Returns the command envelope id.
+   * The passkey ceremony over `decision` (D7): at the relay, which then vouches for the
+   * hash, or (`relayCheck` off) straight on the authenticator, as only the agent checks it.
+   */
+  async function assert(decision: CanonicalDecision, hash: string): Promise<DecisionAssertion> {
+    let options: RequestOptions;
+    if (relayCheck) {
+      options = await call<RequestOptions>('POST', '/api/decisions/challenge', {
+        decisionHash: hash,
+      });
+    } else {
+      options = {
+        challenge: await decisionChallenge(decision),
+        rpId: relay.rpId,
+        userVerification: 'required',
+      };
+    }
+    const response = await authenticator.get(options);
+    if (relayCheck) await call('POST', '/api/decisions/verify', { response });
+    return {
+      credentialId: response.id,
+      authenticatorData: response.response.authenticatorData,
+      clientDataJSON: response.response.clientDataJSON,
+      signature: response.response.signature,
+    };
+  }
+
+  /**
+   * Signs a decision, runs the passkey ceremony for the kinds that need one (D7) and sends
+   * it on the open session with the assertion sealed in; `body` replaces the plain
+   * `decision` message (`start`, `instruct`). Returns the command envelope id.
    */
   async function command(
     kind: DecisionKind,
@@ -291,6 +340,7 @@ export async function createPhone(options: CreatePhoneOptions): Promise<Headless
     hashOfRequest: string,
     payload: string | null,
     body: Readonly<Record<string, unknown>>,
+    decideOptions: DecideOptions = {},
   ): Promise<string> {
     if (transport === undefined) throw new Error('phone: no session');
     const issuedAt = Math.floor(clock.now() / 1000);
@@ -306,19 +356,18 @@ export async function createPhone(options: CreatePhoneOptions): Promise<Headless
       agent_device_id: agentId,
     };
     const hash = await decisionHash(decision);
-    if (requiresAssertion(kind)) {
-      const challenge = await call<RequestOptions>('POST', '/api/decisions/challenge', {
-        decisionHash: hash,
-      });
-      await call('POST', '/api/decisions/verify', {
-        response: await authenticator.get(challenge),
-      });
+    const signed = requiresAssertion(kind);
+    let assertion = signed ? await assert(decision, hash) : undefined;
+    if (assertion !== undefined && decideOptions.tamper) {
+      assertion = decideOptions.tamper(assertion);
     }
     const head = {
       ...envelope(agentId, 'command', EMPTY),
-      ...(requiresAssertion(kind) ? { decisionHash: hash } : {}),
+      ...(signed && relayCheck ? { decisionHash: hash } : {}),
     };
-    const plaintext = encoder.encode(JSON.stringify({ t: 'decision', ...body, decision }));
+    const plaintext = encoder.encode(
+      JSON.stringify({ t: 'decision', ...body, decision, ...(assertion && { assertion }) }),
+    );
     const ciphertext = await transport.encrypt(header(head), plaintext);
     send({ ...head, payload: Buffer.from(ciphertext).toString('base64') });
     return head.id;
@@ -333,6 +382,7 @@ export async function createPhone(options: CreatePhoneOptions): Promise<Headless
     get userId() {
       return userId;
     },
+    passkeys,
     get deviceId() {
       return deviceId;
     },
@@ -345,12 +395,21 @@ export async function createPhone(options: CreatePhoneOptions): Promise<Headless
       const creation = await call<CreationOptions>('POST', '/api/auth/register/options', {
         inviteCode,
       });
+      const response = await authenticator.create(creation);
       const registered = await call<{ userId: string }>(
         'POST',
         '/api/auth/register/verify',
-        await authenticator.create(creation),
+        response,
       );
       userId = registered.userId;
+      // What the PWA keeps from `getPublicKey()` for pairing (M2-03).
+      if (response.response.publicKey !== undefined && creation.rp.id !== undefined) {
+        passkeys.push({
+          id: response.id,
+          publicKey: response.response.publicKey,
+          rpId: creation.rp.id,
+        });
+      }
     },
     async bind() {
       deviceId = (await call<{ deviceId: string }>('POST', '/api/devices/phone', { name }))
@@ -446,8 +505,8 @@ export async function createPhone(options: CreatePhoneOptions): Promise<Headless
         'phone: no snapshot after the handshake',
       );
     },
-    async decide(kind, request, payload = null) {
-      return command(kind, request.id, request.requestHash, payload, {});
+    async decide(kind, request, payload = null, decideOptions = {}) {
+      return command(kind, request.id, request.requestHash, payload, {}, decideOptions);
     },
     async start(start, path) {
       const requestId = uuidV7(clock);

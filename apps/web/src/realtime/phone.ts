@@ -23,6 +23,7 @@ import { deleteAccount } from '../auth/delete-account.js';
 import type { DeleteAccountResult } from '../auth/delete-account.js';
 
 import { RelayError } from '../auth/relay-api.js';
+import type { PasskeyKeys } from '../auth/passkey-keys.js';
 import type { EnrolledAgent, RelayApi } from '../auth/relay-api.js';
 import type { KeyStore } from '../pairing/key-store.js';
 import { normalizePairingCode, pairingSecrets, pskSecrets } from '../pairing/pairing-code.js';
@@ -31,7 +32,7 @@ import { parsePairingQr } from '../pairing/qr-text.js';
 import type { Timer, TimerHandle } from '../ports/timer.js';
 import { uuidV7 } from './envelope.js';
 import { createRealtimeClient, PairingTimeoutError } from './realtime-client.js';
-import type { RealtimeClient } from './realtime-client.js';
+import type { RealtimeClient, Signed } from './realtime-client.js';
 import type { SocketFactory } from './relay-socket.js';
 import { createRealtimeStore, diffKey } from './realtime-store.js';
 import type { RealtimeStore } from './realtime-store.js';
@@ -68,6 +69,11 @@ export interface PhoneServiceOptions {
   readonly version: string;
   /** How this phone is listed on the relay and on the computer. */
   readonly phoneName: string;
+  /**
+   * This phone's passkey public keys (M2-03), handed to a computer at pairing so its
+   * agent checks every assertion itself; without them the relay's check stands.
+   */
+  readonly passkeys?: PasskeyKeys;
   readonly isVisible?: () => boolean;
   readonly onError?: (error: unknown) => void;
   /** Where the local usage counters persist (M1-11); default: memory only. */
@@ -258,12 +264,12 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
     target: Pick<ApprovalRequest, 'id' | 'requestHash'>,
     kind: DecisionKind,
     payload: string | null,
-    deliver: (live: RealtimeClient, decision: CanonicalDecision, decisionHash?: string) => void = (
+    deliver: (live: RealtimeClient, decision: CanonicalDecision, signed: Signed) => void = (
       live,
       decision,
-      decisionHash,
+      signed,
     ) => {
-      live.decide(machineId, decision, decisionHash);
+      live.decide(machineId, decision, signed);
     },
   ): Promise<AssertDecisionResult> {
     const live = client;
@@ -283,7 +289,13 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
       agent_device_id: machineId,
     };
     const result = await assertDecision(decision, relay);
-    if (result.ok) deliver(live, decision, result.asserted ? result.decisionHash : undefined);
+    if (result.ok) {
+      deliver(
+        live,
+        decision,
+        result.asserted ? { decisionHash: result.decisionHash, assertion: result.assertion } : {},
+      );
+    }
     return result;
   }
 
@@ -329,7 +341,11 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
           'That QR code does not match the computer. Run `npx remotectl pair` again.',
         );
       }
-      const result = await live.pair(agentDeviceId, psk, options.phoneName);
+      const passkeys = userId === undefined ? [] : (options.passkeys?.list(userId) ?? []);
+      const result = await live.pair(agentDeviceId, psk, {
+        name: options.phoneName,
+        ...(passkeys.length > 0 && { passkeys: [...passkeys] }),
+      });
       const { keyPair } = await keyStore.identity();
       const fingerprint = await pairingFingerprint(keyPair.publicKey, result.publicKey);
       return {
@@ -408,14 +424,14 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
         { id, requestHash: hash },
         'start',
         repository.id,
-        (live, decision, decisionHash) => {
+        (live, decision, signed) => {
           const start = {
             machineId,
             repositoryId: repository.id,
             prompt,
             ...(permissionMode === undefined ? {} : { permissionMode }),
           };
-          live.command(machineId, { t: 'start', start, decision }, decisionHash);
+          live.command(machineId, { t: 'start', start, decision }, signed);
         },
       );
       return { ...result, requestId: id };
@@ -428,9 +444,9 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
         { id, requestHash: hash },
         'instruct',
         text,
-        (live, decision, decisionHash) => {
+        (live, decision, signed) => {
           const instruction = { sessionId, text };
-          live.command(machineId, { t: 'instruct', instruction, decision }, decisionHash);
+          live.command(machineId, { t: 'instruct', instruction, decision }, signed);
         },
       );
       return { ...result, requestId: id };

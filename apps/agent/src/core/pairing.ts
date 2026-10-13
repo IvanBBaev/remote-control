@@ -8,6 +8,8 @@ import {
 import {
   HANDSHAKE_TAG,
   PairingHello,
+  PhonePairingHello,
+  type PairedPasskey,
   toBase64Url,
   VERSION_TABLE,
   type Envelope,
@@ -248,7 +250,17 @@ export async function runPairing(options: PairingOptions): Promise<PairingOutcom
         name: attempt.name,
         publicKey: toBase64Url(attempt.phoneKey),
         pairedAt: clock.now(),
+        ...(attempt.passkeys.length > 0 && {
+          passkeys: attempt.passkeys.map((passkey) => ({ ...passkey, counter: 0 })),
+        }),
       };
+      if (attempt.passkeys.length === 0) {
+        print(
+          'The phone did not hand over its passkey keys: this agent relies on the ' +
+            "relay's passkey check for its decisions. Re-pair after registering a " +
+            'passkey on the phone to have the agent check them itself.',
+        );
+      }
       await options.addPeer(peer);
       finished = true;
       return { status: 'paired', peer, fingerprint };
@@ -261,11 +273,18 @@ export async function runPairing(options: PairingOptions): Promise<PairingOutcom
     client.stop();
   }
 
-  /** XXpsk0 responder: msg1 in, msg2 (our hello) out, msg3 (the phone's hello) in. */
+  /**
+   * XXpsk0 responder: msg1 in, msg2 (our hello) out, msg3 (the phone's hello and its
+   * passkey keys) in.
+   */
   async function respond(
     first: Envelope,
     psk: Uint8Array,
-  ): Promise<'failed' | 'stopped' | { phoneKey: Uint8Array; name: string }> {
+  ): Promise<
+    | 'failed'
+    | 'stopped'
+    | { phoneKey: Uint8Array; name: string; passkeys: readonly PairedPasskey[] }
+  > {
     try {
       const state = await HandshakeState.initialize({
         pattern: XXPSK0,
@@ -281,8 +300,13 @@ export async function runPairing(options: PairingOptions): Promise<PairingOutcom
       const third = await nextFrom(first.from);
       if (third === undefined) return 'stopped';
       const payload = await state.readMessage(handshakeBytes(third)!);
-      const phoneHello = PairingHello.parse(JSON.parse(new TextDecoder().decode(payload)));
-      return { phoneKey: state.remoteStaticPublicKey!, name: phoneHello.name };
+      // The phone's hello carries its passkey keys (M2-03); XXpsk0 authenticates them.
+      const phoneHello = PhonePairingHello.parse(JSON.parse(new TextDecoder().decode(payload)));
+      return {
+        phoneKey: state.remoteStaticPublicKey!,
+        name: phoneHello.name,
+        passkeys: phoneHello.passkeys ?? [],
+      };
     } catch {
       return 'failed';
     }

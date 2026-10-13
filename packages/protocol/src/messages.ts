@@ -211,13 +211,39 @@ export const AgentMessage = z.union([
 ]);
 export type AgentMessage = z.infer<typeof AgentMessage>;
 
+/** Unpadded base64url (RFC 4648 §5) of at most `max` characters. */
+const base64Url = (max: number) =>
+  z
+    .string()
+    .min(1)
+    .max(max)
+    .regex(/^[A-Za-z0-9_-]+$/);
+
+/**
+ * The WebAuthn assertion over a decision (D7 phase 2, M2-03): the fields of the
+ * `AuthenticationResponseJSON` the agent needs to verify it, all unpadded base64url. It
+ * travels inside the encrypted message, so the relay never sees it; the agent checks the
+ * ES256 signature over `authenticatorData || SHA-256(clientDataJSON)` with the passkey
+ * key the phone handed over at pairing.
+ */
+export const DecisionAssertion = z.strictObject({
+  credentialId: base64Url(1366),
+  authenticatorData: base64Url(1366),
+  clientDataJSON: base64Url(2732),
+  signature: base64Url(128),
+});
+export type DecisionAssertion = z.infer<typeof DecisionAssertion>;
+
 /**
  * The phone's decision (`cls: command`). The envelope carries `decisionHash` for every
  * kind that needs a passkey assertion; the agent re-computes it from `decision` (D7).
+ * `assertion` is the passkey assertion over the decision (M2-03); the agent requires it
+ * from a phone that handed over its passkey keys at pairing.
  */
 export const DecisionMessage = z.strictObject({
   t: z.literal('decision'),
   decision: CanonicalDecision,
+  assertion: DecisionAssertion.optional(),
 });
 export type DecisionMessage = z.infer<typeof DecisionMessage>;
 
@@ -231,6 +257,7 @@ export const StartMessage = z.strictObject({
   t: z.literal('start'),
   start: StartSession,
   decision: CanonicalDecision,
+  assertion: DecisionAssertion.optional(),
 });
 export type StartMessage = z.infer<typeof StartMessage>;
 
@@ -243,6 +270,7 @@ export const InstructMessage = z.strictObject({
   t: z.literal('instruct'),
   instruction: Instruction,
   decision: CanonicalDecision,
+  assertion: DecisionAssertion.optional(),
 });
 export type InstructMessage = z.infer<typeof InstructMessage>;
 
@@ -260,6 +288,29 @@ export const PairingHello = z.strictObject({
   name: z.string().trim().min(1).max(64),
 });
 export type PairingHello = z.infer<typeof PairingHello>;
+
+/**
+ * A passkey of the phone's account as the agent needs it to verify assertions itself
+ * (D7 phase 2, M2-03): the credential id, the public key as SubjectPublicKeyInfo (what
+ * `getPublicKey()` returns at registration; ES256 only, D7) and the relying party id the
+ * credential is scoped to, all as the phone saw them at registration.
+ */
+export const PairedPasskey = z.strictObject({
+  id: base64Url(1366),
+  publicKey: base64Url(512),
+  rpId: z.string().min(1).max(253),
+});
+export type PairedPasskey = z.infer<typeof PairedPasskey>;
+
+/**
+ * The phone's hello in the last pairing message (msg3): its name and the passkeys it
+ * knows the keys of. The XXpsk0 handshake authenticates it, so the agent trusts these
+ * keys as much as the pairing itself; the relay never sees them.
+ */
+export const PhonePairingHello = PairingHello.extend({
+  passkeys: z.array(PairedPasskey).max(16).optional(),
+});
+export type PhonePairingHello = z.infer<typeof PhonePairingHello>;
 
 /**
  * The first byte of a `cls: control` payload: which handshake message it carries. The

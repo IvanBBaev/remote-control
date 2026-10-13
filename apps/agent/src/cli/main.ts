@@ -363,6 +363,8 @@ async function runCommand(
       deviceKey: key.keyPair,
       store,
       listPeers: () => c.keyStore.listPeers(),
+      recordPasskeyUse: (deviceId, credentialId, counter) =>
+        c.keyStore.recordPasskeyUse(deviceId, credentialId, counter),
       decide: (request, decision) => {
         const field = decisionStat(decision.behavior);
         if (field !== undefined) count(request.payload['cwd'], { [field]: 1 });

@@ -36,6 +36,8 @@ const bytes = (text: string): ArrayBuffer => new TextEncoder().encode(text).buff
 
 /** Base64url of the fake credential id `rawId` (`cred-1`). */
 export const FAKE_CREDENTIAL_ID = 'Y3JlZC0x';
+/** Base64url of the fake credential's SPKI (`spki`), from `getPublicKey()`. */
+export const FAKE_PUBLIC_KEY = 'c3BraQ';
 
 function attestation() {
   return {
@@ -47,6 +49,8 @@ function attestation() {
       clientDataJSON: bytes('{"type":"webauthn.create"}'),
       attestationObject: bytes('attestation'),
       getTransports: () => ['internal', 'hybrid'],
+      getPublicKey: () => bytes('spki'),
+      getPublicKeyAlgorithm: () => -7,
     },
     getClientExtensionResults: () => ({}),
   };

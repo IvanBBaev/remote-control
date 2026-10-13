@@ -1,5 +1,5 @@
 import { decisionChallenge, decisionHash, requiresAssertion } from '@remote-control/protocol';
-import type { CanonicalDecision } from '@remote-control/protocol';
+import type { CanonicalDecision, DecisionAssertion } from '@remote-control/protocol';
 import { startAuthentication } from '@simplewebauthn/browser';
 
 import { classifyFailure } from './ceremony.js';
@@ -13,6 +13,11 @@ export type AssertDecisionResult =
       readonly decisionHash: string;
       /** `false` for Deny and "Reply in terminal": they need no assertion (D7). */
       readonly asserted: boolean;
+      /**
+       * The assertion itself, sealed into the decision so the agent checks it without
+       * the relay (D7 phase 2, M2-03); absent when `asserted` is `false`.
+       */
+      readonly assertion?: DecisionAssertion;
     }
   | {
       readonly ok: false;
@@ -48,7 +53,13 @@ export async function assertDecision(
     });
     const verified = await api.decisionVerify(response);
     if (verified.decisionHash !== hash) throw new ChallengeMismatch();
-    return { ok: true, decisionHash: hash, asserted: true };
+    const assertion: DecisionAssertion = {
+      credentialId: response.id,
+      authenticatorData: response.response.authenticatorData,
+      clientDataJSON: response.response.clientDataJSON,
+      signature: response.response.signature,
+    };
+    return { ok: true, decisionHash: hash, asserted: true, assertion };
   } catch (error) {
     if (error instanceof ChallengeMismatch) return { ok: false, failure: 'challenge_mismatch' };
     return { ok: false, failure: classifyFailure(error) };

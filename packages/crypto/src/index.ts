@@ -7,6 +7,7 @@ export { probeWebCrypto } from './primitives/probe.js';
 export type { WebCryptoCapability, WebCryptoProbe } from './primitives/probe.js';
 export { sha256 } from './primitives/sha256.js';
 export { hkdfSha256 } from './primitives/hkdf.js';
+export { es256DerToRaw, verifyEs256 } from './primitives/ecdsa.js';
 export {
   aesGcmDecrypt,
   aesGcmEncrypt,

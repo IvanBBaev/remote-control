@@ -101,6 +101,7 @@ export type { Random } from './ports/random.js';
 
 export {
   AgentMessage,
+  DecisionAssertion,
   DecisionMessage,
   DecisionRejection,
   DecisionResultMessage,
@@ -114,8 +115,10 @@ export {
   MAX_DIFF_LENGTH,
   MAX_DIFF_LINES,
   MAX_HISTORY_PROJECTS,
+  PairedPasskey,
   PairingHello,
   PhoneMessage,
+  PhonePairingHello,
   ProjectHistory,
   QuestionMessage,
   RequestMessage,

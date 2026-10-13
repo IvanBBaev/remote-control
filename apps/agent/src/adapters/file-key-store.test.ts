@@ -132,6 +132,25 @@ describe('createFileKeyStore', () => {
     expect(await keys.listPeers()).toEqual([peer(1, 'renamed')]);
   });
 
+  it('keeps the passkeys a phone handed over and records their counters (M2-03)', async () => {
+    const keys = store();
+    const passkey = { id: 'Y3JlZC0x', publicKey: 'MFkwEwYH', rpId: 'rc.test', counter: 0 };
+    await keys.addPeer({ ...peer(1), passkeys: [passkey] });
+    await keys.addPeer(peer(2));
+    await keys.recordPasskeyUse(peer(1).deviceId, passkey.id, 9);
+    // Unknown peer, unknown passkey and a peer without passkeys are ignored.
+    await keys.recordPasskeyUse(peer(1).deviceId, 'other', 3);
+    await keys.recordPasskeyUse(peer(2).deviceId, passkey.id, 3);
+    await keys.recordPasskeyUse('0190a1b2-0000-7000-8000-00000000ffff', passkey.id, 3);
+    expect(await keys.listPeers()).toEqual([
+      { ...peer(1), passkeys: [{ ...passkey, counter: 9 }] },
+      peer(2),
+    ]);
+    await expect(
+      keys.addPeer({ ...peer(1), passkeys: [{ ...passkey, counter: -1 }] }),
+    ).rejects.toThrow(KeyStoreError);
+  });
+
   it('refuses an invalid peer record and a corrupt peers file', async () => {
     const keys = store();
     await expect(keys.addPeer({ ...peer(1), publicKey: 'short' })).rejects.toThrow(KeyStoreError);

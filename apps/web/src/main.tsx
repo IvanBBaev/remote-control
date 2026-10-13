@@ -6,6 +6,7 @@ import { browserMediaQuery } from './adapters/browser-media-query.js';
 import { browserSocketFactory } from './adapters/browser-socket.js';
 import { systemTimer } from './adapters/system-clock.js';
 import { storageSessionHint } from './auth/auth-store.js';
+import { storagePasskeyKeys } from './auth/passkey-keys.js';
 import { createRelayApi } from './auth/relay-api.js';
 import { bootstrap } from './bootstrap.js';
 import { readBrowserEnvironment } from './capabilities.js';
@@ -24,6 +25,7 @@ const container = document.getElementById('root');
 if (container === null) throw new Error('#root is missing from index.html');
 
 const relay = createRelayApi((input, init) => fetch(input, init));
+const passkeys = storagePasskeyKeys(() => window.localStorage);
 const phone = createPhoneService({
   relay,
   keyStore: createIndexedDbKeyStore({ indexedDB: window.indexedDB, random: webCryptoRandom }),
@@ -35,6 +37,7 @@ const phone = createPhoneService({
   phoneName: phoneNameFrom(navigator.userAgent),
   isVisible: () => document.visibilityState === 'visible',
   usageStorage: browserUsageStorage(() => window.localStorage),
+  passkeys,
 });
 bindLifecycle(phone, { window, document });
 // `cameraQrScanner` also copes with `mediaDevices` missing outside a secure context.
@@ -50,6 +53,7 @@ void bootstrap({
   relay,
   phone,
   hint: storageSessionHint(() => window.localStorage),
+  passkeys,
   installChoice: storageInstallChoice(() => window.localStorage),
   // Browsers without `matchMedia` stay on the one-pane phone layout.
   ...(typeof window.matchMedia === 'function' && {

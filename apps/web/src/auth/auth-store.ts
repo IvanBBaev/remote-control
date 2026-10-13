@@ -4,6 +4,7 @@ import type { StoreApi } from 'zustand/vanilla';
 
 import { classifyFailure } from './ceremony.js';
 import type { CeremonyFailure } from './ceremony.js';
+import type { PasskeyKeys } from './passkey-keys.js';
 import { OfflineError } from './relay-api.js';
 import type { RelayApi } from './relay-api.js';
 
@@ -75,6 +76,8 @@ export const noSessionHint: SessionHint = { read: () => null, write: () => undef
 export interface AuthStoreOptions {
   readonly api: RelayApi;
   readonly hint?: SessionHint;
+  /** Where a new passkey's public key is kept for pairing (M2-03); default: dropped. */
+  readonly passkeys?: PasskeyKeys;
   readonly initial?: Partial<Pick<AuthState, 'status' | 'userId' | 'recoveryCode'>>;
 }
 
@@ -87,6 +90,7 @@ export function isSignedIn(state: Pick<AuthState, 'status' | 'recoveryCode'>): b
 export function createAuthStore({
   api,
   hint = noSessionHint,
+  passkeys,
   initial,
 }: AuthStoreOptions): AuthStore {
   return createStore<AuthState>()((set) => {
@@ -145,6 +149,13 @@ export function createAuthStore({
           });
           const response = await startRegistration({ optionsJSON });
           const registered = await api.registerVerify(response);
+          // The key the agent will check decisions against (D7 phase 2): only what the
+          // authenticator returned here, never a key the relay hands out later.
+          const publicKey = response.response.publicKey;
+          const rpId = optionsJSON.rp.id;
+          if (passkeys !== undefined && publicKey !== undefined && rpId !== undefined) {
+            passkeys.add(registered.userId, { id: response.id, publicKey, rpId });
+          }
           signedIn(registered.userId, registered.recoveryCode);
         }),
 

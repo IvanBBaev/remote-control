@@ -20,6 +20,8 @@ export interface ScenarioOptions {
   readonly repositories?: readonly HarnessRepository[];
   /** Extra environment for the agent and its `claude` runs. */
   readonly env?: Readonly<Record<string, string>>;
+  /** The phone runs the relay's passkey check too (default: yes; see `CreatePhoneOptions`). */
+  readonly relayCheck?: boolean;
 }
 
 export interface Scenario {
@@ -71,7 +73,12 @@ export async function scenario(options: ScenarioOptions = {}): Promise<Scenario>
     });
     cleanup.push(() => agent.close());
     const bootMs = performance.now() - started;
-    const phone = await createPhone({ relay, clock, name: options.phoneName ?? 'harness-phone' });
+    const phone = await createPhone({
+      relay,
+      clock,
+      name: options.phoneName ?? 'harness-phone',
+      ...(options.relayCheck !== undefined && { relayCheck: options.relayCheck }),
+    });
     cleanup.push(() => Promise.resolve(phone.disconnect()));
 
     await phone.register(await relay.mintInvite());

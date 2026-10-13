@@ -34,6 +34,12 @@ const OTHER = '0d6f8a52-3c5e-4f0b-9a4e-333333333333';
 const RID = '7a1b2c3d-4e5f-4a6b-8c7d-000000000001';
 const RID2 = '7a1b2c3d-4e5f-4a6b-8c7d-000000000002';
 const HASH = 'a'.repeat(64);
+const ASSERTION = {
+  credentialId: 'cred',
+  authenticatorData: 'auth',
+  clientDataJSON: 'client',
+  signature: 'sig',
+};
 
 const settle = async (): Promise<void> => {
   for (let i = 0; i < 20; i++) await new Promise((resolve) => setTimeout(resolve, 0));
@@ -368,13 +374,29 @@ describe('realtime client', () => {
       const t = await setup();
       await t.client.start();
       const made = decision(t.timer.now());
-      t.client.decide(AGENT, made, HASH);
+      t.client.decide(AGENT, made, { decisionHash: HASH });
       await settle();
       const socket = await t.connect();
       const commands = socket.of('data').filter((frame) => frame.cls === 'command');
       expect(commands).toHaveLength(1);
       expect(commands[0]).toMatchObject({ to: AGENT, from: PHONE, decisionHash: HASH });
       await expect(t.agent.read(commands[0]!)).resolves.toEqual({ t: 'decision', decision: made });
+    });
+
+    it('seals the passkey assertion into the decision for the agent to check (M2-03)', async () => {
+      const t = await setup();
+      await t.client.start();
+      const socket = await t.connect();
+      const made = decision(t.timer.now());
+      t.client.decide(AGENT, made, { decisionHash: HASH, assertion: ASSERTION });
+      await settle();
+      const [sent] = socket.of('data').filter((frame) => frame.cls === 'command');
+      expect(sent).toMatchObject({ decisionHash: HASH });
+      await expect(t.agent.read(sent!)).resolves.toEqual({
+        t: 'decision',
+        decision: made,
+        assertion: ASSERTION,
+      });
     });
 
     it('re-sends an unacked decision on the next session with a new envelope', async () => {
@@ -412,7 +434,7 @@ describe('realtime client', () => {
       await t.agent.send(socket, { t: 'request', request: approval(RID), ttlMs: 60_000 });
       await settle();
 
-      t.client.decide(AGENT, decision(t.timer.now()), HASH);
+      t.client.decide(AGENT, decision(t.timer.now()), { decisionHash: HASH });
       await settle();
       const [command] = socket.of('data').filter((frame) => frame.cls === 'command');
       socket.receive({ v: 1, kind: 'ack', ids: ['01a0f4c2-c400-7fff-bfff-ffffffffffff'] });
@@ -421,7 +443,7 @@ describe('realtime client', () => {
       expect(t.store.getState().requests[RID]?.relayError).toBe('unverified');
 
       // An answered decision is not re-sent.
-      t.client.decide(AGENT, decision(t.timer.now()), HASH);
+      t.client.decide(AGENT, decision(t.timer.now()), { decisionHash: HASH });
       await settle();
       await t.agent.send(socket, {
         t: 'decision_result',
@@ -456,7 +478,7 @@ describe('realtime client', () => {
       await settle();
 
       // `resolved` goes to the other phones only: the acceptance ends it here.
-      t.client.decide(AGENT, decision(t.timer.now(), kind), HASH);
+      t.client.decide(AGENT, decision(t.timer.now(), kind), { decisionHash: HASH });
       await settle();
       // The relay's ack comes first and empties the outbox.
       const [command] = socket.of('data').filter((frame) => frame.cls === 'command');
@@ -474,7 +496,7 @@ describe('realtime client', () => {
       await t.agent.send(socket, { t: 'request', request: approval(RID2), ttlMs: 60_000 });
       await settle();
 
-      t.client.decide(AGENT, decision(t.timer.now()), HASH);
+      t.client.decide(AGENT, decision(t.timer.now()), { decisionHash: HASH });
       await settle();
       await t.agent.send(socket, {
         t: 'decision_result',
@@ -492,8 +514,12 @@ describe('realtime client', () => {
     it('drops a decision when the agent resolves or expires its request', async () => {
       const t = await setup();
       await t.client.start();
-      t.client.decide(AGENT, decision(t.timer.now()), HASH);
-      t.client.decide(AGENT, { ...decision(t.timer.now()), request_id: RID2 }, HASH);
+      t.client.decide(AGENT, decision(t.timer.now()), { decisionHash: HASH });
+      t.client.decide(
+        AGENT,
+        { ...decision(t.timer.now()), request_id: RID2 },
+        { decisionHash: HASH },
+      );
       // Another machine's queue is untouched by this machine's session.
       t.client.decide(OTHER, {
         ...decision(t.timer.now()),
@@ -584,7 +610,7 @@ describe('realtime client', () => {
         start: { machineId: AGENT, repositoryId: REPO.id, prompt: 'Fix it' },
         decision: { ...decision(t.timer.now(), 'start'), payload: REPO.id },
       } as const;
-      t.client.command(AGENT, message, HASH);
+      t.client.command(AGENT, message, { decisionHash: HASH });
       await settle();
       expect(t.store.getState().commands[RID]).toEqual({
         machineId: AGENT,
@@ -879,13 +905,17 @@ describe('realtime client', () => {
       socket.helloOk(PHONE, t.timer.now(), []);
       await settle();
       const psk = webCryptoRandom.bytes(32);
-      const result = t.client.pair(AGENT, psk, 'Pixel');
+      const hello = {
+        name: 'Pixel',
+        passkeys: [{ id: 'cred', publicKey: 'spki', rpId: 'rc.test' }],
+      };
+      const result = t.client.pair(AGENT, psk, hello);
       await settle();
       const [phoneSide, agentSide] = await Promise.all([
         result,
         t.agent.acceptPairing(socket, psk, 'Studio Mac'),
       ]);
-      expect(agentSide).toEqual({ name: 'Pixel' });
+      expect(agentSide).toEqual(hello);
       expect(phoneSide.name).toBe('Studio Mac');
       expect(phoneSide.publicKey).toEqual(t.agent.keyPair.publicKey);
       expect(phoneSide.handshakeHash).toHaveLength(32);
@@ -907,15 +937,15 @@ describe('realtime client', () => {
       t.setPaired([]);
       await t.client.start();
       const psk = webCryptoRandom.bytes(32);
-      await expect(t.client.pair(AGENT, psk, 'Pixel')).rejects.toThrow('Not connected');
+      await expect(t.client.pair(AGENT, psk, { name: 'Pixel' })).rejects.toThrow('Not connected');
       const socket = t.sockets.last;
       socket.open();
       socket.helloOk(PHONE, t.timer.now(), []);
       await settle();
 
-      const replaced = t.client.pair(AGENT, psk, 'Pixel');
+      const replaced = t.client.pair(AGENT, psk, { name: 'Pixel' });
       await settle();
-      const timedOut = t.client.pair(AGENT, psk, 'Pixel');
+      const timedOut = t.client.pair(AGENT, psk, { name: 'Pixel' });
       await expect(replaced).rejects.toThrow('replaced');
       await settle();
       // A wrong code fails on the agent, which then never answers.
@@ -930,7 +960,7 @@ describe('realtime client', () => {
       t.sockets.last.open();
       t.sockets.last.helloOk(PHONE, t.timer.now(), []);
       await settle();
-      const stopped = t.client.pair(AGENT, psk, 'Pixel');
+      const stopped = t.client.pair(AGENT, psk, { name: 'Pixel' });
       await settle();
       t.client.stop();
       await expect(stopped).rejects.toThrow('stopped');
@@ -947,7 +977,7 @@ describe('realtime client', () => {
       socket.helloOk(PHONE, t.timer.now(), []);
       await settle();
       const psk = webCryptoRandom.bytes(32);
-      const result = t.client.pair(AGENT, psk, 'Pixel');
+      const result = t.client.pair(AGENT, psk, { name: 'Pixel' });
       await settle();
       // msg2 arrives, then the socket refuses msg3.
       const send = socket.send.bind(socket);

@@ -20,8 +20,8 @@ export interface CommandCheckInput {
   /** The decision's `request_id` was already accepted and has not expired. */
   readonly used: boolean;
   readonly from: string;
-  readonly envelopeDecisionHash: string | undefined;
-  readonly computedDecisionHash: string;
+  /** A passkey with UV signed the decision (see `DecisionCheckInput.verified`). */
+  readonly verified: boolean;
   readonly agentDeviceId: string;
   readonly target: CommandTarget;
   /** Unix epoch milliseconds. */
@@ -36,7 +36,7 @@ export type CommandCheckResult =
  * as a pure function, in order: KK session; the decision kind matches the message and
  * the agent supports it; the request id not used before (decide-once); the signed payload
  * names what the message names; decision expiry; the peers (and for `start` the machine);
- * the relay's passkey verification (both kinds need one); the target (an allow-listed
+ * a verified passkey assertion (both kinds need one); the target (an allow-listed
  * repository, a session that takes follow-ups); and the request hash over the prompt and
  * its folder or session. The first failing check is the reason.
  */
@@ -56,9 +56,7 @@ export function checkCommand(input: CommandCheckInput): CommandCheckResult {
   ) {
     return { ok: false, reason: 'wrong_peer' };
   }
-  if (input.envelopeDecisionHash !== input.computedDecisionHash) {
-    return { ok: false, reason: 'unverified' };
-  }
+  if (!input.verified) return { ok: false, reason: 'unverified' };
   if (!input.target.ok) return { ok: false, reason: input.target.reason };
   if (decision.request_hash !== input.target.requestHash) {
     return { ok: false, reason: 'hash_mismatch' };

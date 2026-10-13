@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { webCryptoRandom } from './adapters/web-crypto-random.js';
 import { bytesEqual, concatBytes, fromHex, utf8 } from './bytes.js';
 import { CryptoError } from './errors.js';
+import { es256DerToRaw, verifyEs256 } from './primitives/ecdsa.js';
 import { aesGcmDecrypt, aesGcmEncrypt, importAesGcmKey } from './primitives/aes-gcm.js';
 import { hkdfSha256, HKDF_SHA256_MAX_LENGTH } from './primitives/hkdf.js';
 import { probeWebCrypto } from './primitives/probe.js';
@@ -167,5 +168,90 @@ describe('webCryptoRandom', () => {
     expect(bytes.length).toBe(70_000);
     expect(bytes.subarray(65_536).some((byte) => byte !== 0)).toBe(true);
     expect(webCryptoRandom.bytes(0).length).toBe(0);
+  });
+});
+
+describe('ES256', () => {
+  /** WebCrypto gives `r || s`; WebAuthn carries DER. Minimal integers, short-form lengths. */
+  function rawToDer(raw: Uint8Array): Uint8Array {
+    const integer = (bytes: Uint8Array): number[] => {
+      let start = 0;
+      while (start < bytes.length - 1 && bytes[start] === 0) start += 1;
+      const trimmed = [...bytes.subarray(start)];
+      if (trimmed[0]! & 0x80) trimmed.unshift(0);
+      return [0x02, trimmed.length, ...trimmed];
+    };
+    const body = [...integer(raw.subarray(0, 32)), ...integer(raw.subarray(32))];
+    return Uint8Array.from([0x30, body.length, ...body]);
+  }
+
+  async function signed(data: Uint8Array) {
+    const subtle = getSubtle();
+    const keys = await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
+      'sign',
+      'verify',
+    ]);
+    const spki = new Uint8Array(await subtle.exportKey('spki', keys.publicKey));
+    const raw = new Uint8Array(
+      await subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, keys.privateKey, Uint8Array.from(data)),
+    );
+    return { spki, raw, der: rawToDer(raw) };
+  }
+
+  it('verifies a DER signature over the data with an SPKI key', async () => {
+    const data = utf8('authenticatorData || sha256(clientDataJSON)');
+    const { spki, der } = await signed(data);
+    await expect(verifyEs256(spki, data, der)).resolves.toBe(true);
+  });
+
+  it('refuses other data, a flipped signature byte and a foreign key', async () => {
+    const data = utf8('signed');
+    const { spki, der } = await signed(data);
+    const other = await signed(data);
+    await expect(verifyEs256(spki, utf8('Signed'), der)).resolves.toBe(false);
+    const flipped = Uint8Array.from(der);
+    flipped[flipped.length - 1]! ^= 0x01;
+    await expect(verifyEs256(spki, data, flipped)).resolves.toBe(false);
+    await expect(verifyEs256(other.spki, data, der)).resolves.toBe(false);
+  });
+
+  it('is false for a malformed key or signature, never an exception', async () => {
+    const data = utf8('signed');
+    const { spki, der, raw } = await signed(data);
+    await expect(verifyEs256(Uint8Array.of(1, 2, 3), data, der)).resolves.toBe(false);
+    await expect(verifyEs256(spki, data, raw)).resolves.toBe(false);
+    await expect(verifyEs256(spki, data, new Uint8Array(0))).resolves.toBe(false);
+  });
+
+  it('converts strict DER to r || s and rejects the rest', () => {
+    const r = new Uint8Array(32).fill(0x11);
+    const s = new Uint8Array(32).fill(0x22);
+    s[0] = 0x80;
+    const raw = concatBytes(r, s);
+    const der = rawToDer(raw);
+    expect(es256DerToRaw(der)).toEqual(raw);
+    // Short integers are left-padded.
+    expect(es256DerToRaw(Uint8Array.of(0x30, 6, 0x02, 1, 5, 0x02, 1, 7))).toEqual(
+      concatBytes(new Uint8Array(31), Uint8Array.of(5), new Uint8Array(31), Uint8Array.of(7)),
+    );
+    // Trailing byte, wrong sequence length, a negative and a non-minimal integer.
+    expect(es256DerToRaw(concatBytes(der, Uint8Array.of(0)))).toBeUndefined();
+    expect(es256DerToRaw(Uint8Array.of(0x30, 7, 0x02, 1, 5, 0x02, 1, 7))).toBeUndefined();
+    expect(es256DerToRaw(Uint8Array.of(0x30, 6, 0x02, 1, 0x85, 0x02, 1, 7))).toBeUndefined();
+    expect(es256DerToRaw(Uint8Array.of(0x30, 7, 0x02, 2, 0, 5, 0x02, 1, 7))).toBeUndefined();
+    // An integer longer than a P-256 scalar.
+    const long = Uint8Array.of(0x30, 38, 0x02, 33, 1, ...new Uint8Array(32), 0x02, 1, 7);
+    expect(es256DerToRaw(long)).toBeUndefined();
+    // Not a sequence, a long-form sequence length, and truncated input.
+    expect(es256DerToRaw(new Uint8Array(0))).toBeUndefined();
+    expect(es256DerToRaw(Uint8Array.of(0x31, 6, 0x02, 1, 5, 0x02, 1, 7))).toBeUndefined();
+    expect(es256DerToRaw(Uint8Array.of(0x30, 0x81, 6))).toBeUndefined();
+    expect(es256DerToRaw(Uint8Array.of(0x30, 1, 0x02))).toBeUndefined();
+    // Integers: wrong tag, zero, long-form and overlong lengths, a lone zero byte.
+    expect(es256DerToRaw(Uint8Array.of(0x30, 6, 0x03, 1, 5, 0x02, 1, 7))).toBeUndefined();
+    expect(es256DerToRaw(Uint8Array.of(0x30, 5, 0x02, 0, 0x02, 1, 7))).toBeUndefined();
+    expect(es256DerToRaw(Uint8Array.of(0x30, 6, 0x02, 0x81, 5, 0x02, 1, 7))).toBeUndefined();
+    expect(es256DerToRaw(Uint8Array.of(0x30, 6, 0x02, 1, 5, 0x02, 2, 7))).toBeUndefined();
+    expect(es256DerToRaw(Uint8Array.of(0x30, 6, 0x02, 1, 0, 0x02, 1, 7))).toBeUndefined();
   });
 });

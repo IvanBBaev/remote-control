@@ -6,6 +6,7 @@ import { BrowserRouter } from 'react-router';
 import { AppStateProvider } from './app-state.js';
 import { createAuthStore } from './auth/auth-store.js';
 import type { SessionHint } from './auth/auth-store.js';
+import type { PasskeyKeys } from './auth/passkey-keys.js';
 import type { RelayApi } from './auth/relay-api.js';
 import type { PlatformActions } from './app-state.js';
 import { probeCapabilities } from './capabilities.js';
@@ -85,6 +86,8 @@ export interface BootstrapOptions {
   readonly relay: RelayApi;
   readonly phone: PhoneService;
   readonly hint?: SessionHint;
+  /** Where registration keeps the passkey public keys pairing hands over (M2-03). */
+  readonly passkeys?: PasskeyKeys;
   readonly checkWebCrypto?: WebCryptoCheck;
   readonly installChoice?: InstallChoice;
   readonly wideLayout?: MediaQuery;
@@ -93,7 +96,11 @@ export interface BootstrapOptions {
 /** Probes the platform and the session, then mounts the app. */
 export async function bootstrap(options: BootstrapOptions): Promise<Root> {
   const { relay } = options;
-  const auth = createAuthStore({ api: relay, ...(options.hint && { hint: options.hint }) });
+  const auth = createAuthStore({
+    api: relay,
+    ...(options.hint && { hint: options.hint }),
+    ...(options.passkeys && { passkeys: options.passkeys }),
+  });
   const [capabilities, , pairedCount] = await Promise.all([
     probeCapabilities(options.env, options.checkWebCrypto),
     // Known before the first render, so a signed-in user never sees the passkey step.

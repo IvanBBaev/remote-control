@@ -9,6 +9,21 @@ export interface DeviceKey {
   readonly created: boolean;
 }
 
+/**
+ * A passkey of the account, handed over by the phone inside the pairing handshake, so
+ * the agent verifies decision assertions itself (D7 phase 2, M2-03).
+ */
+export interface PeerPasskey {
+  /** Credential id, unpadded base64url. */
+  readonly id: string;
+  /** SubjectPublicKeyInfo (ES256), unpadded base64url. */
+  readonly publicKey: string;
+  /** The relying party id the credential is scoped to. */
+  readonly rpId: string;
+  /** The signature counter of the last verified assertion; 0 when none or unsupported. */
+  readonly counter: number;
+}
+
 /** A paired phone, as stored in `peers.json`. */
 export interface Peer {
   readonly deviceId: string;
@@ -17,6 +32,12 @@ export interface Peer {
   readonly publicKey: string;
   /** Unix epoch milliseconds. */
   readonly pairedAt: number;
+  /**
+   * The passkeys the phone handed over at pairing (M2-03). With at least one, every
+   * decision that needs a passkey must carry an assertion the agent verifies; a phone
+   * paired before M2-03 has none and keeps the relay's verification (phase 1).
+   */
+  readonly passkeys?: readonly PeerPasskey[];
 }
 
 /** The hook endpoint published in `agent.json` for `hook.cjs` (D11). */
@@ -48,6 +69,11 @@ export interface KeyStore {
   listPeers(): Promise<readonly Peer[]>;
   /** Adds a peer, replacing an existing entry with the same `deviceId`. */
   addPeer(peer: Peer): Promise<void>;
+  /**
+   * Stores a passkey's new signature counter after a verified assertion (M2-03); a
+   * missing peer or passkey is ignored.
+   */
+  recordPasskeyUse(deviceId: string, credentialId: string, counter: number): Promise<void>;
   /** Removes a peer; returns false when it was not present. */
   removePeer(deviceId: string): Promise<boolean>;
   /** Writes `agent.json` with the bound port and token; returns the stored endpoint. */

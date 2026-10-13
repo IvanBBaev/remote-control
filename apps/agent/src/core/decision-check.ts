@@ -49,10 +49,13 @@ export interface DecisionCheckInput {
   readonly decision: CanonicalDecision;
   /** The envelope's `from`: the phone that sent the decision. */
   readonly from: string;
-  /** The envelope's `decisionHash`, which the relay forwards only once verified (M0-11). */
-  readonly envelopeDecisionHash: string | undefined;
-  /** `decisionHash(decision)`, recomputed by the agent. */
-  readonly computedDecisionHash: string;
+  /**
+   * A passkey with UV signed this decision: the agent's own assertion check for a phone
+   * that handed over its passkey keys at pairing (D7 phase 2, M2-03), else the relay's
+   * word (the envelope's `decisionHash`, forwarded only once verified, equals the
+   * recomputed hash; M0-11). Only read for kinds that need an assertion.
+   */
+  readonly verified: boolean;
   /** The pending request with the decision's `request_id`, if any. */
   readonly request: CheckedRequest | undefined;
   /** The id is remembered as ended (decided, deadline, released). */
@@ -70,9 +73,8 @@ export type DecisionCheckResult =
  * The D7 checks, in order, as a pure function: KK session; supported kind; pending and
  * unresolved; a kind that fits the request (`answer` only for a question, `allow` only
  * for a permission, `always` only for one that offered session rules); request hash; decision expiry; the request's deadline (`T − 10 s`); the
- * peer named in the decision; and, for every kind that needs a passkey, the relay's
- * verification (in M0: the envelope carries `decisionHash`, which the relay forwards
- * only after a verified assertion over it, and it equals the recomputed hash); and, for
+ * peer named in the decision; and, for every kind that needs a passkey, a verified
+ * assertion over it (`verified`); and, for
  * `answer`, an answer that fits the questions. The first failing check is the reason.
  */
 export function checkDecision(input: DecisionCheckInput): DecisionCheckResult {
@@ -92,10 +94,7 @@ export function checkDecision(input: DecisionCheckInput): DecisionCheckResult {
   if (decision.phone_device_id !== input.from || decision.agent_device_id !== input.agentDeviceId) {
     return { ok: false, reason: 'wrong_peer' };
   }
-  if (
-    requiresAssertion(decision.kind) &&
-    input.envelopeDecisionHash !== input.computedDecisionHash
-  ) {
+  if (requiresAssertion(decision.kind) && !input.verified) {
     return { ok: false, reason: 'unverified' };
   }
   if (decision.kind === 'answer' && request.answerValid !== true) {

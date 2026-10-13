@@ -24,6 +24,7 @@ import type { RelayApi } from '../ports/relay-api.js';
 import { createFakePhone } from '../testing/fake-phone.js';
 import { createFakeRelay, FAKE_RELAY_ORIGIN, type FakeRelay } from '../testing/fake-relay.js';
 import { manualTime, waitFor } from '../testing/manual-time.js';
+import { createTestPasskey } from '../testing/test-passkey.js';
 import { normalizePairingCode, pairingPsk, renderPairingQr, slotCodeHash } from './pairing-code.js';
 import { createPairingLock, PAIRING_LOCK_MS } from './pairing-lock.js';
 import { runPairing, type PairingOptions } from './pairing.js';
@@ -178,6 +179,28 @@ describe('runPairing (fake relay, fake phone)', () => {
     ).toBe(false);
     expect(t.relay.online(t.relay.agent.id)).toBe(false);
     expect(t.time.active()).toBe(0);
+  });
+
+  it("stores the passkey keys the phone's hello hands over, with a zero counter (M2-03)", async () => {
+    const t = await setup();
+    const passkey = await createTestPasskey();
+    const phone = await createFakePhone(t.relay, 'Pixel', t.time.clock, t.random, passkey);
+    await phone.connect();
+    await phone.pair(await t.code());
+    expect(await t.outcome).toMatchObject({ status: 'paired' });
+    expect(t.peers).toEqual([phone.peer(t.time.clock.now())]);
+    expect(t.peers[0]!.passkeys).toEqual([{ ...passkey.paired, counter: 0 }]);
+    expect(t.lines.some((line) => line.includes('did not hand over its passkey'))).toBe(false);
+  });
+
+  it('warns that a phone without passkey keys leaves the check to the relay', async () => {
+    const t = await setup();
+    const phone = await createFakePhone(t.relay, 'Pixel', t.time.clock, t.random);
+    await phone.connect();
+    await phone.pair(await t.code());
+    await t.outcome;
+    expect(t.peers[0]!.passkeys).toBeUndefined();
+    expect(t.lines.some((line) => line.includes('did not hand over its passkey'))).toBe(true);
   });
 
   it('declines when the user says no and cancels the slot', async () => {

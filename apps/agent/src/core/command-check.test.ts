@@ -7,7 +7,6 @@ const PHONE = '0190a1b2-0000-7000-8000-0000000000a1';
 const AGENT = '0190a1b2-0000-7000-8000-0000000000b2';
 const NOW = 1_760_000_000_000;
 const HASH = 'a'.repeat(64);
-const DECISION_HASH = 'd'.repeat(64);
 
 const decision: CanonicalDecision = {
   v: 1,
@@ -31,8 +30,7 @@ function input(overrides: Partial<CommandCheckInput> = {}): CommandCheckInput {
     machineMatches: true,
     used: false,
     from: PHONE,
-    envelopeDecisionHash: DECISION_HASH,
-    computedDecisionHash: DECISION_HASH,
+    verified: true,
     agentDeviceId: AGENT,
     target: { ok: true, requestHash: HASH },
     now: NOW,
@@ -61,8 +59,7 @@ describe('checkCommand', () => {
     ['wrong_peer', { from: AGENT }],
     ['wrong_peer', { agentDeviceId: PHONE }],
     ['wrong_peer', { machineMatches: false }],
-    ['unverified', { envelopeDecisionHash: undefined }],
-    ['unverified', { envelopeDecisionHash: 'e'.repeat(64) }],
+    ['unverified', { verified: false }],
     ['not_allowed', { target: { ok: false, reason: 'not_allowed' } }],
     ['follow_up_unsupported', { target: { ok: false, reason: 'follow_up_unsupported' } }],
     ['hash_mismatch', { target: { ok: true, requestHash: 'b'.repeat(64) } }],
@@ -76,9 +73,7 @@ describe('checkCommand', () => {
       reason: 'already_resolved',
     });
     expect(
-      checkCommand(
-        input({ envelopeDecisionHash: undefined, target: { ok: false, reason: 'not_allowed' } }),
-      ),
+      checkCommand(input({ verified: false, target: { ok: false, reason: 'not_allowed' } })),
     ).toEqual({ ok: false, reason: 'unverified' });
   });
 });

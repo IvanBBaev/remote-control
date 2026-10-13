@@ -180,6 +180,20 @@ export function createFileKeyStore(options: FileKeyStoreOptions): KeyStore {
       const peers = current.peers.filter((entry) => entry.deviceId !== peer.deviceId);
       await writeSecret(peersPath, { version: 1, peers: [...peers, parsed.data] });
     },
+    async recordPasskeyUse(deviceId: string, credentialId: string, counter: number) {
+      const current = await readPeersFile();
+      let changed = false;
+      const peers = current.peers.map((peer) => {
+        if (peer.deviceId !== deviceId || peer.passkeys === undefined) return peer;
+        const passkeys = peer.passkeys.map((passkey) => {
+          if (passkey.id !== credentialId || passkey.counter === counter) return passkey;
+          changed = true;
+          return { ...passkey, counter };
+        });
+        return { ...peer, passkeys };
+      });
+      if (changed) await writeSecret(peersPath, { version: 1, peers });
+    },
     async removePeer(deviceId: string) {
       const current = await readPeersFile();
       const peers = current.peers.filter((entry) => entry.deviceId !== deviceId);

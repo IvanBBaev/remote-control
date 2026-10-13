@@ -2,6 +2,8 @@ import { webCryptoRandom } from '@remote-control/crypto';
 import { IDBFactory } from 'fake-indexeddb';
 
 import type { RelayApi } from '../auth/relay-api.js';
+import { memoryPasskeyKeys } from '../auth/passkey-keys.js';
+import type { PasskeyKeys } from '../auth/passkey-keys.js';
 import { fakeRelay } from '../auth/test-credentials.js';
 import { createIndexedDbKeyStore } from '../pairing/key-store.js';
 import type { KeyStore } from '../pairing/key-store.js';
@@ -14,6 +16,7 @@ import type { PhoneService } from './phone.js';
 export interface TestPhone {
   readonly phone: PhoneService;
   readonly keyStore: KeyStore;
+  readonly passkeys: PasskeyKeys;
   readonly sockets: ReturnType<typeof fakeSockets>;
   readonly timer: ManualTimer;
 }
@@ -21,6 +24,7 @@ export interface TestPhone {
 /** A phone service on fake sockets, a fresh IndexedDB and a manual clock. */
 export function createTestPhone(relay: RelayApi = fakeRelay()): TestPhone {
   const timer = createManualTimer();
+  const passkeys = memoryPasskeyKeys();
   const sockets = fakeSockets();
   const keyStore = createIndexedDbKeyStore({
     indexedDB: new IDBFactory(),
@@ -35,6 +39,7 @@ export function createTestPhone(relay: RelayApi = fakeRelay()): TestPhone {
     url: 'wss://rc.example.test/ws',
     version: '0.0.0-test',
     phoneName: 'iPhone',
+    passkeys,
   });
-  return { phone, keyStore, sockets, timer };
+  return { phone, keyStore, passkeys, sockets, timer };
 }
