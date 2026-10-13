@@ -952,7 +952,7 @@ UV flag, counter; relay verification kept as defence in depth.
 AC: J2 passes with the relay's `verified` flag removed; tamper tests.
 
 #### M2-04 — QR pairing (optional input)
-Size S · Deps M0-20 · Status todo · Sources 05 W15, 02 §5.3, D6
+Size S · Deps M0-20 · Status done 2c04c2d (manual iOS/Android check pending) · Sources 05 W15, 02 §5.3, D6
 Scope: `barcode-detector` ponyfill behind the camera permission, full 32-byte token from
 the `rc1:` QR; short code stays available.
 AC: unit test decodes the fixture QR text; manual check on iOS and Android logged.
