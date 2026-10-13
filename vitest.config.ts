@@ -18,6 +18,8 @@ export default defineConfig({
         'packages/crypto/src/**': { lines: 100, functions: 100, branches: 100, statements: 100 },
         // D18: relay lines 90 / branches 85.
         'apps/relay/src/**': { lines: 90, branches: 85 },
+        // M0-18: the PWA's probe, gate and route table; set just under the measured value.
+        'apps/web/src/**': { lines: 95, functions: 95, branches: 90, statements: 95 },
       },
     },
     projects: [

@@ -38,6 +38,8 @@ export default tseslint.config(
             'apps/agent/scripts/*.mjs',
             'apps/*/drizzle.config.ts',
             'apps/relay/spike/*.js',
+            'apps/web/vite.config.ts',
+            'apps/web/scripts/*.mjs',
           ],
         },
         tsconfigRootDir: import.meta.dirname,
@@ -59,7 +61,7 @@ export default tseslint.config(
     rules: { 'no-restricted-properties': 'off', 'no-restricted-imports': 'off' },
   },
   {
-    files: ['*.mjs', 'packages/*/bin/*.mjs', 'apps/agent/scripts/*.mjs'],
+    files: ['*.mjs', 'packages/*/bin/*.mjs', 'apps/agent/scripts/*.mjs', 'apps/web/scripts/*.mjs'],
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: {
       globals: { process: 'readonly', Buffer: 'readonly', URL: 'readonly' },

@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "node_modules/.cache/tsc/sw",
+    "tsBuildInfoFile": "node_modules/.cache/tsc/sw.tsbuildinfo",
+    "lib": ["ES2023", "WebWorker"],
+    "types": []
+  },
+  "include": ["src/sw.ts", "src/sw.test.ts"]
+}

@@ -1,0 +1,235 @@
+/* Plain CSS (D2). Theme tokens follow the system colour scheme (05 Rec-6). */
+
+:root {
+  color-scheme: light dark;
+  --color-bg: #ffffff;
+  --color-surface: #f3f4f6;
+  --color-text: #111827;
+  --color-muted: #6b7280;
+  --color-border: #d1d5db;
+  --color-accent: #2563eb;
+  --color-accent-text: #ffffff;
+  --color-danger: #dc2626;
+  --space: 16px;
+  --radius: 12px;
+  --touch: 44px;
+  --font:
+    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #0b1220;
+    --color-surface: #151e2f;
+    --color-text: #e5e7eb;
+    --color-muted: #9ca3af;
+    --color-border: #334155;
+    --color-accent: #3b82f6;
+    --color-accent-text: #ffffff;
+    --color-danger: #f87171;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font);
+  font-size: 17px;
+  line-height: 1.45;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#root {
+  min-height: 100dvh;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+.app-main {
+  flex: 1;
+  padding: calc(var(--space) + var(--safe-top)) calc(var(--space) + var(--safe-right)) var(--space)
+    calc(var(--space) + var(--safe-left));
+}
+
+.app-main.bare {
+  min-height: 100dvh;
+  padding-bottom: calc(var(--space) + var(--safe-bottom));
+}
+
+.screen-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: var(--space);
+}
+
+.screen-header h1 {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+.back {
+  font-size: 1.8rem;
+  text-decoration: none;
+  justify-content: center;
+}
+
+.notice {
+  padding: var(--space);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-muted);
+}
+
+.meta {
+  color: var(--color-muted);
+}
+
+pre.command,
+code {
+  font-family: var(--font-mono);
+}
+
+pre.command {
+  padding: 12px var(--space);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  overflow-x: auto;
+}
+
+/* Every interactive element is at least 44 x 44 px (Apple HIG; 05 Rec-6). */
+a,
+button,
+input,
+select,
+textarea,
+.button {
+  min-height: var(--touch);
+  min-width: var(--touch);
+}
+
+a,
+.button {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-accent);
+}
+
+button,
+.button {
+  justify-content: center;
+  padding: 0 20px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+button.primary,
+.button.primary {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+}
+
+button.danger {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  color: var(--color-text);
+  /* 16 px or more keeps iOS from zooming into the field. */
+  font: inherit;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+label {
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: calc(var(--space) * 1.5);
+}
+
+.actions.split {
+  flex-direction: row;
+}
+
+.actions.split > * {
+  flex: 1;
+}
+
+.tab-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+  padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
+}
+
+.tab-bar a {
+  flex: 1;
+  justify-content: center;
+  min-height: 56px;
+  color: var(--color-muted);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.tab-bar a.active {
+  color: var(--color-accent);
+}

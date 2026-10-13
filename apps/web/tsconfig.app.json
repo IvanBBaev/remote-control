@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    // `dist/` belongs to `vite build` (the relay serves it); tsc's declaration output
+    // stays out of it.
+    "outDir": "node_modules/.cache/tsc/app",
+    "tsBuildInfoFile": "node_modules/.cache/tsc/app.tsbuildinfo",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["vite/client"]
+  },
+  "include": ["src"],
+  "exclude": ["src/sw.ts", "src/sw.test.ts"],
+  "references": [{ "path": "../../packages/crypto" }]
+}
