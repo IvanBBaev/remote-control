@@ -28,6 +28,7 @@ import { approvalView, pendingRequestHash } from './approval-view.js';
 import { checkDecision, M0_DECISION_KINDS } from './decision-check.js';
 import { fromBase64Url } from './from-base64url.js';
 import type { PendingEvent, PendingRequest, PendingStore } from './pending-store.js';
+import { createPushSealer, pushSummaryText } from './push-summary.js';
 import { uuidV7 } from './uuid.js';
 
 /** What the hub logs: event names and ids only, never a payload or a key (I3). */
@@ -119,6 +120,7 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
   const log: HubLog = options.log ?? (() => undefined);
   let agentId: string | undefined;
   let peers: readonly Peer[] = [];
+  const sealer = createPushSealer(options.deviceKey.privateKey, random);
   let seq = 0;
   const live = new Map<string, PhoneSession>();
   const hashes = new Map<string, Promise<string>>();
@@ -171,11 +173,12 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     cls: Envelope['cls'],
     expiresAt: number | null,
     replyTo?: string,
+    id = uuidV7(clock, random),
   ): EnvelopeHeader {
     return {
       v: VERSION_TABLE.v,
       kind: 'data',
-      id: uuidV7(clock, random),
+      id,
       from: agentId!,
       to,
       session: null,
@@ -197,6 +200,34 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     options.send({ ...baseHeader(to, cls, expiresAt), payload: toBase64(payload) });
   }
 
+  /**
+   * The sealed push summary for one request envelope to `phoneId` (D5, M1-06), bound to
+   * the envelope id. It rides in the header, so the transport AEAD authenticates it too.
+   * Without a summary, a known peer or a key, the push stays generic.
+   */
+  async function pushBlobFor(
+    phoneId: string,
+    envelopeId: string,
+    summary: string | undefined,
+  ): Promise<{ pushBlob?: string }> {
+    const peer = peers.find((candidate) => candidate.deviceId === phoneId);
+    if (summary === undefined || peer === undefined) return {};
+    const pushBlob = await sealer.seal(peer, envelopeId, summary);
+    return pushBlob === undefined ? {} : { pushBlob };
+  }
+
+  /** The doorbell: an empty `cls: request` with only the sealed summary (03 §5.12). */
+  async function sendDoorbell(to: string, request: PendingRequest): Promise<void> {
+    const id = uuidV7(clock, random);
+    const blob = await pushBlobFor(to, id, pushSummaryText(request));
+    if (agentId === undefined) return;
+    options.send({
+      ...baseHeader(to, 'request', request.deadline, undefined, id),
+      ...blob,
+      payload: '',
+    });
+  }
+
   /** Encrypts and sends one message, unless the session ended meanwhile. */
   async function sendSealed(
     session: PhoneSession,
@@ -204,10 +235,13 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     cls: Envelope['cls'],
     expiresAt: number | null,
     replyTo?: string,
+    summary?: string,
   ): Promise<void> {
+    const id = uuidV7(clock, random);
+    const blob = await pushBlobFor(session.phoneId, id, summary);
     if (agentId === undefined || live.get(session.phoneId) !== session) return;
     if (session.transport.closed) return;
-    const head = baseHeader(session.phoneId, cls, expiresAt, replyTo);
+    const head = { ...baseHeader(session.phoneId, cls, expiresAt, replyTo, id), ...blob };
     const ciphertext = await session.transport.encrypt(
       head,
       encoder.encode(JSON.stringify(message)),
@@ -422,7 +456,9 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
       enqueue(async () => {
         if (store.get(request.id) !== request) return;
         const message = await requestMessage(request);
-        if (message !== undefined) await sendSealed(session, message, 'request', request.deadline);
+        if (message === undefined) return;
+        const summary = pushSummaryText(request);
+        await sendSealed(session, message, 'request', request.deadline, undefined, summary);
       });
     }
     if (duplicate) return;
@@ -430,7 +466,7 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     // relay pushes when the phone is offline (03 §5.12). No plaintext leaves (I3).
     for (const peer of peers) {
       if (live.has(peer.deviceId)) continue;
-      enqueue(() => sendPlain(peer.deviceId, 'request', new Uint8Array(0), request.deadline));
+      enqueue(() => sendDoorbell(peer.deviceId, request));
     }
   }
 

@@ -1,4 +1,7 @@
 /// <reference lib="webworker" />
+import { openPushSummary } from '@remote-control/crypto';
+import { decodePushSummary } from '@remote-control/protocol';
+import type { PushSummary } from '@remote-control/protocol';
 import { clientsClaim } from 'workbox-core';
 import {
   cleanupOutdatedCaches,
@@ -7,6 +10,8 @@ import {
 } from 'workbox-precaching';
 import type { PrecacheEntry } from 'workbox-precaching';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
+
+import { readPushKeys } from './pairing/key-db.js';
 
 declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: (string | PrecacheEntry)[];
@@ -31,16 +36,26 @@ const GENERIC_TITLE = 'Approval needed';
 /** Request ids are UUIDs; anything else never reaches a URL. */
 const REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function parsePending(text: string | null): { rid?: string; dev?: string } {
+/** Where the service worker finds the pairings' decrypt-only notification keys. */
+export type PushKeys = () => Promise<readonly CryptoKey[]>;
+
+interface Pending {
+  readonly rid?: string;
+  readonly dev?: string;
+  readonly sum?: string;
+}
+
+function parsePending(text: string | null): Pending {
   if (text === null) return {};
   try {
     const parsed: unknown = JSON.parse(text);
     if (typeof parsed !== 'object' || parsed === null) return {};
-    const { t, rid, dev } = parsed as Record<string, unknown>;
+    const { t, rid, dev, sum } = parsed as Record<string, unknown>;
     if (t !== 'pending') return {};
     return {
       ...(typeof rid === 'string' && REQUEST_ID.test(rid) && { rid }),
       ...(typeof dev === 'string' && dev.trim() !== '' && { dev: dev.trim() }),
+      ...(typeof sum === 'string' && { sum }),
     };
   } catch {
     return {};
@@ -64,6 +79,63 @@ export function notificationFor(text: string | null): PushNotification {
   };
 }
 
+function fromBase64(text: string): Uint8Array {
+  return Uint8Array.from(atob(text), (char) => char.charCodeAt(0));
+}
+
+/**
+ * Opens the push's sealed summary (D5, M1-06) with whichever pairing's key fits. The
+ * summary is bound to the push's envelope id (`rid`), so it cannot be replayed onto
+ * another push. Anything that does not open and validate yields `undefined`.
+ */
+export async function openSummary(
+  text: string | null,
+  pushKeys: PushKeys,
+): Promise<PushSummary | undefined> {
+  const { rid, sum } = parsePending(text);
+  if (rid === undefined || sum === undefined) return undefined;
+  const sealed = fromBase64(sum);
+  for (const key of await pushKeys()) {
+    try {
+      return decodePushSummary(new TextDecoder().decode(await openPushSummary(key, rid, sealed)));
+    } catch {
+      // Another pairing's key: try the next one.
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The notification for a push whose summary opened: `"<project>: <tool>"` over the
+ * summary line, opening the request the summary names. The tag is the request, so the
+ * doorbell's push and the live request's push for it replace one another.
+ */
+export function summaryNotification(text: string | null, summary: PushSummary): PushNotification {
+  const { rid } = parsePending(text);
+  const request = summary.r ?? rid;
+  return {
+    title: summary.p === undefined ? summary.l : `${summary.p}: ${summary.l}`,
+    options: {
+      body: summary.s ?? 'Tap to review.',
+      ...(request !== undefined && { tag: request }),
+      data: { url: request === undefined ? '/' : `/requests/${request}` },
+    },
+  };
+}
+
+async function notificationForPush(
+  text: string | null,
+  pushKeys: PushKeys,
+): Promise<PushNotification> {
+  try {
+    const summary = await openSummary(text, pushKeys);
+    if (summary !== undefined) return summaryNotification(text, summary);
+  } catch {
+    // No keys readable, a malformed blob: the metadata-only notification still shows.
+  }
+  return notificationFor(text);
+}
+
 /**
  * `push` handler. iOS revokes the subscription of a worker that receives a push and shows
  * nothing (05 Rec-1), so this **always** shows a notification: when the full one fails,
@@ -72,8 +144,9 @@ export function notificationFor(text: string | null): PushNotification {
 export async function handlePush(
   registration: Pick<ServiceWorkerRegistration, 'showNotification'>,
   text: string | null,
+  pushKeys: PushKeys,
 ): Promise<void> {
-  const { title, options } = notificationFor(text);
+  const { title, options } = await notificationForPush(text, pushKeys);
   try {
     await registration.showNotification(title, options);
   } catch {
@@ -113,7 +186,8 @@ export async function handleClick(
 /**
  * The service worker: precache the build (the list vite-plugin-pwa injects), answer
  * navigations with the app shell, take over open pages at once, and turn pushes into
- * notifications that open the approval card.
+ * notifications that open the approval card — titled from the sealed summary when one
+ * of the pairings' keys opens it, generic otherwise.
  */
 export function installServiceWorker(
   scope: ServiceWorkerGlobalScope,
@@ -127,7 +201,11 @@ export function installServiceWorker(
   void scope.skipWaiting();
   clientsClaim();
   scope.addEventListener('push', (event) => {
-    event.waitUntil(handlePush(scope.registration, event.data?.text() ?? null));
+    event.waitUntil(
+      handlePush(scope.registration, event.data?.text() ?? null, () =>
+        readPushKeys(scope.indexedDB),
+      ),
+    );
   });
   scope.addEventListener('notificationclick', (event) => {
     event.waitUntil(handleClick(event.notification, scope.clients));

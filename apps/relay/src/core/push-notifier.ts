@@ -38,6 +38,8 @@ interface PendingRequest {
   readonly from: string;
   readonly to: string;
   readonly expiresAt: number | null;
+  /** The agent's sealed summary (D5), copied into the payload; never logged. */
+  readonly pushBlob?: string;
 }
 
 /**
@@ -112,7 +114,12 @@ export class PushNotifier implements PendingRequestSink {
       return;
     }
     const message = {
-      payload: encodePendingPayload(request.envelopeId, sender?.name ?? '', request.expiresAt),
+      payload: encodePendingPayload(
+        request.envelopeId,
+        sender?.name ?? '',
+        request.expiresAt,
+        request.pushBlob,
+      ),
       topic: pushTopic(request.envelopeId),
       ttlSeconds,
       urgency: 'high',

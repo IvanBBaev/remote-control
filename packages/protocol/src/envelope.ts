@@ -10,6 +10,9 @@ import { VERSION_TABLE } from './version.js';
  */
 export const MAX_PAYLOAD_LENGTH = 87_380;
 
+/** Largest push summary blob, in base64 characters: 1 KiB sealed (D5) encodes to 1 368. */
+export const MAX_PUSH_BLOB_LENGTH = 1_368;
+
 /**
  * Data envelope (D14). Everything except `payload` is routing metadata the relay may
  * read; `payload` is end-to-end ciphertext the relay never decodes (I3).
@@ -39,6 +42,12 @@ export const Envelope = z.strictObject({
    * this hash (M0-11); a command without it carries a deny or terminate decision.
    */
   decisionHash: Sha256Hex.optional(),
+  /**
+   * For `cls: request`, the push summary sealed under the pairing's notification key
+   * (D5, M1-06), base64. The relay copies it verbatim into the push it may send and
+   * never decodes, logs or stores it (I2, I3).
+   */
+  pushBlob: z.base64().max(MAX_PUSH_BLOB_LENGTH).optional(),
   /** Opaque AEAD ciphertext, base64. */
   payload: z.base64().max(MAX_PAYLOAD_LENGTH),
 });

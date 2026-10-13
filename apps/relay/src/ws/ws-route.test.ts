@@ -553,6 +553,28 @@ describe('routing (D14, D25, 03 §5.5)', () => {
       expiresAt: null,
     });
   });
+
+  it('passes the sealed push summary to the push seam verbatim (D5, M1-06)', async () => {
+    const relay = await startRelay();
+    const { agent, phone, agentPeer, phonePeer } = await pair(relay);
+    const pushBlob = 'U0VBTEVELVNVTU1BUlk=';
+
+    agentPeer.send(envelope(agent.deviceId, phone.deviceId, 32, { cls: 'request', pushBlob }));
+    expect(await phonePeer.next('data')).toMatchObject({ pushBlob });
+    relay.time.advance(3_000);
+    expect(relay.pending.unacked).toHaveBeenCalledWith(
+      expect.objectContaining({ envelopeId: envelopeId(32), pushBlob }),
+    );
+
+    phonePeer.close();
+    await agentPeer.next('presence', (f) => f.online === false);
+    agentPeer.send(envelope(agent.deviceId, phone.deviceId, 33, { cls: 'request', pushBlob }));
+    await vi.waitFor(() => expect(relay.pending.undelivered).toHaveBeenCalled());
+    expect(relay.pending.undelivered).toHaveBeenCalledWith(
+      expect.objectContaining({ envelopeId: envelopeId(33), pushBlob }),
+    );
+    expect(relay.logs.lines().join('\n')).not.toContain(pushBlob);
+  });
 });
 
 describe('limits (D15)', () => {

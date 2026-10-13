@@ -1,34 +1,53 @@
-/** D5: the M0 push payload is metadata only and stays under 200 bytes. */
+/** D5: the push metadata (everything but `sum`) stays under 200 bytes. */
 export const MAX_PUSH_PAYLOAD_BYTES = 199;
 
-/** `{t:"pending", rid, dev, exp}`: request id, agent device name, expiry (epoch ms). */
+/** D5 (M1): the whole payload, the sealed summary included, stays within 3.5 KB. */
+export const MAX_PUSH_PAYLOAD_WITH_SUMMARY_BYTES = 3500;
+
+/**
+ * `{t:"pending", rid, dev, exp, sum?}`: request id, agent device name, expiry (epoch ms)
+ * and, from M1, the agent's sealed summary (base64), which only the phone can open.
+ */
 export interface PendingPushPayload {
   readonly t: 'pending';
   readonly rid: string;
   readonly dev: string;
   readonly exp: number | null;
+  readonly sum?: string;
 }
 
 const encoder = new TextEncoder();
 const byteLength = (text: string) => encoder.encode(text).length;
 
 /**
- * Serialises the metadata-only payload (D5). The device name is the only free-form field;
- * it is shortened (by code point, with an ellipsis) until the JSON fits
- * {@link MAX_PUSH_PAYLOAD_BYTES}.
+ * Serialises the push payload (D5). The device name is the only free-form field; it is
+ * shortened (by code point, with an ellipsis) until the metadata fits
+ * {@link MAX_PUSH_PAYLOAD_BYTES}. A sealed summary is copied verbatim; the envelope schema
+ * caps it at 1 368 base64 characters, so the payload stays well within
+ * {@link MAX_PUSH_PAYLOAD_WITH_SUMMARY_BYTES}.
  */
-export function encodePendingPayload(rid: string, dev: string, exp: number | null): string {
-  const encode = (name: string) =>
-    JSON.stringify({ t: 'pending', rid, dev: name, exp } satisfies PendingPushPayload);
-  let json = encode(dev);
-  if (byteLength(json) <= MAX_PUSH_PAYLOAD_BYTES) return json;
+export function encodePendingPayload(
+  rid: string,
+  dev: string,
+  exp: number | null,
+  sum?: string,
+): string {
+  const encode = (name: string, summary?: string) =>
+    JSON.stringify({
+      t: 'pending',
+      rid,
+      dev: name,
+      exp,
+      ...(summary === undefined ? {} : { sum: summary }),
+    } satisfies PendingPushPayload);
+  let name = dev;
   const points = [...dev];
-  while (points.length > 0) {
+  while (byteLength(encode(name)) > MAX_PUSH_PAYLOAD_BYTES && points.length > 0) {
     points.pop();
-    json = encode(`${points.join('')}…`);
-    if (byteLength(json) <= MAX_PUSH_PAYLOAD_BYTES) return json;
+    name = `${points.join('')}…`;
   }
-  return encode('');
+  if (byteLength(encode(name)) > MAX_PUSH_PAYLOAD_BYTES) name = '';
+  return encode(name, sum);
 }
 
 /** RFC 8030 topics are at most 32 URL-safe base64 characters: the UUID without hyphens. */

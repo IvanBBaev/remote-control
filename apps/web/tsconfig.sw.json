@@ -7,5 +7,5 @@
     "lib": ["ES2023", "WebWorker"],
     "types": []
   },
-  "include": ["src/sw.ts", "src/sw.test.ts"]
+  "include": ["src/sw.ts", "src/sw.test.ts", "src/pairing/key-db.ts"]
 }

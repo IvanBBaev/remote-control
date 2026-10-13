@@ -23,6 +23,8 @@ export interface UndeliveredEnvelope {
   readonly to: string;
   readonly cls: Envelope['cls'];
   readonly expiresAt: number | null;
+  /** The sealed push summary (D5), copied verbatim into the push; never logged or stored. */
+  readonly pushBlob?: string;
 }
 
 /**

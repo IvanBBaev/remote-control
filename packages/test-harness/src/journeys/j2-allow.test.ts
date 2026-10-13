@@ -39,7 +39,8 @@ describe('J2 — PermissionRequest allowed with a user-verifying passkey (M0-22)
       );
       expect(ttlMs).toBeGreaterThan(0);
 
-      // Unacked on the open socket: the relay rings the phone with a metadata-only push.
+      // Unacked on the open socket: the relay rings the phone with metadata and the agent's
+      // sealed summary (M1-06), which it cannot read.
       clock.advance(UNACKED_PUSH_MS);
       await eventually(() => relay.push.received.length > 0, 'no push');
       expect(relay.push.received).toHaveLength(1);
@@ -51,6 +52,7 @@ describe('J2 — PermissionRequest allowed with a user-verifying passkey (M0-22)
         rid: expect.not.stringMatching(request.id) as unknown,
         dev: 'harness-agent',
         exp: expect.any(Number) as unknown,
+        sum: expect.any(String) as unknown,
       });
 
       const get = vi.spyOn(phone.authenticator, 'get');

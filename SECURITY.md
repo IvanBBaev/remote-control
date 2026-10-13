@@ -104,8 +104,10 @@ keys.
 **Sees in plaintext:** your user id (from the authenticated socket), sender and recipient
 device ids, message kind, session id, counter, byte length, timestamps, and the WebAuthn
 assertion beside a decision envelope. Push payloads are composed by the relay and carry
-metadata only (request id, device, expiry); readable notification text, when it ships,
-is encrypted by the agent with a key the relay never holds.
+metadata (envelope id, device, expiry) plus, when the agent sent one, a notification
+summary (project, tool label, one secret-masked line) that the agent sealed with a
+per-pairing key the relay never holds; the relay copies those bytes and cannot read them
+(ADR 0001).
 
 **Stores (Postgres):** users (random handle), passkey public keys, one hashed recovery
 code, devices (kind, name, created / last seen / revoked), pairings, push subscriptions,

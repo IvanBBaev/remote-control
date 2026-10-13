@@ -40,3 +40,9 @@ export type { PairingPrologueInput, SessionPrologueInput } from './session/prolo
 
 export { pairingFingerprint } from './fingerprint.js';
 export { deriveNotificationKey, NOTIFICATION_KEY_INFO } from './notification-key.js';
+export {
+  MAX_PUSH_SUMMARY_BYTES,
+  MAX_PUSH_SUMMARY_PLAINTEXT_BYTES,
+  openPushSummary,
+  sealPushSummary,
+} from './push-summary.js';

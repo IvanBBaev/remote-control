@@ -123,6 +123,7 @@ describe('01 W2 field lists', () => {
       'id',
       'kind',
       'payload',
+      'pushBlob',
       'replyTo',
       'seq',
       'session',

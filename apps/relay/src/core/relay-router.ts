@@ -229,6 +229,7 @@ export class RelayRouter {
         to: envelope.to,
         cls: envelope.cls,
         expiresAt: envelope.expiresAt,
+        ...(envelope.pushBlob === undefined ? {} : { pushBlob: envelope.pushBlob }),
       });
       return;
     }
@@ -270,6 +271,7 @@ export class RelayRouter {
       to: target.identity.deviceId,
       watch: envelope.cls === 'request' && target.identity.kind === 'phone',
       expiresAt: envelope.expiresAt,
+      ...(envelope.pushBlob === undefined ? {} : { pushBlob: envelope.pushBlob }),
     });
   }
 }

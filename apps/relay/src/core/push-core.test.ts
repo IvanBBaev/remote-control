@@ -14,6 +14,7 @@ import { PushNotifier, type PushLimits } from './push-notifier.js';
 import {
   encodePendingPayload,
   MAX_PUSH_PAYLOAD_BYTES,
+  MAX_PUSH_PAYLOAD_WITH_SUMMARY_BYTES,
   MAX_PUSH_TTL_SECONDS,
   pushTopic,
   pushTtlSeconds,
@@ -48,6 +49,17 @@ describe('encodePendingPayload (D5)', () => {
       expect(dev.endsWith('…')).toBe(true);
       expect(name.startsWith(dev.slice(0, -1))).toBe(true);
     }
+  });
+
+  it('copies a sealed summary verbatim, outside the metadata cap and within 3.5 KB', () => {
+    const sum = 'A'.repeat(1368);
+    const json = encodePendingPayload(RID, 'm'.repeat(500), 9_999_999_999_999, sum);
+    const parsed = JSON.parse(json) as { sum: string; dev: string };
+    expect(parsed.sum).toBe(sum);
+    expect(bytes(encodePendingPayload(RID, parsed.dev, 9_999_999_999_999))).toBeLessThanOrEqual(
+      MAX_PUSH_PAYLOAD_BYTES,
+    );
+    expect(bytes(json)).toBeLessThanOrEqual(MAX_PUSH_PAYLOAD_WITH_SUMMARY_BYTES);
   });
 
   it('drops the name entirely when even one character does not fit', () => {
@@ -230,6 +242,19 @@ describe('PushNotifier (M0-12, D4, D5)', () => {
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     release({ kind: 'sent' });
     await notifier.idle();
+  });
+
+  it('carries the sealed summary to the push, for offline and unacked requests alike (D5)', async () => {
+    const { notifier, send, request, logs } = setup();
+    notifier.undelivered({ ...request(1), pushBlob: 'U0VBTEVELTE=' });
+    notifier.unacked({ ...request(2), watch: true, pushBlob: 'U0VBTEVELTI=' });
+    await notifier.idle();
+    const sums = send.mock.calls.map(
+      ([, message]) => (JSON.parse(message.payload) as { sum: string }).sum,
+    );
+    expect(sums.sort()).toEqual(['U0VBTEVELTE=', 'U0VBTEVELTI=']);
+    // The relay never logs the blob (I3).
+    expect(logs.lines().join('\n')).not.toContain('U0VBTEVE');
   });
 
   it('pushes for an unacked watched delivery and ignores unwatched ones', async () => {

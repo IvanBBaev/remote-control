@@ -1,6 +1,21 @@
-import { X25519_KEY_LENGTH, x25519KeyPairFromPrivateKey } from '@remote-control/crypto';
+import {
+  deriveNotificationKey,
+  X25519_KEY_LENGTH,
+  x25519KeyPairFromPrivateKey,
+} from '@remote-control/crypto';
 import type { X25519KeyPair } from '@remote-control/crypto';
 import type { Random } from '@remote-control/protocol';
+
+import {
+  committed,
+  done,
+  IDENTITY,
+  isDataCloneError,
+  MACHINES,
+  openKeyDb,
+  PUSH_KEYS,
+} from './key-db.js';
+import type { StoredPushKey } from './key-db.js';
 
 /** A computer this phone completed pairing with (D6). */
 export interface PairedMachine {
@@ -30,10 +45,6 @@ export interface KeyStore {
   removeMachine(deviceId: string): Promise<void>;
 }
 
-const DB_NAME = 'remote-control';
-const DB_VERSION = 1;
-const IDENTITY = 'identity';
-const MACHINES = 'machines';
 const PHONE_KEY = 'phone';
 
 /**
@@ -50,50 +61,6 @@ type StoredIdentity = {
   | { readonly seed: Uint8Array }
 );
 
-// Values read back are copied into this realm's `Uint8Array`, so byte comparisons and
-// `instanceof` checks hold whatever structured-clone implementation the store uses.
-function done<T>(request: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => {
-      resolve(request.result);
-    };
-    request.onerror = () => {
-      reject(request.error ?? new Error('IndexedDB request failed'));
-    };
-  });
-}
-
-function committed(transaction: IDBTransaction): Promise<void> {
-  return new Promise((resolve, reject) => {
-    transaction.oncomplete = () => {
-      resolve();
-    };
-    transaction.onerror = () => {
-      reject(transaction.error ?? new Error('IndexedDB transaction failed'));
-    };
-    transaction.onabort = () => {
-      reject(transaction.error ?? new Error('IndexedDB transaction aborted'));
-    };
-  });
-}
-
-function open(factory: IDBFactory): Promise<IDBDatabase> {
-  const request = factory.open(DB_NAME, DB_VERSION);
-  request.onupgradeneeded = () => {
-    const db = request.result;
-    db.createObjectStore(IDENTITY);
-    db.createObjectStore(MACHINES, { keyPath: 'deviceId' });
-  };
-  return done(request);
-}
-
-// Not `instanceof DOMException`: the DOMException class differs between realms.
-function isDataCloneError(error: unknown): boolean {
-  return (
-    typeof error === 'object' && error !== null && Reflect.get(error, 'name') === 'DataCloneError'
-  );
-}
-
 export interface IndexedDbKeyStoreOptions {
   readonly indexedDB: IDBFactory;
   readonly random: Random;
@@ -103,7 +70,7 @@ export interface IndexedDbKeyStoreOptions {
 export function createIndexedDbKeyStore({ indexedDB, random }: IndexedDbKeyStoreOptions): KeyStore {
   let database: Promise<IDBDatabase> | undefined;
   let identity: Promise<PhoneIdentity> | undefined;
-  const db = () => (database ??= open(indexedDB));
+  const db = () => (database ??= openKeyDb(indexedDB));
 
   async function read<T>(store: string, key: IDBValidKey): Promise<T | undefined> {
     const transaction = (await db()).transaction(store, 'readonly');
@@ -123,6 +90,38 @@ export function createIndexedDbKeyStore({ indexedDB, random }: IndexedDbKeyStore
     });
   }
 
+  /**
+   * Stores the pairing's decrypt-only notification key for the service worker (D5,
+   * M1-06). Callers treat it as best-effort: without a key (a browser that cannot store a
+   * `CryptoKey`, a failed derivation) that pairing's pushes stay generic — the raw key
+   * bytes are never stored instead.
+   */
+  async function putPushKey(keyPair: X25519KeyPair, machine: PairedMachine): Promise<void> {
+    const key = await deriveNotificationKey(keyPair.privateKey, machine.publicKey, ['decrypt']);
+    await write(PUSH_KEYS, (objects) => {
+      objects.put({ deviceId: machine.deviceId, key } satisfies StoredPushKey);
+    });
+  }
+
+  /** Pairings made before M1-06 have no notification key yet; derive the missing ones. */
+  async function backfillPushKeys(keyPair: X25519KeyPair): Promise<void> {
+    const transaction = (await db()).transaction(PUSH_KEYS, 'readonly');
+    const have = new Set((await done(transaction.objectStore(PUSH_KEYS).getAllKeys())) as string[]);
+    for (const machine of await list()) {
+      if (!have.has(machine.deviceId)) await putPushKey(keyPair, machine).catch(() => undefined);
+    }
+  }
+
+  async function list(): Promise<PairedMachine[]> {
+    const transaction = (await db()).transaction(MACHINES, 'readonly');
+    const all = (await done(transaction.objectStore(MACHINES).getAll())) as PairedMachine[];
+    // Copied into this realm's `Uint8Array`, so byte comparisons and `instanceof` checks
+    // hold whatever structured-clone implementation the store uses.
+    return all
+      .map((machine) => ({ ...machine, publicKey: new Uint8Array(machine.publicKey) }))
+      .sort((a, b) => a.pairedAt - b.pairedAt);
+  }
+
   async function load(): Promise<PhoneIdentity> {
     const stored = await read<StoredIdentity>(IDENTITY, PHONE_KEY);
     if (stored !== undefined) {
@@ -130,6 +129,8 @@ export function createIndexedDbKeyStore({ indexedDB, random }: IndexedDbKeyStore
         'seed' in stored
           ? await x25519KeyPairFromPrivateKey(stored.seed)
           : { privateKey: stored.privateKey, publicKey: new Uint8Array(stored.publicKey) };
+      // Best-effort: a pairing without a key only means generic pushes for it.
+      await backfillPushKeys(keyPair).catch(() => undefined);
       return { keyPair, deviceId: stored.deviceId };
     }
     const seed = random.bytes(X25519_KEY_LENGTH);
@@ -153,22 +154,20 @@ export function createIndexedDbKeyStore({ indexedDB, random }: IndexedDbKeyStore
       await putIdentity({ ...stored, deviceId });
       identity = Promise.resolve({ ...current, deviceId });
     },
-    async machines() {
-      const transaction = (await db()).transaction(MACHINES, 'readonly');
-      const all = (await done(transaction.objectStore(MACHINES).getAll())) as PairedMachine[];
-      return all
-        .map((machine) => ({ ...machine, publicKey: new Uint8Array(machine.publicKey) }))
-        .sort((a, b) => a.pairedAt - b.pairedAt);
-    },
+    machines: list,
     async saveMachine(machine) {
       await write(MACHINES, (objects) => {
         objects.put({ ...machine });
       });
+      const { keyPair } = await (identity ??= load());
+      await putPushKey(keyPair, machine).catch(() => undefined);
     },
     async removeMachine(deviceId) {
-      await write(MACHINES, (objects) => {
-        objects.delete(deviceId);
-      });
+      const transaction = (await db()).transaction([MACHINES, PUSH_KEYS], 'readwrite');
+      const finished = committed(transaction);
+      transaction.objectStore(MACHINES).delete(deviceId);
+      transaction.objectStore(PUSH_KEYS).delete(deviceId);
+      await finished;
     },
   };
 }

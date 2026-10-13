@@ -18,6 +18,8 @@ export interface TrackedDelivery {
   /** Run `onUnacked` if no `ack` arrives within {@link UNACKED_REQUEST_MS}. */
   readonly watch: boolean;
   readonly expiresAt: number | null;
+  /** The sealed push summary (D5), held only until the ack or the push; never logged. */
+  readonly pushBlob?: string;
 }
 
 /** Called when a watched delivery stays unacked (the M0-12 push trigger). */

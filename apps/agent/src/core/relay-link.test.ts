@@ -1,6 +1,10 @@
-import { generateX25519KeyPair } from '@remote-control/crypto';
+import {
+  deriveNotificationKey,
+  generateX25519KeyPair,
+  openPushSummary,
+} from '@remote-control/crypto';
 import { seededRandom } from '@remote-control/fake-claude-code';
-import type { ApprovalRequest, Envelope } from '@remote-control/protocol';
+import { decodePushSummary, type ApprovalRequest, type Envelope } from '@remote-control/protocol';
 import { describe, expect, it } from 'vitest';
 
 import { CLAUDE_CODE_CAPABILITIES, claudeCodeAdapter } from '../adapters/claude-code/adapter.js';
@@ -107,8 +111,18 @@ async function setup(names: readonly string[] = ['Pixel'], seed = 11) {
 
 function plaintextLeaks(routed: readonly Envelope[], needle: string): boolean {
   return routed.some((envelope) =>
-    Buffer.from(envelope.payload, 'base64').toString('latin1').includes(needle),
+    [envelope.payload, envelope.pushBlob ?? ''].some((field) =>
+      Buffer.from(field, 'base64').toString('latin1').includes(needle),
+    ),
   );
+}
+
+/** Opens an envelope's push summary as `phone` would (D5). */
+async function pushSummaryOf(phone: FakePhone, agentPublicKey: Uint8Array, envelope: Envelope) {
+  const opened = await deriveNotificationKey(phone.keyPair.privateKey, agentPublicKey, [
+    'decrypt',
+  ]).then((key) => openPushSummary(key, envelope.id, Buffer.from(envelope.pushBlob!, 'base64')));
+  return decodePushSummary(new TextDecoder().decode(opened));
 }
 
 describe('relay link (fake relay, fake phones)', () => {
@@ -374,6 +388,54 @@ describe('relay link (fake relay, fake phones)', () => {
     expect(t.relay.undelivered).toEqual([
       expect.objectContaining({ to: offline.device.id, cls: 'request', payload: '' }),
     ]);
+  });
+
+  it('AC: doorbells and requests carry a push summary only the phone can open (D5)', async () => {
+    const t = await setup(['Pixel', 'iPhone']);
+    const [online, offline] = t.phones as [FakePhone, FakePhone];
+    await t.open(online);
+    const registration = t.store.register(
+      permission('API_KEY=abc pnpm deploy', {
+        payload: {
+          hook_event_name: 'PermissionRequest',
+          session_id: 's1',
+          tool_name: 'Bash',
+          tool_input: { command: 'API_KEY=abc pnpm deploy' },
+          cwd: '/home/me/shop',
+        },
+      }),
+    );
+    await t.requestOn(online, registration.request.id);
+    await t.link.hub.idle();
+    const expected = {
+      v: 1,
+      p: 'shop',
+      l: 'Run a command',
+      s: 'API_KEY=*** pnpm deploy',
+      r: registration.request.id,
+    };
+    const [doorbell] = t.relay.undelivered;
+    expect(doorbell).toMatchObject({ to: offline.device.id, cls: 'request', payload: '' });
+    expect(await pushSummaryOf(offline, t.deviceKey.publicKey, doorbell!)).toEqual(expected);
+    const live = t.relay.routed.find((e) => e.to === online.device.id && e.cls === 'request')!;
+    expect(await pushSummaryOf(online, t.deviceKey.publicKey, live)).toEqual(expected);
+    // Bound to its envelope and its phone: no other push or phone can open it.
+    await expect(
+      pushSummaryOf(online, t.deviceKey.publicKey, { ...live, id: doorbell!.id }),
+    ).rejects.toThrow();
+    await expect(pushSummaryOf(offline, t.deviceKey.publicKey, live)).rejects.toThrow();
+  });
+
+  it('sends a request without a push summary to a phone that is no longer paired', async () => {
+    const t = await setup(['Pixel']);
+    const [phone] = t.phones as [FakePhone];
+    await t.open(phone);
+    t.setPeers([]);
+    t.link.hub.relayReady(t.agentId, []);
+    const registration = t.store.register(permission());
+    await t.requestOn(phone, registration.request.id);
+    const request = t.relay.routed.find((e) => e.cls === 'request')!;
+    expect(request.pushBlob).toBeUndefined();
   });
 
   it('never routes plaintext: the relay sees ciphertext and empty doorbells only (I1–I3)', async () => {

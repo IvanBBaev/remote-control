@@ -12,7 +12,7 @@ export {
   Sha256Hex,
 } from './ids.js';
 
-export { Envelope, MAX_PAYLOAD_LENGTH } from './envelope.js';
+export { Envelope, MAX_PAYLOAD_LENGTH, MAX_PUSH_BLOB_LENGTH } from './envelope.js';
 export {
   Ack,
   Hello,
@@ -61,6 +61,12 @@ export {
   unknownToolLabel,
 } from './tool-labels.js';
 export type { ClaudeCodeTool, ToolInfo, ToolKind } from './tool-labels.js';
+export {
+  decodePushSummary,
+  encodePushSummary,
+  MAX_PUSH_SUMMARY_JSON_BYTES,
+  PushSummary,
+} from './push-summary.js';
 
 export type { Clock } from './ports/clock.js';
 export type { Random } from './ports/random.js';

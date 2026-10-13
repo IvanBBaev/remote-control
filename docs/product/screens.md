@@ -62,9 +62,11 @@ screens through their accessible names, which are part of the screen contract:
 
 ### Notifications and launch (M0-21)
 
-- A push shows "Approval needed on <computer>" / "Tap to review." with the doorbell id as
-  its tag; a malformed payload still shows a generic "Approval needed" (iOS revokes push
-  for a push without a notification).
+- A push whose sealed summary opens with one of the phone's notification keys (M1-06)
+  shows "<project>: <tool label>" over the summary line, tagged and linked by the request
+  id. Otherwise it shows "Approval needed on <computer>" / "Tap to review." with the
+  doorbell id as its tag; a malformed payload still shows a generic "Approval needed"
+  (iOS revokes push for a push without a notification).
 - A tap focuses an open app and posts `{ t: 'navigate', url }`, or opens `/requests/<id>`.
 - Within 10 s of launch or of returning to the foreground, a pending request opens by
   itself, once; the home-screen badge shows the number of pending requests.
