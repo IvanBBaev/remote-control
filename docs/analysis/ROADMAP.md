@@ -71,7 +71,7 @@ named, so nobody re-derives it.
 | M1-08 | Linux and Windows services, uninstall, logs, update | §4 M1-08 | `done` | 2 |
 | M1-09a | Tag-driven release pipeline (code part) | §4 M1-09 | `done` | 1 |
 | M1-09b | First tagged publish remotectl@0.1.0 + release checklist executed | §4 M1-09, §3 M1 (2)(6) | `blocked-owner` | 1.5 |
-| M1-10 | Revocation and deletion, J12 — deps M1-07 | §4 M1-10 | `blocked-owner` | 2 |
+| M1-10 | Revocation and deletion, J12 — deps M1-07 | §4 M1-10 | `done 5c11cfa — ahead of M1-07's real-CLI check (ADR 0009)` | 2 |
 | M1-11 | Tool-label dictionary, card polish, local stats | §4 M1-11 | `done` | 1 |
 | M1-12 | Playwright P1–P9 + WebKit smoke — deps M1-05 | §4 M1-12 | `done 5286172 — first CI run pending the next push` | 3 |
 | M1-13 | Audit log and admin counters | §4 M1-13 | `done` | 1 |
@@ -952,7 +952,7 @@ AC: a tagged release publishes with provenance; `npm audit signatures` passes on
 published tarball; checklist executed and ticked in the release PR.
 
 #### M1-10 — Revocation and deletion
-Size M · Deps M1-07 · Status todo · Sources 02 W14, 02 §5.9, 01 §5
+Size M · Deps M1-07 · Status done 5c11cfa (built ahead of M1-07's real-CLI check; audit rows purged on deletion, no tombstone, inactive purge deferred — ADR 0009) · Sources 02 W14, 02 §5.9, 01 §5
 Scope: revoke a phone (from another phone or `remotectl devices revoke`), revoke a
 machine, account deletion (relay rows purged, agent peers dropped on next connect),
 pairing re-run after revoke; journey J12.
