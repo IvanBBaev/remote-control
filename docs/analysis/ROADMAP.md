@@ -65,7 +65,7 @@ named, so nobody re-derives it.
 | M1-02 | "Always" from the phone (session scope) | §4 M1-02 | `done` | 1 |
 | M1-03 | "Reply in terminal", early handoff, remotectl pause | §4 M1-03 | `done` | 1 |
 | M1-04 | Session registry, launcher, follow-up, J9–J11 — deps M0-23 | §4 M1-04 | `doing — code done f25cfea; real-CLI check pending M0-23 (ADR 0005)` | 4 |
-| M1-05 | Live feed and thin session view, J8 — deps M1-04 | §4 M1-05 | `blocked-owner` | 4 |
+| M1-05 | Live feed and thin session view, J8 — deps M1-04 | §4 M1-05 | `doing — code done d22c187; real-CLI check pending M0-23 (ADR 0005)` | 4 |
 | M1-06 | Encrypted push summary | §4 M1-06 | `done` | 2 |
 | M1-07 | Machines screen, checklist, onboarding self-test — deps M1-05 | §4 M1-07 | `blocked-owner` | 2 |
 | M1-08 | Linux and Windows services, uninstall, logs, update | §4 M1-08 | `done` | 2 |
@@ -899,7 +899,7 @@ AC: tests with fake-claude assert exact argv and cwd; path outside the allow-lis
 before spawn; symlink into the allow-list refused; J9–J11 green; argv gate green.
 
 #### M1-05 — Live feed and the thin session view
-Size L · Deps M1-04 · Status todo · Sources 04 W8, 04 §5.5, 05 W10, 05 W12, 01 W11, 01 W10, D21
+Size L · Deps M1-04 · Status doing — code done d22c187; real-CLI check pending M0-23 (ADR 0005) · Sources 04 W8, 04 §5.5, 05 W10, 05 W12, 01 W11, 01 W10, D21
 Scope: `HookEvent` mapping for `UserPromptSubmit`, `PostToolUse` (tool, input, truncated
 response; `+N −M` for Edit/Write/MultiEdit from `tool_input`), `Stop`
 (`last_assistant_message`), `SubagentStop`, `PreCompact`, `Notification`; size caps
