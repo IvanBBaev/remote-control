@@ -1,14 +1,33 @@
 import { HOOK_SEEN, NO_HOOK_SEEN, SETUP_CHECKLIST } from '@remote-control/protocol';
 import { act } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { DeleteAccountResult } from '../auth/delete-account.js';
+import { OfflineError, RelayError } from '../auth/relay-api.js';
+import type { RelayApi } from '../auth/relay-api.js';
+import { fakeRelay } from '../auth/test-credentials.js';
 import type { MachineView } from '../realtime/realtime-store.js';
 import { createTestPhone } from '../realtime/test-phone.js';
 import { fixtures } from '../test-fixtures.js';
-import { renderApp } from '../test-render.js';
+import { renderApp, settle } from '../test-render.js';
 import type { RenderedApp } from '../test-render.js';
 
 let mounted: RenderedApp | undefined;
+
+const PIXEL = '6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f';
+
+function button(scope: Element, text: string): HTMLButtonElement {
+  const found = [...scope.querySelectorAll('button')].find((b) => b.textContent === text);
+  if (found === undefined) throw new Error(`no button "${text}"`);
+  return found;
+}
+
+async function click(target: HTMLButtonElement): Promise<void> {
+  act(() => {
+    target.click();
+  });
+  await settle();
+}
 afterEach(() => {
   mounted?.unmount();
   mounted = undefined;
@@ -162,9 +181,97 @@ describe('machines screen', () => {
       'iPhone paired 2026-10-01Revoke',
       'Pixel paired 2026-10-12Revoke',
     ]);
-    const revoke = devices[0]!.querySelector('button')!;
-    expect(revoke.disabled).toBe(true);
-    expect(revoke.title).toBe('Revoking a phone arrives in a later version.');
+  });
+
+  describe('revoking a phone (M1-10)', () => {
+    async function withDevice(relay: RelayApi) {
+      const test = createTestPhone(relay);
+      mounted = await renderApp('/machines', fixtures.onboarded, { phone: test.phone, relay });
+      act(() => {
+        test.phone.realtime.setState({
+          machines: {
+            a: {
+              ...machine('a', 'Studio Mac', true, null),
+              devices: [{ id: PIXEL, name: 'Pixel', pairedAt: Date.UTC(2026, 9, 1) }],
+            },
+          },
+        });
+      });
+      return () => mounted!.container.querySelector('.paired-devices li')!;
+    }
+
+    it('revokes after a second tap and says so', async () => {
+      const revokeDevice = vi.fn(() => Promise.resolve());
+      const row = await withDevice(fakeRelay({ revokeDevice }));
+      await click(button(row(), 'Revoke'));
+      expect(revokeDevice).not.toHaveBeenCalled();
+      await click(button(row(), 'Cancel'));
+      await click(button(row(), 'Revoke'));
+      await click(button(row(), 'Revoke Pixel'));
+      await settle();
+      expect(revokeDevice).toHaveBeenCalledWith(PIXEL);
+      expect(row().textContent).toBe('Pixel paired 2026-10-01Revoked');
+    });
+
+    it('counts a phone the relay no longer knows as revoked', async () => {
+      const row = await withDevice(
+        fakeRelay({ revokeDevice: () => Promise.reject(new RelayError(404, 'unknown_device')) }),
+      );
+      await click(button(row(), 'Revoke'));
+      await click(button(row(), 'Revoke Pixel'));
+      await settle();
+      expect(row().textContent).toContain('Revoked');
+    });
+
+    it('lets the user retry a failed revoke', async () => {
+      const row = await withDevice(
+        fakeRelay({ revokeDevice: () => Promise.reject(new OfflineError()) }),
+      );
+      await click(button(row(), 'Revoke'));
+      await click(button(row(), 'Revoke Pixel'));
+      await settle();
+      expect(row().textContent).toContain('Could not revoke. Try again.');
+      expect(button(row(), 'Revoke')).toBeDefined();
+    });
+  });
+
+  describe('deleting the account (M1-10)', () => {
+    async function screen(result: DeleteAccountResult) {
+      const logout = vi.fn(() => Promise.reject(new RelayError(401, 'unauthenticated')));
+      const relay = fakeRelay({ logout });
+      const test = createTestPhone(relay);
+      const deleteAccount = vi.spyOn(test.phone, 'deleteAccount').mockResolvedValue(result);
+      mounted = await renderApp('/machines', fixtures.onboarded, { phone: test.phone, relay });
+      const section = () => mounted!.container.querySelector('.delete-account')!;
+      return { deleteAccount, logout, section };
+    }
+
+    it('deletes after a confirm step, then signs out', async () => {
+      const t = await screen({ ok: true });
+      await click(button(t.section(), 'Delete account'));
+      expect(t.section().textContent).toContain('This removes your account');
+      await click(button(t.section(), 'Delete my account'));
+      await settle();
+      expect(t.deleteAccount).toHaveBeenCalledWith('user-1');
+      expect(t.logout).toHaveBeenCalledOnce();
+      expect(mounted!.path()).toBe('/onboarding/passkey');
+    });
+
+    it.each([
+      ['cancelled', 'Face ID was cancelled. Nothing was deleted.'],
+      ['offline', 'You are offline. Nothing was deleted.'],
+      ['rate_limited', 'Too many attempts. Wait a minute and try again.'],
+      ['challenge_mismatch', 'Could not delete the account. Nothing was deleted.'],
+    ] as const)('explains a %s failure and stays signed in', async (failure, text) => {
+      const t = await screen({ ok: false, failure });
+      await click(button(t.section(), 'Delete account'));
+      await click(button(t.section(), 'Delete my account'));
+      await settle();
+      expect(t.section().textContent).toContain(text);
+      expect(t.logout).not.toHaveBeenCalled();
+      await click(button(t.section(), 'Cancel'));
+      expect(t.section().textContent).toBe('Delete account');
+    });
   });
 
   it.each([

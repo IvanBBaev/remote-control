@@ -96,6 +96,25 @@ describe('createRelayHttp', () => {
     });
   });
 
+  it('revokes a device and asks who the token belongs to (M1-10)', async () => {
+    const { calls, relay } = api(({ url }) =>
+      url.endsWith('/agents/me')
+        ? json(200, { deviceId: PHONE, userId: USER_ID })
+        : new Response(null, { status: 204 }),
+    );
+    expect(await relay.revokeDevice(PHONE)).toEqual({ ok: true, value: null });
+    expect(await relay.whoami()).toEqual({ ok: true, value: { deviceId: PHONE, userId: USER_ID } });
+    expect(calls.map((call) => `${call.init.method} ${call.url}`)).toEqual([
+      `DELETE https://relay.test/api/devices/${PHONE}`,
+      'GET https://relay.test/api/agents/me',
+    ]);
+    expect(await api(() => json(401, { error: 'unauthenticated' })).relay.whoami()).toEqual({
+      ok: false,
+      status: 401,
+      error: 'unauthenticated',
+    });
+  });
+
   it('reports the relay error code, a bad body and a network failure', async () => {
     expect(await api(() => json(409, { error: 'code_in_use' })).relay.openSlot('h')).toEqual({
       ok: false,

@@ -1,6 +1,7 @@
 import {
   encodeFrame,
   parseFrame,
+  REVOKED_CLOSE_CODE,
   VERSION_TABLE,
   type Envelope,
   type Frame,
@@ -67,6 +68,13 @@ export interface FakeRelay {
   /** Closes a device's socket from the relay side. */
   disconnect(deviceId: string, code?: number): void;
   online(deviceId: string): boolean;
+  /**
+   * Revokes a device as `DELETE /api/devices/:id` does (M1-10): its token stops working,
+   * its socket closes with 4002, and a revoked phone is announced to the agent.
+   */
+  revoke(deviceId: string): boolean;
+  /** Deletes the account: every token stops working, every socket closes with 4002. */
+  deleteAccount(): void;
   /** Connection attempts per device id. */
   attempts(deviceId: string): number;
 }
@@ -239,6 +247,21 @@ export function createFakeRelay(clock: Clock): FakeRelay {
     return connection;
   };
 
+  function revoke(deviceId: string): boolean {
+    const target = [...byToken.entries()].filter(([, owner]) => owner.id === deviceId);
+    if (target.length === 0) return false;
+    for (const [token] of target) byToken.delete(token);
+    const socket = sockets.get(deviceId);
+    if (socket !== undefined) close(socket, REVOKED_CLOSE_CODE, 'revoked');
+    if (target[0]![1].kind === 'phone') {
+      const live = sockets.get(agent.id);
+      if (live !== undefined) {
+        deliver(live, { v: VERSION_TABLE.v, kind: 'peer_revoked', deviceId });
+      }
+    }
+    return true;
+  }
+
   function json(status: number, body: unknown): Response {
     return new Response(status === 204 ? null : JSON.stringify(body), { status });
   }
@@ -305,6 +328,18 @@ export function createFakeRelay(clock: Clock): FakeRelay {
       slots.set(id, slot);
       return Promise.resolve(json(201, { slotId: id, expiresAt: slot.expiresAt }));
     }
+    if (method === 'GET' && path === '/api/agents/me' && caller.kind === 'agent') {
+      return Promise.resolve(json(200, { deviceId: caller.id, userId: FAKE_USER_ID }));
+    }
+    const revoked = /^\/api\/devices\/([^/]+)$/.exec(path);
+    if (method === 'DELETE' && revoked !== null) {
+      const target = [...byToken.values()].find((other) => other.id === revoked[1]);
+      if (target === undefined || (caller.kind === 'agent' && target.kind !== 'phone')) {
+        return Promise.resolve(json(404, { error: 'unknown_device' }));
+      }
+      revoke(target.id);
+      return Promise.resolve(json(204, null));
+    }
     const match = /^\/api\/pairings\/([^/]+)(?:\/(complete|fail))?$/.exec(path);
     const slot = match === null ? undefined : slots.get(match[1]!);
     if (match === null || slot === undefined || slot.agentId !== caller.id) {
@@ -346,6 +381,13 @@ export function createFakeRelay(clock: Clock): FakeRelay {
       if (socket !== undefined) close(socket, code, 'relay closed');
     },
     online: (deviceId) => sockets.has(deviceId),
+    revoke,
+    deleteAccount() {
+      byToken.clear();
+      for (const socket of [...sockets.values()]) {
+        close(socket, REVOKED_CLOSE_CODE, 'account_deleted');
+      }
+    },
     attempts: (deviceId) => attempts.get(deviceId) ?? 0,
   };
   return relay;

@@ -10,6 +10,7 @@ import {
   createDrizzleAuditLog,
   createDrizzleDeviceDirectory,
   createDrizzleDeviceRegistry,
+  createDrizzleDeviceRevocations,
   createDrizzlePushSubscriptionStore,
   createPgliteDb,
   createScryptSecretHasher,
@@ -25,6 +26,7 @@ import {
   PairingService,
   PushNotifier,
   RelayRouter,
+  RevocationService,
   type AuthRateLimits,
 } from '@remote-control/relay/testing';
 
@@ -123,6 +125,7 @@ export async function startRelay(options: StartRelayOptions): Promise<HarnessRel
   const audit = new AuditRecorder({ clock, store: createDrizzleAuditLog(db.orm), logger });
   const webauthn = createSimpleWebAuthn({ id: rpId, origin, name: 'rc' });
   const decisions = new DecisionVerifier({ store: accountStore, webauthn, clock });
+  const revocationStore = createDrizzleDeviceRevocations(db.orm);
   const notifier = new PushNotifier({
     clock,
     directory,
@@ -140,6 +143,14 @@ export async function startRelay(options: StartRelayOptions): Promise<HarnessRel
     commandGate: decisions,
     pending: notifier,
     audit,
+    revocations: revocationStore,
+  });
+  const revocations = new RevocationService({
+    store: revocationStore,
+    hub,
+    verifier: decisions,
+    clock,
+    logger,
   });
   const accounts = new AccountService({
     store: accountStore,
@@ -167,7 +178,7 @@ export async function startRelay(options: StartRelayOptions): Promise<HarnessRel
       origin,
       limits: { ...DEFAULT_AUTH_RATE_LIMITS, ...options.authLimits },
     },
-    relay: { router, hub, directory, pairing, decisions },
+    relay: { router, hub, directory, pairing, decisions, revocations },
     // The fake push service is plain http on 127.0.0.1; production keeps the allow-list.
     push: {
       store: subscriptions,

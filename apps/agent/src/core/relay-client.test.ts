@@ -242,4 +242,69 @@ describe('createRelayClient', () => {
     expect(held.time.active()).toBe(0);
     held.client.stop();
   });
+
+  it('forwards peer_revoked and stops for good on close 4002 (M1-10)', async () => {
+    const t = setup({
+      onPeerRevoked: (deviceId) => t.events.push(`peer_revoked ${deviceId}`),
+      onRevoked: (reason) => t.events.push(`revoked ${reason}`),
+    });
+    t.client.start();
+    await flush();
+    t.last().handlers.onOpen();
+    t.deliver(HELLO_OK);
+    t.deliver({ v: 1, kind: 'peer_revoked', deviceId: PHONE });
+    t.last().handlers.onClose(4002, 'account_deleted');
+    expect(t.events).toEqual([
+      `ready ${AGENT}`,
+      `peer_revoked ${PHONE}`,
+      'down 4002',
+      'revoked account_deleted',
+    ]);
+    expect(t.client.ready).toBe(false);
+    t.time.advance(BACKOFF_MAX_MS);
+    await flush();
+    expect(t.sockets).toHaveLength(1);
+    expect(t.time.active()).toBe(0);
+  });
+
+  it('asks isRevoked after a failed attempt and stops when the token is gone', async () => {
+    let gone: boolean | Error = false;
+    const asked: number[] = [];
+    const t = setup({
+      isRevoked: () => {
+        asked.push(t.sockets.length);
+        return gone instanceof Error ? Promise.reject(gone) : Promise.resolve(gone);
+      },
+      onRevoked: (reason) => t.events.push(`revoked ${reason}`),
+    });
+    t.client.start();
+    await flush();
+    t.last().handlers.onClose(1006, '');
+    await flush();
+    expect(t.events).toEqual(['retry 1006 500']);
+    gone = new Error('offline');
+    t.time.advance(500);
+    await flush();
+    t.last().handlers.onClose(1006, '');
+    await flush();
+    expect(t.events.at(-1)).toBe('retry 1006 1000');
+    gone = true;
+    t.time.advance(1_000);
+    await flush();
+    t.last().handlers.onClose(1006, '');
+    await flush();
+    expect(t.events.at(-1)).toBe('revoked revoked');
+    expect(asked).toEqual([1, 2, 3]);
+    t.time.advance(BACKOFF_MAX_MS);
+    await flush();
+    expect(t.sockets).toHaveLength(3);
+    // A drop after hello_ok is a plain outage: no isRevoked call.
+    const ready = setup({ isRevoked: () => Promise.resolve(true) });
+    ready.client.start();
+    await flush();
+    ready.last().handlers.onOpen();
+    ready.deliver(HELLO_OK);
+    ready.last().handlers.onClose(1006, '');
+    expect(ready.events.at(-1)).toBe('retry 1006 500');
+  });
 });

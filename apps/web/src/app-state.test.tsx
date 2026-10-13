@@ -1,6 +1,8 @@
+import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { useAppState } from './app-state.js';
+import { fakeRelay } from './auth/test-credentials.js';
 import type { OnboardingState } from './onboarding.js';
 import { createTestPhone } from './realtime/test-phone.js';
 import { fixtures } from './test-fixtures.js';
@@ -68,5 +70,30 @@ describe('push registration', () => {
     mounted = await renderApp('/sessions', fixtures.onboarded, { phone: test.phone, platform });
     await settle();
     expect(registerPush).not.toHaveBeenCalled();
+  });
+});
+
+describe('revocation (M1-10)', () => {
+  afterEach(() => {
+    mounted?.unmount();
+    mounted = undefined;
+  });
+
+  it('signs out once the relay revoked this phone or deleted the account', async () => {
+    const test = createTestPhone();
+    vi.spyOn(test.phone, 'connect').mockResolvedValue();
+    const logout = vi.fn(() => Promise.resolve());
+    mounted = await renderApp('/sessions', fixtures.onboarded, {
+      phone: test.phone,
+      relay: fakeRelay({ logout }),
+    });
+    await settle();
+    expect(logout).not.toHaveBeenCalled();
+    act(() => {
+      test.phone.realtime.setState({ revoked: 'account_deleted' });
+    });
+    await settle();
+    expect(logout).toHaveBeenCalledOnce();
+    expect(mounted.path()).toBe('/onboarding/passkey');
   });
 });

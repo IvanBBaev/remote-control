@@ -1,4 +1,9 @@
-import { encodeFrame, parseFrame, VERSION_TABLE } from '@remote-control/protocol';
+import {
+  encodeFrame,
+  parseFrame,
+  REVOKED_CLOSE_CODE,
+  VERSION_TABLE,
+} from '@remote-control/protocol';
 import type { Frame, HelloOk } from '@remote-control/protocol';
 
 import type { Timer, TimerHandle } from '../ports/timer.js';
@@ -32,6 +37,11 @@ export interface RelaySocketEvents {
   onFrame(frame: Exclude<Frame, HelloOk>): void;
   /** Status changes; `failures` counts consecutive attempts that never reached `hello_ok`. */
   onStatus(status: SocketStatus, failures: number): void;
+  /**
+   * The relay closed with 4002 (M1-10): this phone was revoked or its account deleted.
+   * The socket stops for good; `reason` is the close reason.
+   */
+  onRevoked?(reason: string): void;
 }
 
 export interface RelaySocketOptions extends RelaySocketEvents {
@@ -117,6 +127,24 @@ export function createRelaySocket(options: RelaySocketOptions): RelaySocket {
     retry = timer.after(delay, connect);
   };
 
+  /** A close with 4002 ends the link for good (M1-10); any other is a drop. */
+  const closed = (event: unknown): void => {
+    const { code, reason } = (event ?? {}) as { code?: unknown; reason?: unknown };
+    if (code !== REVOKED_CLOSE_CODE) {
+      drop();
+      return;
+    }
+    const current = socket;
+    if (current !== undefined) {
+      current.onopen = current.onmessage = current.onclose = current.onerror = null;
+    }
+    socket = undefined;
+    open = false;
+    clearTimers();
+    setStatus('stopped');
+    options.onRevoked?.(typeof reason === 'string' ? reason : '');
+  };
+
   const onMessage = (data: string): void => {
     const parsed = parseFrame(data);
     if (!parsed.ok) return;
@@ -156,7 +184,7 @@ export function createRelaySocket(options: RelaySocketOptions): RelaySocket {
     current.onmessage = (event) => {
       onMessage(text(event.data));
     };
-    current.onclose = drop;
+    current.onclose = closed;
     current.onerror = drop;
   }
 

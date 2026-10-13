@@ -89,6 +89,17 @@ describe('createRelayApi', () => {
     ]);
   });
 
+  it('revokes a device and deletes the account with DELETE (M1-10)', async () => {
+    const fetchImpl = respond(204);
+    const api = createRelayApi(fetchImpl);
+    await expect(api.revokeDevice('6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f')).resolves.toBeUndefined();
+    await expect(api.deleteAccount()).resolves.toBeUndefined();
+    expect(fetchImpl.mock.calls.map(([url, init]) => [init.method, url, init.body])).toEqual([
+      ['DELETE', '/api/devices/6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f', undefined],
+      ['DELETE', '/api/account', undefined],
+    ]);
+  });
+
   it('reads the session, and a 401 as signed out', async () => {
     await expect(createRelayApi(respond(200, { userId: 'u' })).session()).resolves.toEqual({
       userId: 'u',

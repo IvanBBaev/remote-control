@@ -342,6 +342,52 @@ describe('runCli', () => {
       expect(await h.c.keyStore.listPeers()).toEqual([]);
     });
 
+    it('devices revoke forgets the phone here and revokes it at the relay (M1-10)', async () => {
+      const r = relayHarness();
+      await writeConfig({ relay: { url: RELAY_URL } });
+      expect(await r.run(['devices', 'revoke'])).toBe(EXIT_USAGE);
+      expect(await r.run(['devices', 'revoke', 'not-a-uuid'])).toBe(EXIT_USAGE);
+      expect(await r.run(['devices', 'list'])).toBe(EXIT_USAGE);
+      expect(await r.login()).toBe(EXIT_OK);
+      const phone = await createFakePhone(r.relay, 'Pixel', r.time.clock, r.random);
+      await phone.connect();
+      const pairing = r.run(['pair']);
+      await phone.pair(await r.code());
+      expect(await pairing).toBe(EXIT_OK);
+
+      expect(await r.run(['devices', 'revoke', phone.device.id.toUpperCase()])).toBe(EXIT_OK);
+      expect(h.out()).toContain(`Revoked ${phone.device.id}: it must pair again`);
+      expect(await h.c.keyStore.listPeers()).toEqual([]);
+      expect(r.relay.online(phone.device.id)).toBe(false);
+      // Neither side knows it any more.
+      expect(await r.run(['devices', 'revoke', phone.device.id])).toBe(EXIT_ERROR);
+      expect(h.err()).toContain(`no phone ${phone.device.id} on this account`);
+    });
+
+    it('run drops every phone and stays offline when the account is deleted (M1-10)', async () => {
+      const r = relayHarness();
+      await writeConfig({ relay: { url: RELAY_URL } });
+      expect(await r.login()).toBe(EXIT_OK);
+      const phone = await createFakePhone(r.relay, 'Pixel', r.time.clock, r.random);
+      await phone.connect();
+      const pairing = r.run(['pair']);
+      await phone.pair(await r.code());
+      expect(await pairing).toBe(EXIT_OK);
+
+      const controller = new AbortController();
+      const running = r.run(['run'], controller.signal);
+      await waitFor(() => r.relay.online(r.relay.agent.id));
+      r.relay.deleteAccount();
+      await vi.waitFor(() => expect(h.err()).toContain('the relay revoked this machine'));
+      expect(h.err()).toContain('(account_deleted)');
+      await vi.waitFor(async () => expect(await h.c.keyStore.listPeers()).toEqual([]));
+      controller.abort();
+      expect(await running).toBe(EXIT_OK);
+      const log = await readFile(join(h.c.paths.log, 'agent.1.log'), 'utf8');
+      expect(log).toContain('"event":"relay_revoked"');
+      expect(log).not.toContain('relay_retry');
+    });
+
     it('pair reports an expired code and a relay refusal', async () => {
       const r = relayHarness();
       await writeConfig({ relay: { url: RELAY_URL } });

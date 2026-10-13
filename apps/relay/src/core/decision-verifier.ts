@@ -121,6 +121,17 @@ export class DecisionVerifier implements CommandGate {
     return until !== undefined && this.deps.clock.now() < until;
   }
 
+  /**
+   * Spends a hash this phone verified, for an HTTP action that needs UV (account
+   * deletion, M1-10); `false` if it was never verified or its window passed.
+   */
+  consume(phone: DeviceIdentity, hash: string): boolean {
+    const key = this.#verifiedKey(phone, hash);
+    const until = this.#verified.get(key);
+    this.#verified.delete(key);
+    return until !== undefined && this.deps.clock.now() < until;
+  }
+
   #isUsed(challenge: string, now: number): boolean {
     const until = this.#used.get(challenge);
     return until !== undefined && now < until;

@@ -13,6 +13,7 @@ import {
   type X25519KeyPair,
 } from '@remote-control/crypto';
 import {
+  accountDeletionHash,
   AgentMessage,
   DECISION_TTL_SECONDS,
   decisionHash,
@@ -76,6 +77,8 @@ export interface HeadlessPhone {
   readonly deviceId: string;
   /** The `__Host-rc_session` value `register` got, for a browser to sign in with (M1-12). */
   readonly sessionCookie: string;
+  /** How the relay closed the last socket (`4002 revoked`, M1-10); null while open. */
+  readonly closed: { readonly code: number; readonly reason: string } | null;
   /** Decrypted agent messages, in arrival order. */
   readonly messages: Received[];
   /** Empty `cls: request` envelopes (doorbells). */
@@ -117,6 +120,13 @@ export interface HeadlessPhone {
    * request id.
    */
   instruct(sessionId: string, text: string): Promise<string>;
+  /** `DELETE /api/devices/:deviceId` (M1-10): revokes a phone or agent of the account. */
+  revokeDevice(deviceId: string): Promise<void>;
+  /**
+   * Deletes the account (M1-10): a user-verifying assertion over
+   * `accountDeletionHash(userId)` through `/api/decisions/*`, then `DELETE /api/account`.
+   */
+  deleteAccount(): Promise<void>;
   /** Messages of type `t`. */
   of<T extends AgentMessage['t']>(t: T): Extract<AgentMessage, { t: T }>[];
 }
@@ -169,6 +179,7 @@ export async function createPhone(options: CreatePhoneOptions): Promise<Headless
   let userId = '';
   let deviceId = '';
   let socket: WebSocket | undefined;
+  let closed: { code: number; reason: string } | null = null;
   let ready = false;
   let seq = 0;
   let agentId = '';
@@ -325,6 +336,9 @@ export async function createPhone(options: CreatePhoneOptions): Promise<Headless
     get deviceId() {
       return deviceId;
     },
+    get closed() {
+      return closed;
+    },
     messages,
     doorbells,
     async register(inviteCode) {
@@ -352,6 +366,7 @@ export async function createPhone(options: CreatePhoneOptions): Promise<Headless
     },
     async connect() {
       ready = false;
+      closed = null;
       const current = new WebSocket(`${relay.wsOrigin}/ws`, {
         headers: { origin: relay.origin, cookie: `__Host-rc_session=${cookie}` },
       });
@@ -379,8 +394,9 @@ export async function createPhone(options: CreatePhoneOptions): Promise<Headless
       current.on('error', (error) => {
         failure ??= error;
       });
-      current.on('close', () => {
+      current.on('close', (code: number, reason: Buffer) => {
         if (socket === current) {
+          closed = { code, reason: reason.toString('utf8') };
           ready = false;
           transport = undefined;
         }
@@ -451,6 +467,18 @@ export async function createPhone(options: CreatePhoneOptions): Promise<Headless
         instruction: { sessionId, text },
       });
       return requestId;
+    },
+    async revokeDevice(id) {
+      await call('DELETE', `/api/devices/${id}`);
+    },
+    async deleteAccount() {
+      const challenge = await call<RequestOptions>('POST', '/api/decisions/challenge', {
+        decisionHash: await accountDeletionHash(userId),
+      });
+      await call('POST', '/api/decisions/verify', {
+        response: await authenticator.get(challenge),
+      });
+      await call('DELETE', '/api/account');
     },
     of: <T extends AgentMessage['t']>(t: T) =>
       messages

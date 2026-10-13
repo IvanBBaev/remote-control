@@ -1,4 +1,4 @@
-import { VERSION_TABLE } from '@remote-control/protocol';
+import { REVOKED_CLOSE_CODE, VERSION_TABLE } from '@remote-control/protocol';
 import type { Frame } from '@remote-control/protocol';
 import { describe, expect, it } from 'vitest';
 
@@ -22,6 +22,7 @@ function setup() {
   const statuses: [SocketStatus, number][] = [];
   const frames: Frame[] = [];
   const opened: string[] = [];
+  const revoked: string[] = [];
   const socket = createRelaySocket({
     url: 'wss://rc.example.test/ws',
     createSocket: sockets.create,
@@ -30,12 +31,13 @@ function setup() {
     onOpen: (hello) => opened.push(hello.deviceId),
     onFrame: (frame) => frames.push(frame),
     onStatus: (status, failures) => statuses.push([status, failures]),
+    onRevoked: (reason) => revoked.push(reason),
   });
   const connect = () => {
     sockets.last.open();
     sockets.last.helloOk(PHONE, timer.now());
   };
-  return { timer, sockets, statuses, frames, opened, socket, connect };
+  return { timer, sockets, statuses, frames, opened, revoked, socket, connect };
 }
 
 describe('relay socket', () => {
@@ -114,6 +116,20 @@ describe('relay socket', () => {
     t.timer.advance(1_000);
     t.sockets.last.onerror?.({});
     expect(t.statuses.at(-1)).toEqual(['reconnecting', 2]);
+  });
+
+  it('stops for good when the relay closes with 4002 (M1-10)', () => {
+    const t = setup();
+    t.socket.start();
+    t.connect();
+    t.sockets.last.onclose?.({ code: REVOKED_CLOSE_CODE, reason: 'revoked' });
+    expect(t.revoked).toEqual(['revoked']);
+    expect(t.socket.status).toBe('stopped');
+    expect(t.statuses.at(-1)).toEqual(['stopped', 0]);
+    t.timer.advance(BACKOFF_MAX_MS * 2);
+    t.socket.wake();
+    expect(t.sockets.all).toHaveLength(1);
+    expect(t.socket.send({ v: VERSION_TABLE.v, kind: 'ack', ids: ['x'] })).toBe(false);
   });
 
   it('wakes: retries at once while backing off, probes an open socket', () => {

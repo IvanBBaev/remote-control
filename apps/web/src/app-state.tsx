@@ -55,6 +55,7 @@ export interface AppStateProviderProps {
 const signedInUser = (state: AuthState): string | null =>
   state.status === 'signed-in' ? state.userId : null;
 const hasMachines = (state: RealtimeState): boolean => Object.keys(state.machines).length > 0;
+const isRevoked = (state: RealtimeState): boolean => state.revoked !== null;
 
 /**
  * Holds the onboarding state for the screens. `signedIn` comes from the auth store
@@ -73,7 +74,16 @@ export function AppStateProvider({
   const signedIn = useStore(auth, isSignedIn);
   const userId = useStore(auth, signedInUser);
   const machines = useStore(phone.realtime, hasMachines);
+  const revoked = useStore(phone.realtime, isRevoked);
   const permission = device.notificationPermission;
+  useEffect(() => {
+    // The relay revoked this phone or deleted the account (M1-10): its session is gone.
+    if (revoked)
+      auth
+        .getState()
+        .signOut()
+        .catch(() => undefined);
+  }, [auth, revoked]);
   useEffect(() => {
     if (userId === null) {
       phone.disconnect();

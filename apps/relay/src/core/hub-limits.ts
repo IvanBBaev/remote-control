@@ -1,3 +1,5 @@
+import { REVOKED_CLOSE_CODE } from '@remote-control/protocol';
+
 /** Relay runtime limits and timings (D15, 03 §5.1–5.4, 03 §5.13). */
 
 /** The relay pings every socket this often. */
@@ -31,4 +33,6 @@ export const CloseCode = {
   superseded: 4000,
   /** No common protocol version (D14). */
   unsupportedVersion: 4001,
+  /** The device was revoked or its account deleted (M1-10); do not reconnect. */
+  revoked: REVOKED_CLOSE_CODE,
 } as const;

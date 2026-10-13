@@ -30,6 +30,11 @@ export interface RotatedToken {
   readonly userId: string;
 }
 
+export interface AgentIdentity {
+  readonly deviceId: string;
+  readonly userId: string;
+}
+
 export interface CompletedSlot {
   readonly pairingId: string;
   readonly phoneDeviceId: string;
@@ -56,4 +61,8 @@ export interface RelayApi {
   cancelSlot(slotId: string): Promise<RelayResult<null>>;
   /** `GET /health`: whether the relay answers at all (`remotectl status`, M1-07). */
   health(): Promise<RelayResult<null>>;
+  /** `DELETE /api/devices/:id`: revokes a phone of this agent's account (M1-10); 404 `unknown_device`. */
+  revokeDevice(deviceId: string): Promise<RelayResult<null>>;
+  /** `GET /api/agents/me`: who the token belongs to; 401 once the agent is revoked (M1-10). */
+  whoami(): Promise<RelayResult<AgentIdentity>>;
 }

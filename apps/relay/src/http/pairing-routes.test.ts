@@ -1,7 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import { sha256, utf8, webCryptoRandom } from '@remote-control/crypto';
 import { createLogger, createMemoryDestination, type MemoryDestination } from '@remote-control/log';
-import { toBase64Url, toHex } from '@remote-control/protocol';
+import { accountDeletionHash, toBase64Url, toHex } from '@remote-control/protocol';
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -9,6 +9,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { createDrizzleAccountStore } from '../adapters/drizzle-account-store.js';
 import { createDrizzleDeviceDirectory } from '../adapters/drizzle-device-directory.js';
 import { createDrizzleDeviceRegistry } from '../adapters/drizzle-device-registry.js';
+import { createDrizzleDeviceRevocations } from '../adapters/drizzle-device-revocations.js';
 import { createPgliteDb } from '../adapters/pglite-db.js';
 import { createScryptSecretHasher } from '../adapters/scrypt-secret-hasher.js';
 import { createSimpleWebAuthn } from '../adapters/simple-webauthn.js';
@@ -26,7 +27,17 @@ import {
   SLOT_TTL_MS,
 } from '../core/pairing-service.js';
 import { RelayRouter } from '../core/relay-router.js';
-import { devices, pairingSlots, pairings, passkeys, sessions } from '../db/schema.js';
+import { RevocationService } from '../core/revocation-service.js';
+import {
+  agentTokens,
+  auditLog,
+  devices,
+  pairingSlots,
+  pairings,
+  passkeys,
+  sessions,
+  users,
+} from '../db/schema.js';
 import { MIGRATIONS_DIR } from '../package-paths.js';
 import type { AccountStore } from '../ports/account-store.js';
 import type { Db } from '../ports/db.js';
@@ -78,6 +89,7 @@ async function startRelay(limits: Partial<PairingRateLimits> = {}): Promise<Rela
   const hub = new LocalHub(time.clock, DEVICE_CAP);
   const webauthn = createSimpleWebAuthn({ id: RP_ID, origin: ORIGIN, name: 'remote-control' });
   const decisions = new DecisionVerifier({ store, webauthn, clock: time.clock });
+  const revocationStore = createDrizzleDeviceRevocations(db.orm);
   const router = new RelayRouter({
     clock: time.clock,
     timer: time.timer,
@@ -85,6 +97,14 @@ async function startRelay(limits: Partial<PairingRateLimits> = {}): Promise<Rela
     directory,
     logger,
     commandGate: decisions,
+    revocations: revocationStore,
+  });
+  const revocations = new RevocationService({
+    store: revocationStore,
+    hub,
+    verifier: decisions,
+    clock: time.clock,
+    logger,
   });
   const service = new AccountService({
     store,
@@ -114,6 +134,7 @@ async function startRelay(limits: Partial<PairingRateLimits> = {}): Promise<Rela
       directory,
       pairing,
       decisions,
+      revocations,
       pairingLimits: { ...DEFAULT_PAIRING_RATE_LIMITS, ...limits },
     },
   });
@@ -777,5 +798,143 @@ describe('device revocation', () => {
       .from(sessions)
       .where(eq(sessions.userId, s.userId));
     expect(session!.deviceId).toBe(s.phoneId);
+  });
+});
+
+describe('revocation and account deletion (M1-10, 02 §5.9)', () => {
+  /** `DELETE` from the phone of `s` (cookie + PWA headers). */
+  const phoneDelete = (relay: Relay, cookie: string, url: string) =>
+    relay.app.inject({ method: 'DELETE', url, headers: { ...PWA_HEADERS, cookie } });
+
+  /** A second phone of the account, bound and paired with the agent. */
+  async function tablet(relay: Relay, s: Setup) {
+    const cookie = await login(relay, s);
+    const call = phoneCall(relay, cookie);
+    const deviceId = (await call('/api/devices/phone', { name: 'Tablet' })).json<{
+      deviceId: string;
+    }>().deviceId;
+    await db.orm
+      .insert(pairings)
+      .values({ userId: s.userId, phoneDeviceId: deviceId, agentDeviceId: s.agentId });
+    return { cookie, deviceId };
+  }
+
+  it('the phone revokes the agent: 4002, token dead, audited, idempotent 404', async () => {
+    const relay = await startRelay();
+    const s = await setup(relay);
+    const { agentPeer, phonePeer } = await connect(relay, s);
+    expect((await s.agent('GET', '/api/agents/me')).json()).toEqual({
+      deviceId: s.agentId,
+      userId: s.userId,
+    });
+
+    const res = await phoneDelete(relay, s.cookie, `/api/devices/${s.agentId}`);
+    expect(res.statusCode).toBe(204);
+    expect(await agentPeer.closed).toEqual({ code: 4002, reason: 'revoked' });
+    expect((await s.agent('GET', '/api/agents/me')).statusCode).toBe(401);
+    expect(await WsPeer.rejection(relay.url, { authorization: `Bearer ${s.agentToken}` })).toBe(
+      401,
+    );
+    expect(
+      await db.orm.select().from(agentTokens).where(eq(agentTokens.agentDeviceId, s.agentId)),
+    ).toEqual([]);
+    expect(await auditEvents(s.userId)).toContain('device_revoked');
+
+    const again = await phoneDelete(relay, s.cookie, `/api/devices/${s.agentId}`);
+    expect(again.statusCode).toBe(404);
+    expect(again.json()).toEqual({ error: 'unknown_device' });
+    phonePeer.close();
+  });
+
+  it('revoking a phone closes it, kills its session and tells the agents (now and on connect)', async () => {
+    const relay = await startRelay();
+    const s = await setup(relay);
+    const { agentPeer, phonePeer } = await connect(relay, s);
+    const t = await tablet(relay, s);
+    const tabletPeer = await WsPeer.open(relay.url, { origin: ORIGIN, cookie: t.cookie });
+    await tabletPeer.hello('phone');
+
+    expect((await phoneDelete(relay, s.cookie, `/api/devices/${t.deviceId}`)).statusCode).toBe(204);
+    expect(await tabletPeer.closed).toEqual({ code: 4002, reason: 'revoked' });
+    expect(await agentPeer.next('peer_revoked')).toEqual({
+      v: 1,
+      kind: 'peer_revoked',
+      deviceId: t.deviceId,
+    });
+    expect(phonePeer.frames.some((frame) => frame.kind === 'peer_revoked')).toBe(false);
+    expect(await WsPeer.rejection(relay.url, { origin: ORIGIN, cookie: t.cookie })).toBe(401);
+    const [edge] = await db.orm
+      .select({ revokedAt: pairings.revokedAt })
+      .from(pairings)
+      .where(eq(pairings.phoneDeviceId, t.deviceId));
+    expect(edge!.revokedAt).not.toBeNull();
+
+    // An agent that reconnects learns it again right after hello_ok.
+    agentPeer.close();
+    await agentPeer.closed;
+    const back = await WsPeer.open(relay.url, { authorization: `Bearer ${s.agentToken}` });
+    await back.hello('agent');
+    expect(await back.next('peer_revoked')).toMatchObject({ deviceId: t.deviceId });
+    back.close();
+    phonePeer.close();
+  });
+
+  it('an agent may revoke a phone of its account, nothing else', async () => {
+    const relay = await startRelay();
+    const s = await setup(relay);
+    const t = await tablet(relay, s);
+    const other = await setup(relay);
+    const enrolled = await s.phone('/api/agents', { name: 'linux' });
+    const secondAgent = enrolled.json<{ deviceId: string }>().deviceId;
+
+    for (const target of [s.agentId, secondAgent, other.phoneId, 'not-a-uuid']) {
+      const res = await s.agent('DELETE', `/api/devices/${target}`);
+      expect(res.statusCode).toBe(404);
+      expect(res.json()).toEqual({ error: 'unknown_device' });
+    }
+    expect((await s.agent('DELETE', `/api/devices/${t.deviceId}`)).statusCode).toBe(204);
+    expect((await s.agent('DELETE', '/api/devices/' + s.phoneId)).statusCode).toBe(204);
+    expect((await s.agent('DELETE', `/api/devices/${s.phoneId}`)).statusCode).toBe(404);
+    expect(
+      (await agentCall(relay, 'bogus')('DELETE', `/api/devices/${s.phoneId}`)).statusCode,
+    ).toBe(401);
+  });
+
+  it('deletes the account only after a UV assertion over its deletion hash', async () => {
+    const relay = await startRelay();
+    const s = await setup(relay);
+    const bystander = await setup(relay);
+    const { agentPeer, phonePeer } = await connect(relay, s);
+
+    const refused = await phoneDelete(relay, s.cookie, '/api/account');
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json()).toEqual({ error: 'not_verified' });
+
+    const options = (
+      await s.phone('/api/decisions/challenge', {
+        decisionHash: await accountDeletionHash(s.userId),
+      })
+    ).json<PublicKeyCredentialRequestOptionsJSON>();
+    const verified = await s.phone('/api/decisions/verify', {
+      response: await s.authenticator.get(options),
+    });
+    expect(verified.statusCode).toBe(200);
+
+    const res = await phoneDelete(relay, s.cookie, '/api/account');
+    expect(res.statusCode).toBe(204);
+    expect(res.headers['set-cookie']).toContain('Max-Age=0');
+    expect(await phonePeer.closed).toEqual({ code: 4002, reason: 'account_deleted' });
+    expect(await agentPeer.closed).toEqual({ code: 4002, reason: 'account_deleted' });
+    expect((await s.agent('GET', '/api/agents/me')).statusCode).toBe(401);
+
+    expect(await db.orm.select().from(users).where(eq(users.id, s.userId))).toEqual([]);
+    expect(await db.orm.select().from(devices).where(eq(devices.userId, s.userId))).toEqual([]);
+    const audit = await db.orm.select({ deviceId: auditLog.deviceId }).from(auditLog);
+    expect(audit.map((row) => row.deviceId)).not.toContain(s.phoneId);
+    expect(audit.map((row) => row.deviceId)).not.toContain(s.agentId);
+    expect(await auditEvents(s.userId)).toEqual([]);
+    // Another account is untouched.
+    expect(await auditEvents(bystander.userId)).not.toEqual([]);
+    expect((await bystander.agent('GET', '/api/agents/me')).statusCode).toBe(200);
   });
 });

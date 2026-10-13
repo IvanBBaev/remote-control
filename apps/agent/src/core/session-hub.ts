@@ -111,6 +111,11 @@ export interface SessionHub {
   /** The relay link is gone: every session ends (a session never outlives its link, D3). */
   relayDown(): void;
   presence(presence: Presence): void;
+  /**
+   * The relay revoked a phone (M1-10): its session ends and it is no longer a peer. The
+   * caller removes it from `peers.json`; frames it still sends find no session.
+   */
+  peerRevoked(phoneId: string): void;
   /** A data envelope from the relay. */
   envelope(envelope: Envelope): void;
   /** Feed of the pending store (`onEvent`). */
@@ -185,6 +190,8 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
   const alwaysAllowed = options.alwaysDestinations ?? ['session'];
   let agentId: string | undefined;
   let peers: readonly Peer[] = [];
+  /** Phones the relay revoked (M1-10); a re-paired phone gets a new device id. */
+  const revoked = new Set<string>();
   const sealer = createPushSealer(options.deviceKey.privateKey, random);
   let seq = 0;
   const live = new Map<string, PhoneSession>();
@@ -409,6 +416,7 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
           }));
     // The paired phones for `/machines` (M1-07): ids, names and dates, never a key.
     const devices = (await options.listPeers().catch(() => []))
+      .filter((peer) => !revoked.has(peer.deviceId))
       .slice(0, 100)
       .map((peer) => ({ id: peer.deviceId, name: peer.name, pairedAt: peer.pairedAt }));
     // Content is thinned until the snapshot fits in one frame (M1-05 size cap).
@@ -446,7 +454,7 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
 
   /** Re-reads `peers.json` at every handshake: a new pairing or a removal counts at once. */
   async function findPeer(phoneId: string): Promise<Peer | undefined> {
-    peers = await options.listPeers();
+    peers = (await options.listPeers()).filter((peer) => !revoked.has(peer.deviceId));
     return peers.find((candidate) => candidate.deviceId === phoneId);
   }
 
@@ -786,6 +794,16 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     });
   }
 
+  /** Every open session gets a new snapshot. */
+  function resnapshot(): void {
+    if (agentId === undefined || live.size === 0) return;
+    const sessions = [...live.values()];
+    enqueue(async () => {
+      const message = await snapshot(await shownViews());
+      for (const session of sessions) await sendSealed(session, message, 'event', null);
+    });
+  }
+
   return {
     relayReady(agentDeviceId, presence) {
       agentId = agentDeviceId;
@@ -794,7 +812,7 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
       }
       track(
         options.listPeers().then((list) => {
-          peers = list;
+          peers = list.filter((peer) => !revoked.has(peer.deviceId));
         }),
       );
     },
@@ -804,6 +822,13 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     },
     presence(presence) {
       if (!presence.online) endSession(presence.deviceId, 'offline');
+    },
+    peerRevoked(phoneId) {
+      revoked.add(phoneId);
+      endSession(phoneId, 'revoked');
+      peers = peers.filter((peer) => peer.deviceId !== phoneId);
+      // The other phones' `/machines` device list drops it at once.
+      resnapshot();
     },
     envelope(envelope) {
       if (agentId === undefined || envelope.from === agentId) return;
@@ -839,14 +864,7 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
       if (agentId === undefined || live.size === 0) return;
       enqueue(() => sendHistory([...live.values()]));
     },
-    sessionsChanged() {
-      if (agentId === undefined || live.size === 0) return;
-      const sessions = [...live.values()];
-      enqueue(async () => {
-        const message = await snapshot(await shownViews());
-        for (const session of sessions) await sendSealed(session, message, 'event', null);
-      });
-    },
+    sessionsChanged: resnapshot,
     feedEvent(sessionId, seq, event) {
       if (agentId === undefined || live.size === 0) return;
       const sessions = [...live.values()];

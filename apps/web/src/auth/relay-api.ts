@@ -97,6 +97,13 @@ export interface RelayApi {
   pushKey(): Promise<{ publicKey: string }>;
   /** Stores this phone's push subscription; 409 `endpoint_taken` if another phone has it. */
   savePushSubscription(subscription: PushSubscriptionInput): Promise<void>;
+  /** Revokes a device of this account (M1-10); 404 `unknown_device` if it is gone. */
+  revokeDevice(deviceId: string): Promise<void>;
+  /**
+   * Deletes the account (M1-10) once this phone verified `accountDeletionHash(userId)`
+   * through `decisionChallenge`/`decisionVerify`; 403 `not_verified` otherwise.
+   */
+  deleteAccount(): Promise<void>;
 }
 
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
@@ -120,7 +127,7 @@ export function createRelayApi(
   { baseUrl = '', timeoutMs = 15_000 }: { baseUrl?: string; timeoutMs?: number } = {},
 ): RelayApi {
   async function call(
-    method: 'GET' | 'POST' | 'PUT',
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     path: string,
     body?: unknown,
   ): Promise<Response> {
@@ -180,6 +187,12 @@ export function createRelayApi(
     pushKey: () => json('GET', '/api/push/key'),
     async savePushSubscription(subscription) {
       await call('PUT', '/api/push/subscription', subscription);
+    },
+    async revokeDevice(deviceId) {
+      await call('DELETE', `/api/devices/${encodeURIComponent(deviceId)}`);
+    },
+    async deleteAccount() {
+      await call('DELETE', '/api/account');
     },
   };
 }

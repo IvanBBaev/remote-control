@@ -1,5 +1,7 @@
 import { pairingFingerprint } from '@remote-control/crypto';
 import {
+  accountDeletionChallenge,
+  accountDeletionHash,
   DECISION_TTL_SECONDS,
   decisionHash,
   encodeAnswerPayload,
@@ -256,6 +258,56 @@ describe('phone service', () => {
       enrollToken: 'rc-enroll:abc',
     });
     expect(t.mocks.enrollAgent).toHaveBeenCalledWith('Studio Mac');
+  });
+});
+
+describe('account deletion (M1-10)', () => {
+  const machine = {
+    deviceId: AGENT,
+    name: 'Studio Mac',
+    publicKey: new Uint8Array(32),
+    pairedAt: 0,
+  };
+
+  it('deletes behind a passkey, then forgets every computer and disconnects', async () => {
+    const credentials = mockCredentials();
+    try {
+      const hash = await accountDeletionHash(USER);
+      const challenge = await accountDeletionChallenge(USER);
+      const deleteAccount = vi.fn(() => Promise.resolve());
+      const t = await setup({
+        decisionChallenge: () => Promise.resolve({ challenge }),
+        decisionVerify: () => Promise.resolve({ decisionHash: hash, verifiedUntil: 0 }),
+        deleteAccount,
+      });
+      await t.online();
+      await t.keyStore.saveMachine(machine);
+      await expect(t.phone.deleteAccount(USER)).resolves.toEqual({ ok: true });
+      expect(deleteAccount).toHaveBeenCalledOnce();
+      expect(await t.phone.pairedCount()).toBe(0);
+      expect(t.phone.client).toBeUndefined();
+    } finally {
+      credentials.restore();
+    }
+  });
+
+  it('keeps everything when the user cancels', async () => {
+    const credentials = mockCredentials();
+    credentials.get.mockRejectedValueOnce(userCancelled());
+    try {
+      const challenge = await accountDeletionChallenge(USER);
+      const t = await setup({ decisionChallenge: () => Promise.resolve({ challenge }) });
+      await t.online();
+      await t.keyStore.saveMachine(machine);
+      await expect(t.phone.deleteAccount(USER)).resolves.toEqual({
+        ok: false,
+        failure: 'cancelled',
+      });
+      expect(await t.phone.pairedCount()).toBe(1);
+      expect(t.phone.client).toBeDefined();
+    } finally {
+      credentials.restore();
+    }
   });
 });
 

@@ -6,6 +6,7 @@ export { createDrizzleAccountStore } from '../adapters/drizzle-account-store.js'
 export { createDrizzleAuditLog } from '../adapters/drizzle-audit-log.js';
 export { createDrizzleDeviceDirectory } from '../adapters/drizzle-device-directory.js';
 export { createDrizzleDeviceRegistry } from '../adapters/drizzle-device-registry.js';
+export { createDrizzleDeviceRevocations } from '../adapters/drizzle-device-revocations.js';
 export { createDrizzlePushSubscriptionStore } from '../adapters/drizzle-push-subscription-store.js';
 export { createPgliteDb } from '../adapters/pglite-db.js';
 export { createScryptSecretHasher } from '../adapters/scrypt-secret-hasher.js';
@@ -21,6 +22,7 @@ export { PairingService } from '../core/pairing-service.js';
 export { PushNotifier } from '../core/push-notifier.js';
 export { DEFAULT_AUTH_RATE_LIMITS, type AuthRateLimits } from '../http/auth-routes.js';
 export { RelayRouter } from '../core/relay-router.js';
+export { RevocationService } from '../core/revocation-service.js';
 export { MIGRATIONS_DIR } from '../package-paths.js';
 export type { Timer } from '../ports/timer.js';
 export { FakePushService, type ReceivedPush } from './fake-push-service.js';

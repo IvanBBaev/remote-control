@@ -1,6 +1,7 @@
 import {
   encodeFrame,
   parseFrame,
+  REVOKED_CLOSE_CODE,
   VERSION_TABLE,
   type Envelope,
   type Frame,
@@ -58,6 +59,18 @@ export interface RelayClientOptions {
   readonly onDown?: (code: number, reason: string) => void;
   /** Every connection attempt that ended, with its close code and the next delay. */
   readonly onRetry?: (code: number, reason: string, delayMs: number) => void;
+  /** The relay revoked one of the account's phones (`peer_revoked`, M1-10). */
+  readonly onPeerRevoked?: (deviceId: string) => void;
+  /**
+   * Asked after an attempt that failed before `hello_ok` (a refused upgrade shows only as
+   * a dropped socket): `true` when the relay no longer knows this agent's token.
+   */
+  readonly isRevoked?: () => Promise<boolean>;
+  /**
+   * This agent was revoked or its account deleted (close 4002, or {@link isRevoked}):
+   * the client has stopped and never reconnects.
+   */
+  readonly onRevoked?: (reason: string) => void;
 }
 
 export interface RelayClient {
@@ -93,6 +106,30 @@ export function createRelayClient(options: RelayClientOptions): RelayClient {
       pendingTimer = undefined;
       run();
     });
+  }
+
+  function revoked(reason: string): void {
+    if (stopped) return;
+    stopped = true;
+    ready = false;
+    pendingTimer?.cancel();
+    options.onRevoked?.(reason);
+  }
+
+  async function failedBeforeReady(code: number, reason: string): Promise<void> {
+    if (options.isRevoked !== undefined && !stopped) {
+      let gone: boolean;
+      try {
+        gone = await options.isRevoked();
+      } catch {
+        gone = false;
+      }
+      if (gone) {
+        revoked('revoked');
+        return;
+      }
+    }
+    retry(code, reason);
   }
 
   function retry(code: number, reason: string): void {
@@ -154,6 +191,9 @@ export function createRelayClient(options: RelayClientOptions): RelayClient {
             case 'error':
               options.onRelayError?.(frame);
               return;
+            case 'peer_revoked':
+              options.onPeerRevoked?.(frame.deviceId);
+              return;
             default:
               // ack, pong and anything else the agent does not act on.
               return;
@@ -168,7 +208,9 @@ export function createRelayClient(options: RelayClientOptions): RelayClient {
             ready = false;
             options.onDown?.(code, reason);
           }
-          retry(code, reason);
+          if (code === REVOKED_CLOSE_CODE) revoked(reason);
+          else if (wasReady) retry(code, reason);
+          else void failedBeforeReady(code, reason);
         },
       },
     );

@@ -14,12 +14,14 @@ import { createSentryReporter } from './adapters/sentry-reporter.js';
 import { createWebPushSender } from './adapters/web-push-sender.js';
 import { createDrizzleDeviceDirectory } from './adapters/drizzle-device-directory.js';
 import { createDrizzleDeviceRegistry } from './adapters/drizzle-device-registry.js';
+import { createDrizzleDeviceRevocations } from './adapters/drizzle-device-revocations.js';
 import { systemClock } from './adapters/system-clock.js';
 import { systemTimer } from './adapters/system-timer.js';
 import type { Config } from './config.js';
 import { AccountService } from './core/account-service.js';
 import { AuditRecorder } from './core/audit-recorder.js';
 import { DecisionVerifier } from './core/decision-verifier.js';
+import { RevocationService } from './core/revocation-service.js';
 import { DrainState } from './core/drain-state.js';
 import { DEVICE_CAP } from './core/hub-limits.js';
 import { LocalHub } from './core/local-hub.js';
@@ -57,6 +59,7 @@ export interface Container {
         readonly directory: DeviceDirectory;
         readonly pairing: PairingService;
         readonly decisions: DecisionVerifier;
+        readonly revocations: RevocationService;
       }
     | undefined;
   /** Web Push (M0-12); `undefined` without a database or VAPID keys. */
@@ -104,6 +107,7 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
   const store = db && createDrizzleAccountStore(db.orm);
   const webauthn = createSimpleWebAuthn({ id: config.rpId, origin: config.origin, name: RP_NAME });
   const decisions = store && new DecisionVerifier({ store, webauthn, clock });
+  const revocationStore = db && createDrizzleDeviceRevocations(db.orm);
   const auditLog = db && createDrizzleAuditLog(db.orm);
   const audit = auditLog && new AuditRecorder({ clock, store: auditLog, logger });
   const pushStore = db && config.push && createDrizzlePushSubscriptionStore(db.orm);
@@ -154,6 +158,7 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
       }),
     relay: db &&
       directory &&
+      revocationStore &&
       decisions && {
         router: new RelayRouter({
           clock,
@@ -162,6 +167,7 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
           directory,
           logger,
           commandGate: decisions,
+          revocations: revocationStore,
           ...(push && { pending: push.notifier }),
           ...(audit && { audit }),
         }),
@@ -174,6 +180,13 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
           deviceCap: DEVICE_CAP,
         }),
         decisions,
+        revocations: new RevocationService({
+          store: revocationStore,
+          hub,
+          verifier: decisions,
+          clock,
+          logger,
+        }),
       },
     push,
     audit,

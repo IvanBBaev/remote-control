@@ -1,6 +1,15 @@
 import { z } from 'zod';
 
-import { Ack, Hello, HelloOk, Ping, Pong, Presence, RelayError } from './control-frames.js';
+import {
+  Ack,
+  Hello,
+  HelloOk,
+  PeerRevoked,
+  Ping,
+  Pong,
+  Presence,
+  RelayError,
+} from './control-frames.js';
 import { Envelope } from './envelope.js';
 
 /** Every frame that can travel on the WebSocket, discriminated by `kind`. */
@@ -13,6 +22,7 @@ export const Frame = z.discriminatedUnion('kind', [
   Ping,
   Pong,
   RelayError,
+  PeerRevoked,
 ]);
 export type Frame = z.infer<typeof Frame>;
 
@@ -26,4 +36,5 @@ export const FRAME_KINDS: readonly Frame['kind'][] = [
   'ping',
   'pong',
   'error',
+  'peer_revoked',
 ];

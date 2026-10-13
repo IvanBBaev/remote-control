@@ -253,6 +253,8 @@ describe('runPairing (fake relay, fake phone)', () => {
       failSlot: () => Promise.resolve({ ok: false, status: 500, error }),
       cancelSlot: () => Promise.resolve({ ok: true, value: null }),
       health: () => Promise.resolve({ ok: true, value: null }),
+      revokeDevice: () => Promise.resolve({ ok: false, status: 404, error }),
+      whoami: () => Promise.resolve({ ok: false, status: 401, error }),
     });
     const busy = await setup({ api: refusing('code_in_use') });
     expect(await busy.outcome).toEqual({

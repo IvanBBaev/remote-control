@@ -16,6 +16,10 @@ import {
 import { DEFAULT_DECISION_RATE_LIMIT, registerDecisionRoutes } from './http/decision-routes.js';
 import { registerAdminRoutes } from './http/admin-routes.js';
 import { deviceAuth } from './http/device-auth.js';
+import {
+  DEFAULT_REVOCATION_RATE_LIMIT,
+  registerRevocationRoutes,
+} from './http/revocation-routes.js';
 import { registerHealthRoute } from './http/health-route.js';
 import { registerOriginGuard } from './http/origin-guard-hook.js';
 import {
@@ -29,6 +33,7 @@ import { registerSpikeRoutes, type SpikeRouteDeps } from './http/spike-routes.js
 import { registerStaticSite } from './http/static-site.js';
 import { registerVersionRoute } from './http/version-route.js';
 import type { RelayRouter } from './core/relay-router.js';
+import type { RevocationService } from './core/revocation-service.js';
 import type { AdminStatsStore } from './ports/audit-log.js';
 import type { DatabaseHealth } from './ports/database-health.js';
 import type { DeviceDirectory } from './ports/device-directory.js';
@@ -91,6 +96,8 @@ export interface RelayDeps {
   /** Decision verification (M0-11); also the router's command gate in production. */
   readonly decisions?: DecisionVerifier | undefined;
   readonly pairingLimits?: PairingRateLimits;
+  /** Revocation and account deletion (M1-10); absent → those routes do not exist. */
+  readonly revocations?: RevocationService | undefined;
 }
 
 export interface AuthDeps {
@@ -208,7 +215,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   return app;
 }
 
-/** `/api/devices`, `/api/agents`, `/api/pairings` and `/api/decisions` (M0-11). */
+/** `/api/devices`, `/api/agents`, `/api/pairings`, `/api/decisions` (M0-11), `/api/account` (M1-10). */
 function registerDeviceApis(
   app: FastifyInstance,
   relay: RelayDeps,
@@ -233,6 +240,13 @@ function registerDeviceApis(
       verifier: relay.decisions,
       auth,
       limit: DEFAULT_DECISION_RATE_LIMIT,
+    });
+  }
+  if (relay.revocations !== undefined) {
+    registerRevocationRoutes(app, {
+      revocations: relay.revocations,
+      auth,
+      limit: DEFAULT_REVOCATION_RATE_LIMIT,
     });
   }
 }

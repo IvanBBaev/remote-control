@@ -24,6 +24,7 @@ describe('realtime store', () => {
       requests: {},
       commands: {},
       diffs: {},
+      revoked: null,
     });
   });
 

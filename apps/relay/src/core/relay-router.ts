@@ -13,6 +13,7 @@ import {
 import type { Logger } from 'pino';
 
 import type { DeviceDirectory, DeviceIdentity } from '../ports/device-directory.js';
+import type { DeviceRevocations } from '../ports/device-revocations.js';
 import type { HubConnection, HubPort } from '../ports/hub.js';
 import type { PeerSocket } from '../ports/peer-socket.js';
 import {
@@ -51,6 +52,8 @@ export interface RelayRouterDeps {
   readonly commandGate?: CommandGate;
   readonly pending?: PendingRequestSink;
   readonly audit?: AuditSink;
+  /** Revoked pairings replayed to an agent after `hello_ok` (M1-10); none when absent. */
+  readonly revocations?: Pick<DeviceRevocations, 'revokedPeers'>;
 }
 
 /** Counters for metrics and tests; headers only (I3). */
@@ -433,8 +436,13 @@ class DeviceSession implements HubConnection, SocketEvents {
     }
     this.#phase = 'joining';
     let presence: PresenceEntry[];
+    let revokedPeers: string[] = [];
     try {
       presence = await this.router.presenceSnapshot(this.identity);
+      const revocations = this.router.deps.revocations;
+      if (this.identity.kind === 'agent' && revocations !== undefined) {
+        revokedPeers = await revocations.revokedPeers(this.identity.deviceId);
+      }
     } catch (error) {
       this.router.deps.logger.error(
         { event: 'presence_failed', device_id: this.identity.deviceId, err: error },
@@ -467,6 +475,10 @@ class DeviceSession implements HubConnection, SocketEvents {
         presence,
       }),
     );
+    // An agent offline at revocation time learns it now and drops the peer key (M1-10).
+    for (const deviceId of revokedPeers) {
+      this.send(encodeFrame({ v: VERSION_TABLE.v, kind: 'peer_revoked', deviceId }));
+    }
     if (result.superseded === undefined) this.router.broadcastPresence(this.identity, true);
     this.#lastMarkedAt = now;
     void this.router.markSeen(this.identity.deviceId, now);

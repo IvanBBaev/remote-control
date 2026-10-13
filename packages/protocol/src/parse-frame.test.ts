@@ -14,6 +14,7 @@ const FIXTURE_BY_KIND: Record<(typeof FRAME_KINDS)[number], string> = {
   hello_ok: 'hello-ok',
   ack: 'ack',
   presence: 'presence',
+  peer_revoked: 'peer-revoked',
   ping: 'ping',
   pong: 'pong',
   error: 'error',

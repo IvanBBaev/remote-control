@@ -5,6 +5,8 @@ import { Link, NavLink, useParams } from 'react-router';
 import { useStore } from 'zustand';
 
 import { useAppState } from '../app-state.js';
+import type { DeleteAccountResult } from '../auth/delete-account.js';
+import { RelayError } from '../auth/relay-api.js';
 import { presenceLabel } from '../realtime/realtime-store.js';
 import type { MachineView, RealtimeState } from '../realtime/realtime-store.js';
 import { historySummary, machineUsage, usageSummary } from '../realtime/usage-stats.js';
@@ -17,7 +19,8 @@ import { useWideLayout } from './split.js';
  * Paired computers and their online state, from relay timestamps (M0-20), with this
  * computer's own history per repository (M2-06) and this phone's local counters per
  * computer and project (M1-11), its paired phones and hook status, and the "Can't
- * connect?" checklist in the wording `remotectl status` prints (M1-07).
+ * connect?" checklist in the wording `remotectl status` prints (M1-07). Phones are
+ * revoked and the account deleted here (M1-10).
  */
 export function MachinesScreen() {
   const { phone } = useAppState();
@@ -84,6 +87,7 @@ export function MachinesScreen() {
           {machines.length === 0 ? 'Add your first computer' : 'Add a computer'}
         </Link>
       </div>
+      <DeleteAccount />
     </Screen>
   );
 }
@@ -97,7 +101,7 @@ const hookStatus = (repositories: readonly Repository[]) =>
 
 /**
  * What a computer reported about its setup (M1-07): missing hooks, the hook status per
- * repository, and the paired phones. Revoking a phone is M1-10; the entry point is here.
+ * repository, and the paired phones, each with its revoke button (M1-10).
  */
 function MachineSetup({ machine }: { machine: MachineView }) {
   const devices = machine.devices ?? [];
@@ -123,19 +127,132 @@ function MachineSetup({ machine }: { machine: MachineView }) {
             <li key={device.id}>
               <span className="device-name">{device.name}</span>{' '}
               <span className="meta">paired {pairedDay(device)}</span>
-              <button
-                type="button"
-                className="button"
-                disabled
-                title="Revoking a phone arrives in a later version."
-              >
-                Revoke
-              </button>
+              <RevokeDevice device={device} />
             </li>
           ))}
         </ul>
       )}
     </div>
+  );
+}
+
+type RevokeStep = 'idle' | 'confirm' | 'pending' | 'done' | 'failed';
+
+/**
+ * Revokes a paired phone at the relay after a second tap (M1-10): its sessions end and
+ * every computer refuses it until it pairs again. The relay no longer knowing the phone
+ * counts as done. The computer drops it from its list on its next report.
+ */
+function RevokeDevice({ device }: { device: PairedDevice }) {
+  const { relay } = useAppState();
+  const [step, setStep] = useState<RevokeStep>('idle');
+  const revoke = async () => {
+    setStep('pending');
+    try {
+      await relay.revokeDevice(device.id);
+      setStep('done');
+    } catch (error) {
+      setStep(error instanceof RelayError && error.status === 404 ? 'done' : 'failed');
+    }
+  };
+  if (step === 'done') return <span className="meta revoked">Revoked</span>;
+  if (step === 'confirm' || step === 'pending') {
+    return (
+      <span className="confirm">
+        <button
+          type="button"
+          className="button danger"
+          disabled={step === 'pending'}
+          onClick={() => void revoke()}
+        >
+          Revoke {device.name}
+        </button>
+        <button type="button" className="button" onClick={() => setStep('idle')}>
+          Cancel
+        </button>
+      </span>
+    );
+  }
+  return (
+    <>
+      <button type="button" className="button" onClick={() => setStep('confirm')}>
+        Revoke
+      </button>
+      {step === 'failed' && <span className="notice error">Could not revoke. Try again.</span>}
+    </>
+  );
+}
+
+type DeleteFailure = Extract<DeleteAccountResult, { ok: false }>['failure'];
+
+function deleteFailureText(failure: DeleteFailure): string {
+  if (failure === 'cancelled') return 'Face ID was cancelled. Nothing was deleted.';
+  if (failure === 'offline') return 'You are offline. Nothing was deleted.';
+  if (failure === 'rate_limited') return 'Too many attempts. Wait a minute and try again.';
+  return 'Could not delete the account. Nothing was deleted.';
+}
+
+/**
+ * Deletes the account behind a passkey assertion (M1-10, 02 §5.9): the relay drops every
+ * device, pairing and record of it, the phone forgets its computers and signs out.
+ */
+function DeleteAccount() {
+  const { auth, phone } = useAppState();
+  const userId = useStore(auth, (state) => state.userId);
+  const [step, setStep] = useState<'idle' | 'confirm' | 'pending'>('idle');
+  const [failure, setFailure] = useState<DeleteFailure>();
+  const remove = async () => {
+    if (userId === null) return;
+    setStep('pending');
+    setFailure(undefined);
+    const result = await phone.deleteAccount(userId);
+    if (result.ok) {
+      await auth
+        .getState()
+        .signOut()
+        .catch(() => undefined);
+      return;
+    }
+    setFailure(result.failure);
+    setStep('confirm');
+  };
+  return (
+    <section className="delete-account">
+      {step === 'idle' ? (
+        <button type="button" className="button" onClick={() => setStep('confirm')}>
+          Delete account
+        </button>
+      ) : (
+        <>
+          <p className="meta">
+            This removes your account, every paired computer and phone, and their history from the
+            relay. Computers stop reaching this phone at once.
+          </p>
+          <div className="actions">
+            <button
+              type="button"
+              className="button danger"
+              disabled={step === 'pending' || userId === null}
+              onClick={() => void remove()}
+            >
+              Delete my account
+            </button>
+            <button
+              type="button"
+              className="button"
+              disabled={step === 'pending'}
+              onClick={() => {
+                setStep('idle');
+                setFailure(undefined);
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+          {failure !== undefined && <p className="notice error">{deleteFailureText(failure)}</p>}
+        </>
+      )}
+    </section>
   );
 }
 

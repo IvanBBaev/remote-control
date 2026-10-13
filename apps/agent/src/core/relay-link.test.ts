@@ -333,6 +333,91 @@ describe('relay link (fake relay, fake phones)', () => {
     await expect(registration.settled).resolves.toMatchObject({ type: 'decided' });
   });
 
+  describe('revocation (M1-10)', () => {
+    it('AC: a revoked phone loses its session and peer, and its frames are refused', async () => {
+      const forgotten: string[] = [];
+      const t = await setup(['Pixel', 'Tablet'], 11, undefined, undefined, {
+        forgetPeer: (phoneId) => {
+          forgotten.push(phoneId);
+          return Promise.resolve();
+        },
+      });
+      const [pixel, tablet] = t.phones as [FakePhone, FakePhone];
+      await t.open(pixel);
+      await t.open(tablet);
+      const handshakes = t.relay.routed.filter(
+        (envelope) => envelope.from === tablet.device.id && envelope.cls === 'control',
+      );
+      const before = pixel.of('snapshot').length;
+
+      expect(t.relay.revoke(tablet.device.id)).toBe(true);
+      await waitFor(() => forgotten.length === 1);
+      await t.link.hub.idle();
+      expect(forgotten).toEqual([tablet.device.id]);
+      expect(t.link.hub.sessions()).toEqual([pixel.device.id]);
+      expect(t.logs).toContainEqual({
+        event: 'peer_revoked',
+        fields: { phone_device_id: tablet.device.id },
+      });
+      // The other phone's device list drops it, though peers.json is not yet rewritten.
+      await waitFor(() => pixel.of('snapshot').length > before);
+      expect(
+        pixel
+          .of('snapshot')
+          .at(-1)!
+          .devices!.map((device) => device.id),
+      ).toEqual([pixel.device.id]);
+
+      // A replayed handshake from the revoked phone (a relay that still forwards it) is refused.
+      t.link.hub.envelope(handshakes[0]!);
+      await t.link.hub.idle();
+      expect(t.logs).toContainEqual({
+        event: 'handshake_refused',
+        fields: { phone_device_id: tablet.device.id, reason: 'not_paired' },
+      });
+      expect(t.link.hub.sessions()).toEqual([pixel.device.id]);
+    });
+
+    it('stops for good when the relay revokes the agent or deletes the account', async () => {
+      const reasons: string[] = [];
+      const t = await setup(['Pixel'], 11, undefined, undefined, {
+        onRevoked: (reason) => reasons.push(reason),
+      });
+      const [phone] = t.phones as [FakePhone];
+      await t.open(phone);
+      t.relay.deleteAccount();
+      await waitFor(() => reasons.length === 1);
+      expect(reasons).toEqual(['account_deleted']);
+      expect(t.link.hub.sessions()).toEqual([]);
+      expect(t.logs).toContainEqual({
+        event: 'relay_revoked',
+        fields: { reason: 'account_deleted' },
+      });
+      t.time.advance(120_000);
+      await t.link.hub.idle();
+      expect(t.relay.attempts(t.agentId)).toBe(1);
+    });
+
+    it('notices a revocation that happened while it was offline (whoami 401)', async () => {
+      const reasons: string[] = [];
+      const t = await setup(['Pixel'], 11, undefined, undefined, {
+        onRevoked: (reason) => reasons.push(reason),
+        isRevoked: () => Promise.resolve(true),
+      });
+      t.relay.disconnect(t.agentId);
+      await waitFor(() => !t.link.client.ready);
+      t.relay.revoke(t.agentId);
+      t.time.advance(1_000);
+      await waitFor(() => reasons.length === 1);
+      expect(reasons).toEqual(['revoked']);
+      // One retry after the drop; the refused attempt that followed found the token gone.
+      expect(t.logs.filter((entry) => entry.event === 'relay_retry')).toHaveLength(1);
+      t.time.advance(120_000);
+      await t.link.hub.idle();
+      expect(t.logs.filter((entry) => entry.event === 'relay_retry')).toHaveLength(1);
+    });
+  });
+
   describe('"Always" destinations (M2-07, D24)', () => {
     const suggesting = () =>
       permission('npm test', {

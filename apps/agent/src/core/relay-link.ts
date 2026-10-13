@@ -21,6 +21,18 @@ export interface RelayLinkOptions extends Omit<SessionHubOptions, 'send' | 'log'
   readonly canConnect?: () => Promise<boolean>;
   /** Event names, ids and codes only (I3). */
   readonly log?: HubLog;
+  /**
+   * The relay revoked a paired phone (M1-10): forget its key (`peers.json`). The hub has
+   * already ended its session.
+   */
+  readonly forgetPeer?: (phoneId: string) => Promise<unknown>;
+  /** See {@link RelayClientOptions.isRevoked}. */
+  readonly isRevoked?: () => Promise<boolean>;
+  /**
+   * This agent was revoked or its account deleted: the link has stopped for good. The
+   * owner drops every peer (they belong to a gone account) and stays offline.
+   */
+  readonly onRevoked?: (reason: string) => void;
 }
 
 export interface RelayLink {
@@ -63,6 +75,19 @@ export function createRelayLink(options: RelayLinkOptions): RelayLink {
       hub.relayDown();
     },
     onRetry: (code, reason, delayMs) => log('relay_retry', { code, reason, delay_ms: delayMs }),
+    onPeerRevoked(phoneId) {
+      log('peer_revoked', { phone_device_id: phoneId });
+      hub.peerRevoked(phoneId);
+      void options
+        .forgetPeer?.(phoneId)
+        .catch(() => log('peer_forget_failed', { phone_device_id: phoneId }));
+    },
+    ...(options.isRevoked === undefined ? {} : { isRevoked: options.isRevoked }),
+    onRevoked(reason) {
+      log('relay_revoked', { reason });
+      hub.relayDown();
+      options.onRevoked?.(reason);
+    },
   });
   return {
     client,

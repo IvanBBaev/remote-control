@@ -19,6 +19,8 @@ import type {
 
 import { assertDecision } from '../auth/assert-decision.js';
 import type { AssertDecisionResult } from '../auth/assert-decision.js';
+import { deleteAccount } from '../auth/delete-account.js';
+import type { DeleteAccountResult } from '../auth/delete-account.js';
 
 import { RelayError } from '../auth/relay-api.js';
 import type { EnrolledAgent, RelayApi } from '../auth/relay-api.js';
@@ -149,6 +151,12 @@ export interface PhoneService {
    * A read, so no passkey; `unavailable` right away when not connected.
    */
   diff(machineId: string, sessionId: string, file: string): void;
+  /**
+   * Deletes `userId`'s account behind a UV passkey assertion (M1-10), then forgets every
+   * computer's keys here and disconnects. The caller signs out. Call it from the tap
+   * handler, like `decide`.
+   */
+  deleteAccount(userId: string): Promise<DeleteAccountResult>;
 }
 
 /** What the relay's pairing answers mean to the user (D6, M0-10). */
@@ -343,6 +351,14 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
     }
   }
 
+  function disconnect(): void {
+    client?.stop();
+    client = undefined;
+    phoneDeviceId = undefined;
+    connecting = undefined;
+    userId = undefined;
+  }
+
   return {
     realtime,
     usage,
@@ -353,13 +369,7 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
     },
     pairedCount: async () => (await keyStore.machines()).length,
     connect,
-    disconnect() {
-      client?.stop();
-      client = undefined;
-      phoneDeviceId = undefined;
-      connecting = undefined;
-      userId = undefined;
-    },
+    disconnect,
     wake() {
       if (client !== undefined) client.wake();
       // A connect that failed (e.g. started offline) is retried on the next wake.
@@ -367,6 +377,14 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
         connect(userId).catch(() => undefined);
     },
     enroll: (name) => relay.enrollAgent(name),
+    async deleteAccount(id) {
+      const result = await deleteAccount(id, relay);
+      if (!result.ok) return result;
+      disconnect();
+      for (const machine of await keyStore.machines())
+        await keyStore.removeMachine(machine.deviceId);
+      return result;
+    },
     async decide(machineId, request, kind, destination) {
       // The session is the signed default (`null`); a settings destination is named.
       const payload =

@@ -119,6 +119,11 @@ export interface RealtimeState {
   readonly commands: Readonly<Record<string, CommandView>>;
   /** Requested diffs by `diffKey` (M2-02), in memory only. */
   readonly diffs: Readonly<Record<string, DiffView>>;
+  /**
+   * Set when the relay closed the socket with 4002 (M1-10): `revoked` (this phone) or
+   * `account_deleted`. The app signs out; a new connect clears it.
+   */
+  readonly revoked: string | null;
 }
 
 export type RealtimeStore = StoreApi<RealtimeState>;
@@ -134,6 +139,7 @@ export function createRealtimeStore(): RealtimeStore {
     requests: {},
     commands: {},
     diffs: {},
+    revoked: null,
   }));
 }
 

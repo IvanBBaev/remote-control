@@ -24,6 +24,7 @@ const FailedBody = z.object({
   state: z.enum(['open', 'closed']),
   failedAttempts: z.int().nonnegative(),
 });
+const MeBody = z.object({ deviceId: DeviceId, userId: z.uuid() });
 const ErrorBody = z.object({ error: z.string().max(64) });
 
 export interface RelayHttpOptions {
@@ -94,5 +95,8 @@ export function createRelayHttp(options: RelayHttpOptions): RelayApi {
     failSlot: (slotId) => call('POST', `${slot(slotId)}/fail`, FailedBody),
     cancelSlot: (slotId) => call('DELETE', slot(slotId), null),
     health: () => call('GET', '/health', null),
+    revokeDevice: (deviceId) =>
+      call('DELETE', `/api/devices/${encodeURIComponent(deviceId)}`, null),
+    whoami: () => call('GET', '/api/agents/me', MeBody),
   };
 }

@@ -1,5 +1,5 @@
 import { generateX25519KeyPair, webCryptoRandom } from '@remote-control/crypto';
-import { DECISION_TTL_SECONDS, VERSION_TABLE } from '@remote-control/protocol';
+import { DECISION_TTL_SECONDS, REVOKED_CLOSE_CODE, VERSION_TABLE } from '@remote-control/protocol';
 import type {
   AgentMessage,
   ApprovalRequest,
@@ -111,7 +111,13 @@ async function setup(options: { visible?: () => boolean; state?: () => Promise<R
     random: webCryptoRandom,
     version: '0.0.0-test',
     relay: { state },
-    keyStore: { machines: () => Promise.resolve(paired) },
+    keyStore: {
+      machines: () => Promise.resolve(paired),
+      removeMachine: (deviceId: string) => {
+        paired = paired.filter((machine) => machine.deviceId !== deviceId);
+        return Promise.resolve();
+      },
+    },
     identity: { userId: USER, deviceId: PHONE, keyPair },
     store,
     ...(options.visible === undefined ? {} : { isVisible: options.visible }),
@@ -141,6 +147,7 @@ async function setup(options: { visible?: () => boolean; state?: () => Promise<R
     setPaired: (machines: PairedMachine[]) => {
       paired = machines;
     },
+    paired: () => paired,
   };
 }
 
@@ -968,6 +975,29 @@ describe('realtime client', () => {
     await t.agent.send(socket, { t: 'request', request: approval(RID2), ttlMs: 60_000 });
     await settle();
     expect(t.store.getState().requests).toEqual({});
+  });
+
+  it('forgets every machine and flags the store on close 4002 (M1-10)', async () => {
+    const t = await setup();
+    await t.client.start();
+    const socket = await t.connect();
+    await t.agent.send(socket, { t: 'request', request: approval(RID), ttlMs: 60_000 });
+    await settle();
+    const polls = t.state.mock.calls.length;
+    socket.onclose?.({ code: REVOKED_CLOSE_CODE, reason: 'account_deleted' });
+    await settle();
+    expect(t.store.getState()).toMatchObject({
+      connection: 'stopped',
+      revoked: 'account_deleted',
+      machines: {},
+      requests: {},
+    });
+    expect(t.paired()).toEqual([]);
+    // No reconnect and no polling after it.
+    t.timer.advance(60_000);
+    await settle();
+    expect(t.sockets.all).toHaveLength(1);
+    expect(t.state).toHaveBeenCalledTimes(polls);
   });
 
   it('starts once and decodes base64 payloads it sent', async () => {

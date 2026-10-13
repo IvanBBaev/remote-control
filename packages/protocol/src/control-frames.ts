@@ -73,6 +73,24 @@ export type Ping = z.infer<typeof Ping>;
 export const Pong = z.strictObject({ v, kind: z.literal('pong'), t: EpochMs, relayTs: EpochMs });
 export type Pong = z.infer<typeof Pong>;
 
+/**
+ * A phone of the same user was revoked (M1-10, 02 §5.3): the agent deletes its key and
+ * ends its session. The relay sends it at the revocation and after every `hello_ok` of
+ * an agent the phone was paired with. A relay can only shrink trust this way (02 §4.1).
+ */
+export const PeerRevoked = z.strictObject({
+  v,
+  kind: z.literal('peer_revoked'),
+  deviceId: DeviceId,
+});
+export type PeerRevoked = z.infer<typeof PeerRevoked>;
+
+/**
+ * Close code of a socket whose device was revoked or whose account was deleted (M1-10);
+ * the reason is `revoked` or `account_deleted`. The device must not reconnect.
+ */
+export const REVOKED_CLOSE_CODE = 4002;
+
 /** Error codes the relay reports in an `error` frame. */
 export const RelayErrorCode = z.enum([
   'bad_frame',

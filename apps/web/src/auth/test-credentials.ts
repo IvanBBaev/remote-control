@@ -17,6 +17,8 @@ const RELAY_METHODS = [
   'state',
   'pushKey',
   'savePushSubscription',
+  'revokeDevice',
+  'deleteAccount',
 ] as const satisfies readonly (keyof RelayApi)[];
 
 /** A relay whose every call fails loudly unless the test stubs it. */

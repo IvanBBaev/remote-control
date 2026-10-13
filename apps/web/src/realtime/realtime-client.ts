@@ -77,7 +77,7 @@ export interface RealtimeClientOptions {
   /** The PWA build version, sent in `hello`. */
   readonly version: string;
   readonly relay: Pick<RelayApi, 'state'>;
-  readonly keyStore: Pick<KeyStore, 'machines'>;
+  readonly keyStore: Pick<KeyStore, 'machines' | 'removeMachine'>;
   readonly identity: RealtimeIdentity;
   readonly store: RealtimeStore;
   /** Polling runs only while the app is in the foreground. */
@@ -242,7 +242,29 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
       if (status === 'open') stopPolling();
       else if (status !== 'stopped' && failures >= POLL_AFTER_FAILURES) startPolling();
     },
+    onRevoked: (reason) => {
+      enqueue(() => onRevoked(reason));
+    },
   });
+
+  /**
+   * The relay revoked this phone or deleted the account (M1-10): every machine already
+   * forgot this phone, so its keys go too, and the store tells the app to sign out.
+   */
+  async function onRevoked(reason: string): Promise<void> {
+    running = false;
+    stopPolling();
+    for (const machine of await options.keyStore.machines()) {
+      await options.keyStore.removeMachine(machine.deviceId);
+    }
+    update(() => ({
+      revoked: reason === '' ? 'revoked' : reason,
+      machines: {},
+      requests: {},
+      commands: {},
+      diffs: {},
+    }));
+  }
 
   function envelope(to: string, cls: Envelope['cls'], payload: Uint8Array): Envelope {
     const now = timer.now();
@@ -682,6 +704,7 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
     async start() {
       if (running) return;
       running = true;
+      update(() => ({ revoked: null }));
       await reloadMachines();
       socket.start();
     },

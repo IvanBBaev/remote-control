@@ -83,6 +83,8 @@ Commands:
                            Store the relay credentials from the enrolment token
   pair                     Pair a phone with this agent
   devices                  List paired phones
+  devices revoke <id>      Unpair a phone: forget its key here and revoke it at the
+                           relay (its sessions end, it must pair again)
   hooks install            Install the Claude Code approval hooks
   hooks remove             Remove the Claude Code approval hooks
   hooks status             Show whether the hooks are installed
@@ -395,6 +397,20 @@ async function runCommand(
       canConnect: async () => !(await lock.held()),
       // Event names, ids and codes only (I3).
       log: (event, fields) => log.logger.info({ ...fields, event }),
+      forgetPeer: (phoneId) => c.keyStore.removePeer(phoneId),
+      // A refused upgrade is only a dropped socket: the token's 401 tells revocation apart.
+      isRevoked: async () => {
+        const me = await c.relayApi(endpoints.http, credentials.token).whoami();
+        return !me.ok && me.status === 401;
+      },
+      onRevoked: (reason) => {
+        // The phones belonged to a revoked machine or a deleted account (M1-10).
+        void dropAllPeers(c).catch(() => log.logger.warn({ event: 'peer_forget_failed' }));
+        c.output.stderr(
+          `remotectl run: the relay revoked this machine (${reason}); requests stay in the ` +
+            'terminal. Run `remotectl login` with a new enrolment token to use the phone again.\n',
+        );
+      },
     });
   } else {
     log.logger.info({
@@ -803,7 +819,58 @@ async function pairCommand(
   return EXIT_ERROR;
 }
 
+async function dropAllPeers(c: Container): Promise<void> {
+  for (const peer of await c.keyStore.listPeers()) await c.keyStore.removePeer(peer.deviceId);
+}
+
+const DEVICE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * `remotectl devices revoke <id>` (M1-10): forgets the phone's key at once (the agent
+ * refuses its handshakes from now on), then revokes it at the relay, which closes its
+ * socket and drops its login sessions and push subscriptions.
+ */
+async function revokeDevice(args: readonly string[], c: Container): Promise<number> {
+  const [deviceId, ...rest] = args;
+  if (deviceId === undefined || rest.length > 0) {
+    throw new UsageError('expects exactly one device id: remotectl devices revoke <id>');
+  }
+  const id = deviceId.toLowerCase();
+  if (!DEVICE_ID.test(id))
+    throw new UsageError('the device id is a UUID (see `remotectl devices`)');
+  const forgotten = await c.keyStore.removePeer(id);
+  const url = await relayUrl(c);
+  const credentials = await c.keyStore.readRelayCredentials();
+  if (url === undefined || credentials === undefined) {
+    if (credentials === undefined) {
+      c.output.stderr('remotectl devices revoke: not logged in; the relay was not told\n');
+    }
+    if (forgotten) c.output.stdout(`Forgot ${id} on this machine.\n`);
+    return EXIT_ERROR;
+  }
+  const result = await c.relayApi(relayEndpoints(url).http, credentials.token).revokeDevice(id);
+  if (result.ok) {
+    c.output.stdout(`Revoked ${id}: it must pair again to reach this machine.\n`);
+    return EXIT_OK;
+  }
+  if (result.status === 404 && forgotten) {
+    // Already revoked (for example from another phone): only the local key was left.
+    c.output.stdout(`Forgot ${id} on this machine; the relay no longer knew it.\n`);
+    return EXIT_OK;
+  }
+  if (result.status === 404) {
+    c.output.stderr(`remotectl devices revoke: no phone ${id} on this account\n`);
+    return EXIT_ERROR;
+  }
+  if (forgotten) c.output.stdout(`Forgot ${id} on this machine.\n`);
+  c.output.stderr(
+    `remotectl devices revoke: the relay did not revoke it (${result.error}); run it again\n`,
+  );
+  return EXIT_ERROR;
+}
+
 async function devicesCommand(args: readonly string[], c: Container): Promise<number> {
+  if (args[0] === 'revoke') return revokeDevice(args.slice(1), c);
   noArguments(args);
   const peers = await c.keyStore.listPeers();
   if (peers.length === 0) {

@@ -17,12 +17,14 @@ export {
   Ack,
   Hello,
   HelloOk,
+  PeerRevoked,
   Ping,
   Pong,
   Presence,
   PresenceEntry,
   RelayError,
   RelayErrorCode,
+  REVOKED_CLOSE_CODE,
 } from './control-frames.js';
 export { Frame, FRAME_KINDS } from './frame.js';
 export { parseFrame } from './parse-frame.js';
@@ -74,6 +76,7 @@ export { CanonicalDecision, DECISION_TTL_SECONDS, DecisionKind } from './canonic
 export { requiresAssertion } from './requires-assertion.js';
 export { decisionHash } from './decision-hash.js';
 export { decisionChallenge } from './decision-challenge.js';
+export { accountDeletionChallenge, accountDeletionHash } from './account-deletion.js';
 export { requestHash, requestHashSubject } from './request-hash.js';
 export type { RequestHashInput } from './request-hash.js';
 export {
