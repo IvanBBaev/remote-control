@@ -8,7 +8,9 @@ import type { AssertDecisionResult } from '../auth/assert-decision.js';
 import { RelayError } from '../auth/relay-api.js';
 import type { EnrolledAgent, RelayApi } from '../auth/relay-api.js';
 import type { KeyStore } from '../pairing/key-store.js';
-import { normalizePairingCode, pairingSecrets } from '../pairing/pairing-code.js';
+import { normalizePairingCode, pairingSecrets, pskSecrets } from '../pairing/pairing-code.js';
+import type { PairingSecrets } from '../pairing/pairing-code.js';
+import { parsePairingQr } from '../pairing/qr-text.js';
 import type { Timer, TimerHandle } from '../ports/timer.js';
 import { createRealtimeClient, PairingTimeoutError } from './realtime-client.js';
 import type { RealtimeClient } from './realtime-client.js';
@@ -68,6 +70,8 @@ export interface PhoneService {
   enroll(name: string): Promise<EnrolledAgent>;
   /** Joins the slot for `code` and runs the handshake; the user confirms the result. */
   pair(code: string): Promise<PendingPairing>;
+  /** The same, from the scanned `rc1:` QR text with the full 32-byte key (M2-04). */
+  pairScanned(text: string): Promise<PendingPairing>;
   /** The live client, once connected (M0-21 sends decisions through it). */
   readonly client: RealtimeClient | undefined;
   /**
@@ -84,6 +88,7 @@ export interface PhoneService {
 
 /** What the relay's pairing answers mean to the user (D6, M0-10). */
 function pairingFailure(error: unknown): PairingError {
+  if (error instanceof PairingError) return error;
   if (error instanceof RelayError) {
     if (error.reason === 'unknown_slot')
       return new PairingError('That code is not valid. Check it and try again.', { cause: error });
@@ -181,6 +186,51 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
     return attempt;
   }
 
+  /**
+   * Joins the slot and runs the handshake. Joining uses up the slot, so it only happens
+   * when the handshake can follow.
+   */
+  async function handshake(
+    secrets: () => Promise<PairingSecrets>,
+    expectedAgent?: string,
+  ): Promise<PendingPairing> {
+    const live = client;
+    if (live === undefined || realtime.getState().connection !== 'open') {
+      throw new PairingError('Not connected. Check your connection and try again.');
+    }
+    try {
+      const { psk, codeHash } = await secrets();
+      const { agentDeviceId } = await relay.joinPairing(codeHash);
+      if (
+        expectedAgent !== undefined &&
+        agentDeviceId.toLowerCase() !== expectedAgent.toLowerCase()
+      ) {
+        throw new PairingError(
+          'That QR code does not match the computer. Run `npx remotectl pair` again.',
+        );
+      }
+      const result = await live.pair(agentDeviceId, psk, options.phoneName);
+      const { keyPair } = await keyStore.identity();
+      const fingerprint = await pairingFingerprint(keyPair.publicKey, result.publicKey);
+      return {
+        agentDeviceId,
+        name: result.name,
+        fingerprint,
+        async confirm() {
+          await keyStore.saveMachine({
+            deviceId: agentDeviceId,
+            name: result.name,
+            publicKey: result.publicKey,
+            pairedAt: options.timer.now(),
+          });
+          await live.reloadMachines();
+        },
+      };
+    } catch (error) {
+      throw pairingFailure(error);
+    }
+  }
+
   return {
     realtime,
     now: () => options.timer.now(),
@@ -231,34 +281,21 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
     async pair(code) {
       const normalized = normalizePairingCode(code);
       if (normalized === undefined) throw new PairingError('Enter all 12 characters of the code.');
-      // Joining uses up the slot, so only join when the handshake can follow.
-      const live = client;
-      if (live === undefined || realtime.getState().connection !== 'open') {
-        throw new PairingError('Not connected. Check your connection and try again.');
+      return handshake(() => pairingSecrets(normalized));
+    },
+    async pairScanned(text) {
+      const scanned = parsePairingQr(text);
+      if (scanned === undefined) {
+        throw new PairingError(
+          'That is not a pairing QR code. Scan the one `remotectl pair` shows.',
+        );
       }
-      try {
-        const { psk, codeHash } = await pairingSecrets(normalized);
-        const { agentDeviceId } = await relay.joinPairing(codeHash);
-        const result = await live.pair(agentDeviceId, psk, options.phoneName);
-        const { keyPair } = await keyStore.identity();
-        const fingerprint = await pairingFingerprint(keyPair.publicKey, result.publicKey);
-        return {
-          agentDeviceId,
-          name: result.name,
-          fingerprint,
-          async confirm() {
-            await keyStore.saveMachine({
-              deviceId: agentDeviceId,
-              name: result.name,
-              publicKey: result.publicKey,
-              pairedAt: options.timer.now(),
-            });
-            await live.reloadMachines();
-          },
-        };
-      } catch (error) {
-        throw pairingFailure(error);
+      if (scanned.relayHost.toLowerCase() !== new URL(options.url).host.toLowerCase()) {
+        throw new PairingError(
+          `That QR code is for another server (${scanned.relayHost}). Check the computer's relay setting.`,
+        );
       }
+      return handshake(() => pskSecrets(scanned.psk), scanned.agentDeviceId);
     },
   };
 }

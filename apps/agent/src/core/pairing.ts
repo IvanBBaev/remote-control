@@ -25,6 +25,7 @@ import {
   generatePairingCode,
   pairingPsk,
   pairingQrText,
+  renderPairingQr,
   slotCodeHash,
 } from './pairing-code.js';
 import { createRelayClient } from './relay-client.js';
@@ -105,7 +106,7 @@ function handshakeBytes(envelope: Envelope): Uint8Array | undefined {
 
 /**
  * `remotectl pair` (D6, 02 §5.3): opens a pairing slot on the relay, prints the
- * 12-character code and the `rc1:` QR text, runs the XXpsk0 responder against the phone
+ * 12-character code and the `rc1:` QR (drawn and as text), runs the XXpsk0 responder against the phone
  * that joined the slot, shows the fingerprint for the user to compare, and on a yes
  * completes the slot and stores the phone in `peers.json`. A failed handshake counts on
  * the relay; the third one closes the slot and ends the pairing.
@@ -201,9 +202,11 @@ export async function runPairing(options: PairingOptions): Promise<PairingOutcom
     if (slotId === undefined || psk === undefined) {
       return { status: 'failed', reason: 'relay', detail: 'code_in_use' };
     }
+    const qrText = pairingQrText(options.relayHost, agentId!, psk);
+    for (const line of renderPairingQr(qrText)) print(line);
     print(`Pairing code: ${formatPairingCode(code)}`);
-    print(`QR text:      ${pairingQrText(options.relayHost, agentId!, psk)}`);
-    print('Enter the code on the phone within 5 minutes. Waiting for the phone...');
+    print(`QR text:      ${qrText}`);
+    print('Scan the QR or enter the code on the phone within 5 minutes. Waiting for the phone...');
 
     for (;;) {
       const first = await nextFrom(undefined);

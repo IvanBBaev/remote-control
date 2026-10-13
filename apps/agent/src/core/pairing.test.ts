@@ -24,7 +24,7 @@ import type { RelayApi } from '../ports/relay-api.js';
 import { createFakePhone } from '../testing/fake-phone.js';
 import { createFakeRelay, FAKE_RELAY_ORIGIN, type FakeRelay } from '../testing/fake-relay.js';
 import { manualTime, waitFor } from '../testing/manual-time.js';
-import { normalizePairingCode, pairingPsk, slotCodeHash } from './pairing-code.js';
+import { normalizePairingCode, pairingPsk, renderPairingQr, slotCodeHash } from './pairing-code.js';
 import { createPairingLock, PAIRING_LOCK_MS } from './pairing-lock.js';
 import { runPairing, type PairingOptions } from './pairing.js';
 import { createPendingStore } from './pending-store.js';
@@ -151,9 +151,11 @@ describe('runPairing (fake relay, fake phone)', () => {
     const code = await t.code();
     expect(code).toMatch(/^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/);
     const psk = await pairingPsk(normalizePairingCode(code)!);
-    expect(t.lines).toContain(
-      `QR text:      rc1:relay.example:${t.relay.agent.id}:${toBase64Url(psk)}`,
-    );
+    const qrText = `rc1:relay.example:${t.relay.agent.id}:${toBase64Url(psk)}`;
+    expect(t.lines).toContain(`QR text:      ${qrText}`);
+    const qr = renderPairingQr(qrText);
+    const qrStart = t.lines.indexOf(qr[0]!);
+    expect(t.lines.slice(qrStart, qrStart + qr.length)).toEqual(qr);
     const paired = await phone.pair(code);
     expect(paired).toMatchObject({ agentDeviceId: t.relay.agent.id, name: 'build-box' });
     expect(paired.agentPublicKey).toEqual(t.deviceKey.publicKey);

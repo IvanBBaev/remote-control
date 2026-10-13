@@ -9,6 +9,7 @@ import { createRelayApi } from './auth/relay-api.js';
 import { bootstrap } from './bootstrap.js';
 import { readBrowserEnvironment } from './capabilities.js';
 import { createIndexedDbKeyStore } from './pairing/key-store.js';
+import { cameraQrScanner } from './pairing/qr-scanner.js';
 import { createPhoneService, phoneNameFrom, relaySocketUrl } from './realtime/phone.js';
 import { bindLifecycle } from './realtime/realtime-client.js';
 
@@ -31,6 +32,8 @@ const phone = createPhoneService({
   isVisible: () => document.visibilityState === 'visible',
 });
 bindLifecycle(phone, { window, document });
+// `cameraQrScanner` also copes with `mediaDevices` missing outside a secure context.
+const qrScanner = cameraQrScanner(navigator.mediaDevices);
 
 void bootstrap({
   container,
@@ -38,6 +41,7 @@ void bootstrap({
   notifications: 'Notification' in window ? Notification : undefined,
   ...('serviceWorker' in navigator && { serviceWorker: navigator.serviceWorker }),
   badge: navigator,
+  ...(qrScanner && { qrScanner }),
   relay,
   phone,
   hint: storageSessionHint(() => window.localStorage),

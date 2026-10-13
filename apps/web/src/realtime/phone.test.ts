@@ -1,5 +1,5 @@
 import { pairingFingerprint } from '@remote-control/crypto';
-import { DECISION_TTL_SECONDS, decisionHash } from '@remote-control/protocol';
+import { DECISION_TTL_SECONDS, decisionHash, toBase64Url } from '@remote-control/protocol';
 import type { ApprovalRequest } from '@remote-control/protocol';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -186,6 +186,37 @@ describe('phone service', () => {
     await t.online();
     const failure = t.phone.pair(CODE);
     await expect(failure).rejects.toThrow(message);
+    await expect(failure).rejects.toBeInstanceOf(PairingError);
+  });
+
+  it('pairs from the scanned QR with the same handshake', async () => {
+    const t = await setup();
+    await t.online();
+    const { psk } = await pairingSecrets('0123456789AB');
+    const [pending] = await Promise.all([
+      t.phone.pairScanned(`rc1:RC.example.test:${AGENT.toUpperCase()}:${toBase64Url(psk)}`),
+      (async () => {
+        await settle();
+        return t.agent.acceptPairing(t.sockets.last, psk, 'Studio Mac');
+      })(),
+    ]);
+    expect(pending).toMatchObject({ agentDeviceId: AGENT, name: 'Studio Mac' });
+    expect(t.mocks.joinPairing).toHaveBeenCalledOnce();
+  });
+
+  it('refuses a QR that is not a pairing code or names another relay or computer', async () => {
+    const t = await setup();
+    await t.online();
+    const { psk } = await pairingSecrets('0123456789AB');
+    const key = toBase64Url(psk);
+    await expect(t.phone.pairScanned('https://example.com')).rejects.toThrow('not a pairing QR');
+    await expect(t.phone.pairScanned(`rc1:evil.example:${AGENT}:${key}`)).rejects.toThrow(
+      'another server (evil.example)',
+    );
+    expect(t.mocks.joinPairing).not.toHaveBeenCalled();
+    const other = '0d6f8a52-3c5e-4f0b-9a4e-333333333333';
+    const failure = t.phone.pairScanned(`rc1:rc.example.test:${other}:${key}`);
+    await expect(failure).rejects.toThrow('does not match the computer');
     await expect(failure).rejects.toBeInstanceOf(PairingError);
   });
 

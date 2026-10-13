@@ -321,3 +321,21 @@ label.confirm input {
 .countdown {
   font-variant-numeric: tabular-nums;
 }
+
+.qr-scan {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.qr-video {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 12px;
+  background: #000;
+}
+
+.qr-hint {
+  margin: 0;
+}

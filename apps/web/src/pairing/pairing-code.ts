@@ -42,7 +42,11 @@ export interface PairingSecrets {
 
 /** The phone's derivations from a normalized code (D6), the same as the agent's. */
 export async function pairingSecrets(code: string): Promise<PairingSecrets> {
-  const psk = await hkdfSha256(utf8(code), EMPTY, utf8('rc/v1/pair-psk'), PSK_LENGTH);
+  return pskSecrets(await hkdfSha256(utf8(code), EMPTY, utf8('rc/v1/pair-psk'), PSK_LENGTH));
+}
+
+/** The slot hash for a PSK the phone already has, e.g. from the scanned QR (M2-04). */
+export async function pskSecrets(psk: Uint8Array): Promise<PairingSecrets> {
   const codeHash = toBase64Url(await hkdfSha256(psk, EMPTY, utf8('rc/v1/pair-slot'), 32));
   return { psk, codeHash };
 }

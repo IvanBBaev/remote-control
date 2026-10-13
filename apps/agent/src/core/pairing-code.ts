@@ -1,5 +1,6 @@
 import { PSK_LENGTH, hkdfSha256, utf8 } from '@remote-control/crypto';
 import { toBase64Url } from '@remote-control/protocol';
+import { renderUnicodeCompact } from 'uqr';
 
 import type { Random } from '../ports/random.js';
 
@@ -56,7 +57,16 @@ export async function slotCodeHash(psk: Uint8Array): Promise<string> {
   return toBase64Url(await hkdfSha256(psk, EMPTY, SLOT_INFO, 32));
 }
 
-/** `rc1:<relay-host>:<agent_device_id>:<psk base64url>` (02 §5.3; QR scanning is M2). */
+/** `rc1:<relay-host>:<agent_device_id>:<psk base64url>` (02 §5.3, M2-04). */
 export function pairingQrText(relayHost: string, agentDeviceId: string, psk: Uint8Array): string {
   return `rc1:${relayHost}:${agentDeviceId}:${toBase64Url(psk)}`;
+}
+
+/**
+ * The QR as terminal lines, two modules per character row. Dark modules are drawn in the
+ * terminal's text colour, so a dark theme shows the code inverted; the phone's decoder
+ * reads both (zxing `tryInvert`).
+ */
+export function renderPairingQr(text: string): string[] {
+  return renderUnicodeCompact(text, { ecc: 'M', border: 2 }).split('\n');
 }

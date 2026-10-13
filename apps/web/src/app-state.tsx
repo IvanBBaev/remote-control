@@ -6,6 +6,7 @@ import { isSignedIn } from './auth/auth-store.js';
 import type { AuthState, AuthStore } from './auth/auth-store.js';
 import type { RelayApi } from './auth/relay-api.js';
 import type { NotificationPermissionState, OnboardingState } from './onboarding.js';
+import type { QrScanner } from './pairing/qr-scanner.js';
 import type { NavigationSource } from './push/navigation.js';
 import type { PhoneService } from './realtime/phone.js';
 import type { RealtimeState } from './realtime/realtime-store.js';
@@ -20,6 +21,8 @@ export interface PlatformActions {
   readonly setBadge?: (count: number) => void;
   /** Where the service worker posts `navigate` after a notification tap. */
   readonly serviceWorker?: NavigationSource;
+  /** Reads the pairing QR with the camera (M2-04); missing without a camera API. */
+  readonly qrScanner?: QrScanner;
 }
 
 export interface AppStateValue {

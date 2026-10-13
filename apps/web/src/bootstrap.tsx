@@ -11,6 +11,7 @@ import type { PlatformActions } from './app-state.js';
 import { probeCapabilities } from './capabilities.js';
 import type { BrowserEnvironment, WebCryptoCheck } from './capabilities.js';
 import type { NotificationPermissionState } from './onboarding.js';
+import type { QrScanner } from './pairing/qr-scanner.js';
 import type { NavigationSource } from './push/navigation.js';
 import { registerPush } from './push/push-subscription.js';
 import type { PushManagerLike } from './push/push-subscription.js';
@@ -44,13 +45,15 @@ export interface PlatformApis {
   readonly relay: Pick<RelayApi, 'pushKey' | 'savePushSubscription'>;
   readonly serviceWorker?: ServiceWorkerApi;
   readonly badge?: BadgeApi;
+  readonly qrScanner?: QrScanner;
 }
 
 export function createPlatformActions(
   api: NotificationApi | undefined,
-  { relay, serviceWorker, badge }: PlatformApis,
+  { relay, serviceWorker, badge, qrScanner }: PlatformApis,
 ): PlatformActions {
   return {
+    ...(qrScanner && { qrScanner }),
     requestNotificationPermission: async () => {
       if (api === undefined) return 'unsupported';
       return api.requestPermission();
@@ -73,6 +76,7 @@ export interface BootstrapOptions {
   readonly notifications: NotificationApi | undefined;
   readonly serviceWorker?: ServiceWorkerApi;
   readonly badge?: BadgeApi;
+  readonly qrScanner?: QrScanner;
   readonly relay: RelayApi;
   readonly phone: PhoneService;
   readonly hint?: SessionHint;
@@ -106,6 +110,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<Root> {
             relay,
             ...(options.serviceWorker && { serviceWorker: options.serviceWorker }),
             ...(options.badge && { badge: options.badge }),
+            ...(options.qrScanner && { qrScanner: options.qrScanner }),
           })}
           auth={auth}
           relay={relay}

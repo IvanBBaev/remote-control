@@ -1,7 +1,10 @@
 import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { PlatformActions } from '../app-state.js';
 import type { OnboardingState } from '../onboarding.js';
+import { QrScanError } from '../pairing/qr-scanner.js';
+import type { QrScanner } from '../pairing/qr-scanner.js';
 import { PairingError } from '../realtime/phone.js';
 import type { PendingPairing, PhoneService } from '../realtime/phone.js';
 import { createTestPhone } from '../realtime/test-phone.js';
@@ -18,10 +21,52 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function mount(state: OnboardingState = firstComputer, phone?: PhoneService) {
+async function mount(
+  state: OnboardingState = firstComputer,
+  phone?: PhoneService,
+  qrScanner?: QrScanner,
+) {
   const test = phone ?? createTestPhone().phone;
-  mounted = await renderApp('/onboarding/pair', state, { phone: test });
+  const platform: PlatformActions = {
+    requestNotificationPermission: () => Promise.resolve('granted'),
+    ...(qrScanner && { qrScanner }),
+  };
+  mounted = await renderApp('/onboarding/pair', state, { phone: test, platform });
   return { app: mounted, phone: test };
+}
+
+const QR_TEXT = 'rc1:rc.example.test:0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b:key';
+
+/** A scanner whose result the test settles; `signal` is the one the screen passed. */
+function fakeScanner() {
+  let outcome: { resolve: (text: string) => void; reject: (error: unknown) => void } | undefined;
+  let signal: AbortSignal | undefined;
+  const scan = vi.fn((_video: HTMLVideoElement, abort: AbortSignal) => {
+    signal = abort;
+    return new Promise<string>((resolve, reject) => {
+      outcome = { resolve, reject };
+    });
+  });
+  const scanner: QrScanner = { scan };
+  return {
+    scanner,
+    scan,
+    signal: () => signal,
+    async found(text: string) {
+      await act(async () => {
+        outcome?.resolve(text);
+        await Promise.resolve();
+      });
+      await settle();
+    },
+    async fail(error: unknown) {
+      await act(async () => {
+        outcome?.reject(error);
+        await Promise.resolve();
+      });
+      await settle();
+    },
+  };
 }
 
 function input(app: RenderedApp, id: string): HTMLInputElement {
@@ -187,5 +232,64 @@ describe('pair screen', () => {
     expect(app.container.textContent).toContain('You are offline — pairing needs a connection.');
     expect(app.button('Pair').disabled).toBe(true);
     expect(app.button('Get the login command').disabled).toBe(true);
+  });
+
+  it('offers no scan without a camera', async () => {
+    const { app } = await mount();
+    expect(app.container.querySelector('.qr-start')).toBeNull();
+    expect(app.container.textContent).toContain('Then enter the code it shows.');
+  });
+
+  it('pairs from the scanned QR code', async () => {
+    const test = createTestPhone().phone;
+    const pairScanned = vi.spyOn(test, 'pairScanned').mockResolvedValue(pending());
+    const camera = fakeScanner();
+    const { app } = await mount(firstComputer, test, camera.scanner);
+    expect(app.container.textContent).toContain('scan the QR code it shows, or enter the code');
+    await click(app.button('Scan the QR code'));
+    expect(camera.scan).toHaveBeenCalledOnce();
+    expect(app.container.querySelector('video.qr-video')).not.toBeNull();
+    await camera.found(QR_TEXT);
+    expect(pairScanned).toHaveBeenCalledWith(QR_TEXT);
+    expect(app.heading()).toBe('Check the code');
+    expect(app.container.querySelector('.fingerprint')?.textContent).toBe('ABCD-EFGH');
+  });
+
+  it('shows why a scanned code failed and lets the user scan again', async () => {
+    const test = createTestPhone().phone;
+    vi.spyOn(test, 'pairScanned').mockRejectedValue(
+      new PairingError('That is not a pairing QR code.'),
+    );
+    const camera = fakeScanner();
+    const { app } = await mount(firstComputer, test, camera.scanner);
+    await click(app.button('Scan the QR code'));
+    await camera.found('https://example.com');
+    expect(app.container.querySelector('[role="alert"]')?.textContent).toBe(
+      'That is not a pairing QR code.',
+    );
+    expect(app.container.querySelector('video')).toBeNull();
+    expect(app.button('Scan the QR code').disabled).toBe(false);
+  });
+
+  it.each([
+    [new QrScanError('denied'), 'Camera access is blocked'],
+    [new QrScanError('unavailable'), 'The camera could not start'],
+  ])('explains a camera that cannot start: %s', async (error, message) => {
+    const camera = fakeScanner();
+    const { app } = await mount(firstComputer, undefined, camera.scanner);
+    await click(app.button('Scan the QR code'));
+    await camera.fail(error);
+    expect(app.container.querySelector('[role="alert"]')?.textContent).toContain(message);
+  });
+
+  it('stops the camera when the user goes back to typing', async () => {
+    const camera = fakeScanner();
+    const { app } = await mount(firstComputer, undefined, camera.scanner);
+    await click(app.button('Scan the QR code'));
+    expect(camera.signal()?.aborted).toBe(false);
+    await click(app.button('Enter the code instead'));
+    expect(camera.signal()?.aborted).toBe(true);
+    expect(app.container.querySelector('video')).toBeNull();
+    expect(input(app, 'pair-code')).toBeDefined();
   });
 });
