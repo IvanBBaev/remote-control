@@ -183,8 +183,8 @@ Typed **short code is the primary input**, QR is optional (M2). The agent's `pai
 command prints both. The QR carries the full 32-byte token; the code is 12 characters
 Crockford base32 (60 bits) expanded to the PSK with HKDF. Protection for the shorter
 code: single-use 5-minute slot, the agent aborts the slot after 3 failed handshakes,
-fingerprints confirmed on both ends (`02 §5.3` step 3). PROPOSED: security sign-off at
-WP time that 60 bits + 3 attempts + 5 min is acceptable (02 rejected only a six-digit
+fingerprints confirmed on both ends (`02 §5.3` step 3). ACCEPTED (owner, 2026-10-13, M0-16):
+security sign-off that 60 bits + 3 attempts + 5 min is acceptable (02 rejected only a six-digit
 code without lockout). Reason for the order: iOS has no native `BarcodeDetector`; the
 ponyfill + camera flow is an S-sized add-on, not a dependency of M0. Sources:
 `02 §5.3`, `05 Rec-8`, `05 Q5`.
@@ -652,7 +652,7 @@ AC: golden tests with 04 §2.2 JSON produce the documented outputs; a test asser
 `allow` never carries `updatedInput` here.
 
 #### M0-16 — Agent: relay client, pairing, E2E sessions, decision intake
-Size L · Deps M0-15, M0-11, M0-12, M0-06 · Status todo · Sources 04 W9, 02 W6, 02 W8, 03 W10, D4, D7
+Size L · Deps M0-15, M0-11, M0-12, M0-06 · Status done be5c40b (QR carries the code-derived PSK, full 32-byte QR token deferred to M2; userId via `login --user-id` until the relay returns it) · Sources 04 W9, 02 W6, 02 W8, 03 W10, D4, D7
 Scope: outbound WSS client (hello with package + protocol version, jittered backoff
 1 → 60 s, never exits on disconnect); `remotectl pair` (opens a slot, prints the 12-char
 code and the `rc1:` QR text, XXpsk0 responder, fingerprint shown, 3-failure abort,
