@@ -1013,7 +1013,7 @@ AC: golden tests on 04 §2.11 shapes; journey J2/J3 variant with fake-codex; man
 `docs/verification/codex.md` with the real CLI.
 
 #### M2-02 — Diff viewer
-Size M · Deps M1-05 · Status todo · Sources 05 W11, 01 M2, D21
+Size M · Deps M1-05 · Status done 51e6a0f · Sources 05 W11, 01 M2, D21
 Scope: unified diffs from `PostToolUse` Edit/Write payloads (`diff` package `parsePatch`),
 hunk collapse, large-file cap, horizontal scroll, mono font; opt-in per request from the
 session screen (diff bodies are fetched from the agent on demand, not pushed).
