@@ -2,23 +2,6 @@ import { Link, useParams } from 'react-router';
 
 import { Notice, Screen } from './layout.js';
 
-/** Sign in with an existing passkey (returning user, new device or installed iOS app). */
-export function LoginScreen() {
-  return (
-    <Screen title="Sign in">
-      <p>Use the passkey you created for remote-control.</p>
-      <div className="actions">
-        <button type="button" className="primary" disabled>
-          Sign in with passkey
-        </button>
-        <Link className="button" to="/onboarding/passkey">
-          Create a new account
-        </Link>
-      </div>
-    </Screen>
-  );
-}
-
 /** Paired computers and their online state. */
 export function MachinesScreen() {
   return (

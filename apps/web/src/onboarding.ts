@@ -6,7 +6,7 @@ export type NotificationPermissionState = 'default' | 'granted' | 'denied' | 'un
 /** Everything the onboarding gate (05 Rec-3) decides on. */
 export interface OnboardingState {
   readonly capabilities: CapabilityReport;
-  /** The user holds a passkey for this relay and is signed in (M0-19 wires it). */
+  /** Signed in with a passkey and past the recovery-code step (`isSignedIn` in the auth store). */
   readonly signedIn: boolean;
   /**
    * The user chose "Continue in the browser" on the install screen. Honoured only when

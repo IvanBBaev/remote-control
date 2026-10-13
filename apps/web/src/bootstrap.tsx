@@ -4,10 +4,13 @@ import type { Root } from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
 
 import { AppStateProvider } from './app-state.js';
+import { createAuthStore } from './auth/auth-store.js';
+import type { SessionHint } from './auth/auth-store.js';
+import type { RelayApi } from './auth/relay-api.js';
 import type { PlatformActions } from './app-state.js';
 import { probeCapabilities } from './capabilities.js';
 import type { BrowserEnvironment, WebCryptoCheck } from './capabilities.js';
-import type { NotificationPermissionState, OnboardingState } from './onboarding.js';
+import type { NotificationPermissionState } from './onboarding.js';
 import { AppRoutes } from './routes.js';
 
 /** The slice of the `Notification` global the app uses. */
@@ -35,15 +38,22 @@ export interface BootstrapOptions {
   readonly container: Element;
   readonly env: BrowserEnvironment;
   readonly notifications: NotificationApi | undefined;
+  readonly relay: RelayApi;
+  readonly hint?: SessionHint;
   readonly checkWebCrypto?: WebCryptoCheck;
 }
 
-/** Probes the platform, then mounts the app. */
+/** Probes the platform and the session, then mounts the app. */
 export async function bootstrap(options: BootstrapOptions): Promise<Root> {
-  const capabilities = await probeCapabilities(options.env, options.checkWebCrypto);
-  const initialState: OnboardingState = {
+  const { relay } = options;
+  const auth = createAuthStore({ api: relay, ...(options.hint && { hint: options.hint }) });
+  const [capabilities] = await Promise.all([
+    probeCapabilities(options.env, options.checkWebCrypto),
+    // Known before the first render, so a signed-in user never sees the passkey step.
+    auth.getState().checkSession(),
+  ]);
+  const initialState = {
     capabilities,
-    signedIn: false,
     installSkipped: false,
     notificationPermission: readNotificationPermission(options.notifications),
     paired: false,
@@ -55,6 +65,8 @@ export async function bootstrap(options: BootstrapOptions): Promise<Root> {
         <AppStateProvider
           initialState={initialState}
           platform={createPlatformActions(options.notifications)}
+          auth={auth}
+          relay={relay}
         >
           <AppRoutes />
         </AppStateProvider>

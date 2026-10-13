@@ -6,8 +6,8 @@ import { useAppState } from './app-state.js';
 import { ONBOARDING_ROUTES, nextOnboardingStep, onboardingRedirect } from './onboarding.js';
 import type { OnboardingStep } from './onboarding.js';
 import { AppShell, BareShell } from './screens/layout.js';
+import { LoginScreen, PasskeyScreen } from './screens/auth.js';
 import {
-  LoginScreen,
   MachinesScreen,
   NewSessionScreen,
   NotFoundScreen,
@@ -19,7 +19,6 @@ import {
   InstallScreen,
   NotificationsScreen,
   PairScreen,
-  PasskeyScreen,
   UpdateBrowserScreen,
 } from './screens/onboarding.js';
 

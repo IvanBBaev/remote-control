@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { OnboardingState } from './onboarding.js';
 import { fixtures } from './test-fixtures.js';
 import { click, renderApp } from './test-render.js';
-import type { RenderedApp } from './test-render.js';
+import type { RenderAppOptions, RenderedApp } from './test-render.js';
 
 const { iosTab, androidTab, oldBrowser, iosInstalled } = fixtures.capabilities;
 const { onboarded } = fixtures;
@@ -13,9 +13,9 @@ let mounted: RenderedApp | undefined;
 async function mount(
   path: string,
   state: OnboardingState,
-  platform?: Parameters<typeof renderApp>[2],
+  platform?: RenderAppOptions['platform'],
 ) {
-  mounted = await renderApp(path, state, platform);
+  mounted = await renderApp(path, state, platform && { platform });
   return mounted;
 }
 afterEach(() => {

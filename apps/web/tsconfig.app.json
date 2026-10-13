@@ -12,5 +12,5 @@
   },
   "include": ["src"],
   "exclude": ["src/sw.ts", "src/sw.test.ts"],
-  "references": [{ "path": "../../packages/crypto" }]
+  "references": [{ "path": "../../packages/crypto" }, { "path": "../../packages/protocol" }]
 }

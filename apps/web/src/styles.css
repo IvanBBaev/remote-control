@@ -233,3 +233,32 @@ label {
 .tab-bar a.active {
   color: var(--color-accent);
 }
+
+.notice.error {
+  color: var(--color-danger);
+}
+
+pre.recovery-code {
+  padding: var(--space);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  font-family: var(--font-mono);
+  font-size: 1.25rem;
+  letter-spacing: 0.08em;
+  text-align: center;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: all;
+}
+
+label.confirm {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 400;
+}
+
+label.confirm input {
+  width: var(--touch);
+  flex: none;
+}

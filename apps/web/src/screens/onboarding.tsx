@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Link } from 'react-router';
 
 import { useAppState } from '../app-state.js';
 import type { MissingCapability } from '../capabilities.js';
@@ -25,26 +24,6 @@ export function UpdateBrowserScreen() {
       <p>
         Use Safari on iOS 17 or later, or Chrome 133 or later on Android, then open this page again.
       </p>
-    </Screen>
-  );
-}
-
-/** Step 1: create a passkey; it works in a plain browser tab. */
-export function PasskeyScreen() {
-  return (
-    <Screen title="Create your passkey">
-      <p>
-        Your passkey signs you in and approves every request. It stays on this phone and in your
-        password manager.
-      </p>
-      <div className="actions">
-        <button type="button" className="primary" disabled>
-          Create passkey
-        </button>
-        <Link className="button" to="/login">
-          I already have an account
-        </Link>
-      </div>
     </Screen>
   );
 }
