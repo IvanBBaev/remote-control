@@ -279,6 +279,35 @@ describe('push summaries (M1-06)', () => {
     });
   });
 
+  it.each<[string, PushSummary, Record<string, unknown>]>([
+    [
+      'a finished turn',
+      { v: 1, p: 'shop', l: 'Turn finished', k: 'finished' },
+      { body: 'Tap to open.', tag: RID, data: { url: '/' } },
+    ],
+    [
+      'a needs-input notice',
+      { v: 1, p: 'shop', l: 'Needs your input', s: 'Claude needs your input', k: 'input' },
+      { body: 'Claude needs your input', tag: RID, data: { url: '/' } },
+    ],
+  ])('shows %s as a turn notice that opens the app (M2-08)', async (_label, summary, options) => {
+    const { handlePush } = await import('./sw.js');
+    const { seal, open } = await pairing(21);
+    const showNotification = vi.fn(() => Promise.resolve());
+    await handlePush({ showNotification }, await pushWith(summary, RID, seal), () =>
+      Promise.resolve([open]),
+    );
+    expect(showNotification).toHaveBeenCalledWith(`shop: ${summary.l}`, options);
+  });
+
+  it('opens the app root for a turn notice on a push without a request id', async () => {
+    const { summaryNotification } = await import('./sw.js');
+    expect(summaryNotification(null, { v: 1, l: 'Turn finished', k: 'finished' })).toEqual({
+      title: 'Turn finished',
+      options: { body: 'Tap to open.', data: { url: '/' } },
+    });
+  });
+
   const GENERIC_ON_MAC = {
     body: 'Tap to review.',
     tag: RID,

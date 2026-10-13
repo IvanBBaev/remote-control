@@ -105,7 +105,9 @@ keys.
 device ids, message kind, session id, counter, byte length, timestamps, and the WebAuthn
 assertion beside a decision envelope. Push payloads are composed by the relay and carry
 metadata (envelope id, device, expiry) plus, when the agent sent one, a notification
-summary (project, tool label, one secret-masked line) that the agent sealed with a
+summary (project, tool label or turn-notice label, one secret-masked line; a finished
+turn carries no line, since the last assistant message may quote files) that the agent
+sealed with a
 per-pairing key the relay never holds; the relay copies those bytes and cannot read them
 (ADR 0001).
 

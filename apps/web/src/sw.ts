@@ -108,13 +108,26 @@ export async function openSummary(
 /**
  * The notification for a push whose summary opened: `"<project>: <tool>"` over the
  * summary line, opening the request the summary names. The tag is the request, so the
- * doorbell's push and the live request's push for it replace one another.
+ * doorbell's push and the live request's push for it replace one another. A turn notice
+ * opens the app root instead.
  */
 export function summaryNotification(text: string | null, summary: PushSummary): PushNotification {
   const { rid } = parsePending(text);
+  const title = summary.p === undefined ? summary.l : `${summary.p}: ${summary.l}`;
+  if (summary.k !== undefined) {
+    // A turn notice (M2-08): nothing is pending, so it opens the app, not a request.
+    return {
+      title,
+      options: {
+        body: summary.s ?? 'Tap to open.',
+        ...(rid !== undefined && { tag: rid }),
+        data: { url: '/' },
+      },
+    };
+  }
   const request = summary.r ?? rid;
   return {
-    title: summary.p === undefined ? summary.l : `${summary.p}: ${summary.l}`,
+    title,
     options: {
       body: summary.s ?? 'Tap to review.',
       ...(request !== undefined && { tag: request }),

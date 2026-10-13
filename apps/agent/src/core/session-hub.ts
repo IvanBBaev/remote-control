@@ -70,6 +70,11 @@ export interface SessionHub {
   envelope(envelope: Envelope): void;
   /** Feed of the pending store (`onEvent`). */
   pendingEvent(event: PendingEvent): void;
+  /**
+   * A turn notice (M2-08) with its encoded summary: pushed to every paired phone without
+   * a session. The caller checks that the user turned the notice on.
+   */
+  notice(summary: string): void;
   /** Resolves when all queued work (handshakes, decisions, sends) has run. */
   idle(): Promise<void>;
   /** Phones with an established session (tests, status). */
@@ -86,6 +91,9 @@ type Winner = {
   readonly phoneId: string;
   readonly outcome: 'allow' | 'deny' | 'terminal' | 'answer';
 };
+
+/** How long a turn notice's push stays deliverable (M2-08): stale news after that. */
+export const NOTICE_TTL_MS = 15 * 60_000;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -231,6 +239,17 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
       ...blob,
       payload: '',
     });
+  }
+
+  /**
+   * A turn notice: like the doorbell, but nothing is pending. Without a sealed summary the
+   * phone would show "Approval needed", so an unsealable notice is not sent at all.
+   */
+  async function sendNotice(to: string, summary: string, expiresAt: number): Promise<void> {
+    const id = uuidV7(clock, random);
+    const blob = await pushBlobFor(to, id, summary);
+    if (agentId === undefined || blob.pushBlob === undefined) return;
+    options.send({ ...baseHeader(to, 'request', expiresAt, undefined, id), ...blob, payload: '' });
   }
 
   /** Encrypts and sends one message, unless the session ended meanwhile. */
@@ -547,6 +566,14 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     pendingEvent(event) {
       if (event.type === 'added') added(event.request, event.duplicate);
       else removed(event.request, event);
+    },
+    notice(summary) {
+      if (agentId === undefined) return;
+      const expiresAt = clock.now() + NOTICE_TTL_MS;
+      for (const peer of peers) {
+        if (live.has(peer.deviceId)) continue;
+        enqueue(() => sendNotice(peer.deviceId, summary, expiresAt));
+      }
     },
     async idle() {
       while (work.size > 0) await Promise.all([...work]);

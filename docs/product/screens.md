@@ -68,6 +68,14 @@ screens through their accessible names, which are part of the screen contract:
   id. Otherwise it shows "Approval needed on <computer>" / "Tap to review." with the
   doorbell id as its tag; a malformed payload still shows a generic "Approval needed"
   (iOS revokes push for a push without a notification).
+- Turn notices (M2-08) are off by default and set per machine in the agent's config
+  (`notifications.turnFinished` for Claude Code's `Stop`, `notifications.needsInput` for
+  its `agent_needs_input` notification); iOS shows every push, so the agent filters, not
+  the phone. The agent pushes one only to phones without a live session, only when it
+  can seal the summary, deliverable for 15 minutes. It shows "<project>: Turn finished"
+  / "Tap to open." or "<project>: Needs your input" over Claude Code's masked message
+  line, and a tap opens the app root. A phone that cannot open the summary falls back to
+  the generic "Approval needed" notification.
 - A tap focuses an open app and posts `{ t: 'navigate', url }`, or opens `/requests/<id>`.
 - Within 10 s of launch or of returning to the foreground, a pending request opens by
   itself, once; the home-screen badge shows the number of pending requests.

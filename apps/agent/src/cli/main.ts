@@ -20,6 +20,7 @@ import { loadConfig, type LoadConfigResult } from '../core/load-config.js';
 import { createPairingLock, PAIRING_LOCK_FILE } from '../core/pairing-lock.js';
 import { runPairing, type PairingOutcome } from '../core/pairing.js';
 import { createPendingStore } from '../core/pending-store.js';
+import { noticeKind, noticeSummaryText } from '../core/push-summary.js';
 import { createRelayLink, type RelayLink } from '../core/relay-link.js';
 import { relayEndpoints } from '../core/relay-url.js';
 import { resolveRepository } from '../core/resolve-repository.js';
@@ -230,6 +231,8 @@ async function runCommand(
     onEvent: (input) => {
       log.logger.debug({ event: 'hook', hook: input.hook_event_name });
       if (isSessionStart(input)) void stats.record(projectName(input['cwd']), 'sessionsStarted');
+      const notice = noticeKind(input, config.notifications);
+      if (notice !== undefined) link?.hub.notice(noticeSummaryText(input, notice));
     },
     ...(config.agent.onExpire === 'deny'
       ? {

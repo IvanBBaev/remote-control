@@ -8,7 +8,14 @@ import { decodePushSummary, toBase64Url } from '@remote-control/protocol';
 import { describe, expect, it } from 'vitest';
 
 import type { PendingRequest } from './pending-store.js';
-import { createPushSealer, maskSecrets, pushSummaryLine, pushSummaryText } from './push-summary.js';
+import {
+  createPushSealer,
+  maskSecrets,
+  noticeKind,
+  noticeSummaryText,
+  pushSummaryLine,
+  pushSummaryText,
+} from './push-summary.js';
 
 const REQUEST = '0199a1b2-c3d4-4e5f-8a6b-7c8d9e0f1a2b';
 const ENVELOPE = '0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b';
@@ -122,6 +129,63 @@ describe('pushSummaryText', () => {
       payload: { tool_name: 'Bash' },
     } as unknown as PendingRequest;
     expect(pushSummaryText(request)).toBeUndefined();
+  });
+});
+
+describe('turn notices (M2-08)', () => {
+  const ON = { turnFinished: true, needsInput: true };
+  const OFF = { turnFinished: false, needsInput: false };
+  const stop = { hook_event_name: 'Stop', session_id: 's1', cwd: '/w/app' };
+  const needsInput = {
+    hook_event_name: 'Notification',
+    session_id: 's1',
+    cwd: '/w/app',
+    notification_type: 'agent_needs_input',
+    message: 'Claude needs your input\nmore',
+  };
+
+  it('AC: setting off → no notice; each setting covers only its own event', () => {
+    expect(noticeKind(stop, OFF)).toBeUndefined();
+    expect(noticeKind(needsInput, OFF)).toBeUndefined();
+    expect(noticeKind(stop, { turnFinished: false, needsInput: true })).toBeUndefined();
+    expect(noticeKind(needsInput, { turnFinished: true, needsInput: false })).toBeUndefined();
+    expect(noticeKind(stop, ON)).toBe('finished');
+    expect(noticeKind(needsInput, ON)).toBe('input');
+  });
+
+  it('skips a Stop hook re-entry, other notifications and other events', () => {
+    expect(noticeKind({ ...stop, stop_hook_active: true }, ON)).toBeUndefined();
+    expect(noticeKind({ ...needsInput, notification_type: 'idle_prompt' }, ON)).toBeUndefined();
+    expect(noticeKind({ ...needsInput, notification_type: undefined }, ON)).toBeUndefined();
+    expect(noticeKind({ ...stop, hook_event_name: 'SessionStart' }, ON)).toBeUndefined();
+  });
+
+  it('encodes a finished turn with project and label only — never the last message (D5)', () => {
+    const text = noticeSummaryText(
+      { ...stop, last_assistant_message: 'CANARY-last API_KEY=abc' },
+      'finished',
+    );
+    expect(text).not.toContain('CANARY');
+    expect(decodePushSummary(text)).toEqual({ v: 1, p: 'app', l: 'Turn finished', k: 'finished' });
+  });
+
+  it("encodes Claude Code's needs-input message: first line, masked", () => {
+    expect(decodePushSummary(noticeSummaryText(needsInput, 'input'))).toEqual({
+      v: 1,
+      p: 'app',
+      l: 'Needs your input',
+      s: 'Claude needs your input',
+      k: 'input',
+    });
+    const masked = { ...needsInput, message: 'Allow TOKEN=abc now', cwd: undefined };
+    expect(decodePushSummary(noticeSummaryText(masked, 'input'))).toEqual({
+      v: 1,
+      l: 'Needs your input',
+      s: 'Allow TOKEN=*** now',
+      k: 'input',
+    });
+    const blank = { ...needsInput, message: undefined };
+    expect(decodePushSummary(noticeSummaryText(blank, 'input'))).not.toHaveProperty('s');
   });
 });
 

@@ -25,6 +25,7 @@ describe('parseConfig', () => {
         repositories: [],
         hooks: { holdSeconds: DEFAULT_HOLD_SECONDS, port: 4327 },
         agent: { onExpire: 'handoff' },
+        notifications: { turnFinished: false, needsInput: false },
       },
     });
   });
@@ -41,13 +42,18 @@ describe('parseConfig', () => {
         repositories: ['/srv/repo'],
         hooks: { holdSeconds: 60 },
         agent: { onExpire: 'deny' },
+        notifications: { turnFinished: true },
         relay: { url: 'wss://relay.example.com' },
       }),
       nodePaths,
     );
     expect(result).toMatchObject({
       ok: true,
-      config: { hooks: { holdSeconds: 60, port: 4327 }, agent: { onExpire: 'deny' } },
+      config: {
+        hooks: { holdSeconds: 60, port: 4327 },
+        agent: { onExpire: 'deny' },
+        notifications: { turnFinished: true, needsInput: false },
+      },
     });
   });
 
@@ -73,6 +79,9 @@ describe('parseConfig', () => {
     expect(errorsOf('{"hooks":{"holdSeconds":1.5}}')).toHaveLength(1);
     expect(errorsOf('{"agent":{"onExpire":"allow"}}')).toEqual([
       expect.stringMatching(/^agent\.onExpire: /),
+    ]);
+    expect(errorsOf('{"notifications":{"needsInput":"yes"}}')).toEqual([
+      expect.stringMatching(/^notifications\.needsInput: /),
     ]);
   });
 

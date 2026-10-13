@@ -445,6 +445,7 @@ describe('runCli', () => {
         repositories: [],
         hooks: { holdSeconds: 1800 },
         agent: { onExpire: 'handoff' },
+        notifications: { turnFinished: false, needsInput: false },
       });
       expect((await stat(configPath)).mode & 0o777).toBe(0o600);
       expect((await stat(join(h.c.paths.data, 'device-key.json'))).mode & 0o777).toBe(0o600);

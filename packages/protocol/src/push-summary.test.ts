@@ -24,6 +24,12 @@ describe('PushSummary (D5)', () => {
     expect(decodePushSummary(text)).toEqual(summary);
   });
 
+  it('round-trips a turn notice (M2-08)', () => {
+    const notice: PushSummary = { v: 1, p: 'remote-control', l: 'Turn finished', k: 'finished' };
+    expect(decodePushSummary(encodePushSummary(notice))).toEqual(notice);
+    expect(decodePushSummary(JSON.stringify({ ...notice, k: 'stopped' }))).toBeUndefined();
+  });
+
   it('accepts the label alone', () => {
     expect(decodePushSummary(encodePushSummary({ v: 1, l: 'Read a file' }))).toEqual({
       v: 1,

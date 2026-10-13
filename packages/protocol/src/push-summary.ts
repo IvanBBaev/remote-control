@@ -25,6 +25,11 @@ export const PushSummary = z.strictObject({
   s: z.string().min(1).max(240).optional(),
   /** The request id, for the notification's deep link. */
   r: RequestId.optional(),
+  /**
+   * A turn notice instead of a pending request (M2-08): the turn finished, or the agent
+   * needs input in the terminal. Nothing to decide, so the notification opens the app.
+   */
+  k: z.enum(['finished', 'input']).optional(),
 });
 export type PushSummary = z.infer<typeof PushSummary>;
 

@@ -65,6 +65,15 @@ export const AgentConfig = z
       })
       .strict()
       .default({ onExpire: 'handoff' }),
+    notifications: z
+      .object({
+        /** Push when a turn finishes (`Stop`, M2-08). Off by default. */
+        turnFinished: z.boolean().default(false),
+        /** Push when the agent waits for input (`agent_needs_input`, M2-08). Off by default. */
+        needsInput: z.boolean().default(false),
+      })
+      .strict()
+      .default({ turnFinished: false, needsInput: false }),
     relay: z
       .object({
         /** Relay WebSocket origin; `wss:` (or `ws:` on loopback for development). */

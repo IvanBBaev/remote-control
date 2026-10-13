@@ -20,7 +20,9 @@ import { createFakePhone, type FakePhone } from '../testing/fake-phone.js';
 import { createFakeRelay } from '../testing/fake-relay.js';
 import { manualTime, waitFor } from '../testing/manual-time.js';
 import { createPendingStore, type RegisterInput } from './pending-store.js';
+import { noticeSummaryText } from './push-summary.js';
 import { createRelayLink, type RelayLink } from './relay-link.js';
+import { NOTICE_TTL_MS } from './session-hub.js';
 
 const HOOK_TIMEOUT_MS = 600_000;
 
@@ -471,6 +473,54 @@ describe('relay link (fake relay, fake phones)', () => {
       pushSummaryOf(online, t.deviceKey.publicKey, { ...live, id: doorbell!.id }),
     ).rejects.toThrow();
     await expect(pushSummaryOf(offline, t.deviceKey.publicKey, live)).rejects.toThrow();
+  });
+
+  describe('turn notices (M2-08)', () => {
+    const stop = { hook_event_name: 'Stop', session_id: 's1', cwd: '/home/me/shop' };
+
+    it('AC: pushes a sealed notice to every phone without a session; the body is ciphertext', async () => {
+      const t = await setup(['Pixel', 'iPhone', 'iPad']);
+      const [live, idle, offline] = t.phones as [FakePhone, FakePhone, FakePhone];
+      await t.open(live);
+      await idle.connect();
+      const before = t.relay.routed.length;
+      const now = t.time.clock.now();
+      t.link.hub.notice(noticeSummaryText(stop, 'finished'));
+      await t.link.hub.idle();
+      const notices = t.relay.routed.slice(before);
+      expect(notices.map((e) => e.to).sort()).toEqual([idle.device.id, offline.device.id].sort());
+      for (const notice of notices) {
+        expect(notice).toMatchObject({
+          cls: 'request',
+          payload: '',
+          expiresAt: now + NOTICE_TTL_MS,
+        });
+      }
+      await waitFor(() => idle.doorbells.length === 1);
+      expect(t.relay.undelivered).toEqual([expect.objectContaining({ to: offline.device.id })]);
+      const expected = { v: 1, p: 'shop', l: 'Turn finished', k: 'finished' };
+      expect(await pushSummaryOf(offline, t.deviceKey.publicKey, t.relay.undelivered[0]!)).toEqual(
+        expected,
+      );
+      const rung = notices.find((e) => e.to === idle.device.id)!;
+      expect(await pushSummaryOf(idle, t.deviceKey.publicKey, rung)).toEqual(expected);
+      for (const needle of ['shop', 'Turn finished', 'finished']) {
+        expect(plaintextLeaks(notices, needle)).toBe(false);
+      }
+    });
+
+    it('sends nothing to a phone it cannot seal for — no generic "Approval needed" push', async () => {
+      const t = await setup(['Pixel']);
+      const [phone] = t.phones as [FakePhone];
+      t.setPeers([{ ...phone.peer(1), publicKey: '!!' }]);
+      t.link.hub.relayReady(t.agentId, []);
+      await t.link.hub.idle();
+      const before = t.relay.routed.length;
+      t.link.hub.notice(noticeSummaryText(stop, 'finished'));
+      await t.link.hub.idle();
+      expect(t.relay.routed.length).toBe(before);
+      expect(t.relay.undelivered).toEqual([]);
+    });
   });
 
   it('sends a request without a push summary to a phone that is no longer paired', async () => {

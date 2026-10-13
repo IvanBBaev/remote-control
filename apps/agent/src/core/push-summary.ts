@@ -1,9 +1,15 @@
 import { deriveNotificationKey, sealPushSummary, type X25519KeyPair } from '@remote-control/crypto';
-import { encodePushSummary, toolInfo, type Random } from '@remote-control/protocol';
+import {
+  encodePushSummary,
+  toolInfo,
+  type PushSummary,
+  type Random,
+} from '@remote-control/protocol';
 
 import type { Peer } from '../ports/key-store.js';
 import { projectName, toolCall, toolLabel } from './approval-view.js';
 import { fromBase64Url } from './from-base64url.js';
+import type { HookInput } from './hook-dispatcher.js';
 import type { PendingRequest } from './pending-store.js';
 
 /** The summary line cap: a lock screen shows about two lines anyway. */
@@ -105,8 +111,12 @@ export function pushSummaryLine(
     default:
       line = undefined;
   }
-  if (line === undefined) return undefined;
-  const masked = maskSecrets(firstLine(line));
+  return line === undefined ? undefined : shortLine(line);
+}
+
+/** The first non-empty line, secrets masked, cut to {@link MAX_LINE_LENGTH} code points. */
+function shortLine(text: string): string {
+  const masked = maskSecrets(firstLine(text));
   const points = Array.from(masked);
   return points.length <= MAX_LINE_LENGTH
     ? masked
@@ -131,6 +141,55 @@ export function pushSummaryText(request: PendingRequest): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** A turn notice (M2-08): the turn finished, or the agent waits for input. */
+export type NoticeKind = NonNullable<PushSummary['k']>;
+
+/** Which turn notices the user turned on (`notifications` in the config, default off). */
+export interface NoticeSettings {
+  readonly turnFinished: boolean;
+  readonly needsInput: boolean;
+}
+
+const NOTICE_LABELS: Readonly<Record<NoticeKind, string>> = {
+  finished: 'Turn finished',
+  input: 'Needs your input',
+};
+
+/**
+ * The notice a feed hook event asks for, if the user turned it on (M2-08): `Stop` ends a
+ * turn (unless a stop hook keeps the agent going), `Notification` of type
+ * `agent_needs_input` waits for the terminal (04 §2.4). Anything else: none.
+ */
+export function noticeKind(input: HookInput, settings: NoticeSettings): NoticeKind | undefined {
+  if (input.hook_event_name === 'Stop') {
+    return settings.turnFinished && input['stop_hook_active'] !== true ? 'finished' : undefined;
+  }
+  if (
+    input.hook_event_name === 'Notification' &&
+    input['notification_type'] === 'agent_needs_input'
+  ) {
+    return settings.needsInput ? 'input' : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * The encoded summary of a turn notice: project and a fixed label. A needs-input notice
+ * adds Claude Code's own message line (masked); a finished turn adds nothing, because
+ * the last assistant message may quote file contents (D5).
+ */
+export function noticeSummaryText(input: HookInput, kind: NoticeKind): string {
+  const project = projectName(input['cwd']);
+  const message = kind === 'input' ? stringField(input, 'message') : undefined;
+  return encodePushSummary({
+    v: 1,
+    l: NOTICE_LABELS[kind],
+    ...(project === undefined ? {} : { p: project }),
+    ...(message === undefined ? {} : { s: shortLine(message) }),
+    k: kind,
+  });
 }
 
 /** Seals summaries per phone; the notification key is derived once per paired phone. */
