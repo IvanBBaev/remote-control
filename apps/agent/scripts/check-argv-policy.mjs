@@ -8,10 +8,13 @@
 //   2. a process module imports anything but `spawn`, builds argv other than as a literal
 //      array returned by an `...Argv` function, or enables a shell; a service-manager
 //      module must also name every executable as one of its allowed literal paths;
-//   3. any agent source contains a forbidden permission token, or `updatedInput` outside
-//      `claude-code/decide.ts` (D11).
+//   3. any agent source contains a forbidden permission token;
+//   4. `updatedInput` (D11, M1-01) appears outside `adapters/claude-code/decide.ts` — in
+//      code, comments or strings, test files included except that module's own test and
+//      this gate's test — or, inside it, other than as one object property named once,
+//      in a function that compares the tool name with `ASK_USER_QUESTION`.
 // Usage: node scripts/check-argv-policy.mjs [sourceDir]   (default: ../src)
-// Test files (`*.test.ts`) are not shipped and are not scanned.
+// Test files (`*.test.ts`) are not shipped: only rule 4 scans them.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,7 +36,11 @@ const PROCESS_MODULES = new Map([
   ['adapters/windows/schtasks.ts', { commands: new Set(['C:\\Windows\\System32\\schtasks.exe']) }],
 ]);
 const PROCESS_MODULE_LIST = [...PROCESS_MODULES.keys()].join(', ');
-const DECIDE_MODULE = 'claude-code/decide.ts';
+const DECIDE_MODULE = 'adapters/claude-code/decide.ts';
+const UPDATED_INPUT = 'updatedInput';
+/** Test files that may name `updatedInput`: the decide module's test and this gate's. */
+const UPDATED_INPUT_TESTS = new Set(['adapters/claude-code/decide.test.ts', 'argv-policy.test.ts']);
+const ASK_USER_QUESTION = new Set(['ASK_USER_QUESTION', "'AskUserQuestion'"]);
 const CHILD_PROCESS = new Set(['child_process', 'node:child_process']);
 const FORBIDDEN_TOKENS = [
   '--dangerously-skip-permissions',
@@ -47,7 +54,11 @@ function listSources(dir) {
   return readdirSync(dir, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())
     .map((entry) => join(entry.parentPath, entry.name))
-    .filter((file) => /\.(?:[cm]?[jt]s)$/.test(file) && !/\.test\.[cm]?[jt]s$/.test(file));
+    .filter((file) => /\.(?:[cm]?[jt]s)$/.test(file));
+}
+
+function isTestFile(file) {
+  return /\.test\.[cm]?[jt]s$/.test(file);
 }
 
 function moduleSpecifiers(source) {
@@ -167,6 +178,67 @@ function checkSpawnModule(source, report, rule) {
   return argvFunctions;
 }
 
+/** Rule 4 outside the decide module: `updatedInput` nowhere, not even in a comment. */
+function checkUpdatedInputText(text, report) {
+  text.split('\n').forEach((content, index) => {
+    if (content.includes(UPDATED_INPUT))
+      report(index + 1, `${UPDATED_INPUT} outside ${DECIDE_MODULE}`);
+  });
+}
+
+/** Whether `node` is an `===`/`!==` comparison with `ASK_USER_QUESTION`. */
+function comparesAskUserQuestion(source, node) {
+  if (!ts.isBinaryExpression(node)) return false;
+  const operator = node.operatorToken.kind;
+  if (
+    operator !== ts.SyntaxKind.EqualsEqualsEqualsToken &&
+    operator !== ts.SyntaxKind.ExclamationEqualsEqualsToken
+  ) {
+    return false;
+  }
+  return [node.left, node.right].some((side) => ASK_USER_QUESTION.has(side.getText(source)));
+}
+
+function containsNode(root, predicate) {
+  let found = false;
+  const visit = (node) => {
+    if (found) return;
+    if (predicate(node)) found = true;
+    else ts.forEachChild(node, visit);
+  };
+  visit(root);
+  return found;
+}
+
+/**
+ * Rule 4 inside the decide module: `updatedInput` only as one object property, built in a
+ * function that checks the tool is `AskUserQuestion` (comments are free to name it).
+ */
+function checkDecideModule(source, report) {
+  const uses = [];
+  const visit = (node) => {
+    if ((ts.isIdentifier(node) || ts.isStringLiteralLike(node)) && node.text === UPDATED_INPUT) {
+      uses.push(node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  if (uses.length > 1) {
+    report(line(source, uses[1]), `${UPDATED_INPUT} more than once in ${DECIDE_MODULE}`);
+  }
+  for (const use of uses) {
+    if (!ts.isPropertyAssignment(use.parent) || use.parent.name !== use) {
+      report(line(source, use), `${UPDATED_INPUT} other than as an object property`);
+      continue;
+    }
+    let scope = use.parent;
+    while (scope && !ts.isFunctionLike(scope)) scope = scope.parent;
+    if (!scope || !containsNode(scope, (node) => comparesAskUserQuestion(source, node))) {
+      report(line(source, use), `${UPDATED_INPUT} without an ASK_USER_QUESTION check`);
+    }
+  }
+}
+
 /** Returns the list of violations (`file:line: message`) for a source directory. */
 export function checkArgvPolicy(sourceDir) {
   const violations = [];
@@ -174,6 +246,10 @@ export function checkArgvPolicy(sourceDir) {
     const rel = relative(sourceDir, file).split(sep).join('/');
     const text = readFileSync(file, 'utf8');
     const report = (lineNo, message) => violations.push(`${rel}:${lineNo}: ${message}`);
+    if (isTestFile(file)) {
+      if (!UPDATED_INPUT_TESTS.has(rel)) checkUpdatedInputText(text, report);
+      continue;
+    }
     const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
     const processRule = PROCESS_MODULES.get(rel);
     for (const { name, node } of moduleSpecifiers(source)) {
@@ -183,13 +259,11 @@ export function checkArgvPolicy(sourceDir) {
       }
     }
     if (processRule !== undefined) checkSpawnModule(source, report, processRule);
+    if (rel === DECIDE_MODULE) checkDecideModule(source, report);
+    else checkUpdatedInputText(text, report);
     text.split('\n').forEach((content, index) => {
       for (const token of FORBIDDEN_TOKENS) {
         if (content.includes(token)) report(index + 1, `forbidden token ${token}`);
-      }
-      const isDecide = rel === DECIDE_MODULE || rel.endsWith(`/${DECIDE_MODULE}`);
-      if (content.includes('updatedInput') && !isDecide) {
-        report(index + 1, `updatedInput outside ${DECIDE_MODULE}`);
       }
     });
   }

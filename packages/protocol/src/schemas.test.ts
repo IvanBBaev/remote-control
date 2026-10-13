@@ -101,7 +101,14 @@ describe('01 W2 field lists', () => {
     expect(keys(ApprovalRequest)).toEqual(
       expect.arrayContaining(['id', 'requestHash', 'toolLabel', 'content', 'expiresAt']),
     );
-    expect(keys(Question)).toEqual(['expiresAt', 'id', 'questions', 'requestHash', 'sessionId']);
+    expect(keys(Question)).toEqual([
+      'expiresAt',
+      'id',
+      'project',
+      'questions',
+      'requestHash',
+      'sessionId',
+    ]);
     expect(keys(Decision)).toEqual(['behavior', 'reason', 'requestId', 'scope']);
     expect(keys(Instruction)).toEqual(['sessionId', 'text']);
     expect(keys(StartSession)).toEqual(['machineId', 'prompt', 'repositoryId']);

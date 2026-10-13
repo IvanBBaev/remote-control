@@ -2,6 +2,7 @@ import type {
   ApprovalRequest,
   DecisionResultMessage,
   Machine,
+  Question,
   RelayErrorCode,
   Session,
 } from '@remote-control/protocol';
@@ -32,18 +33,30 @@ export interface MachineView {
 
 export type RequestStatus = 'pending' | 'resolved' | 'expired';
 
-export interface RequestView {
+interface RequestViewBase {
   readonly machineId: string;
-  readonly request: ApprovalRequest;
   /** Local-clock deadline: arrival time plus the agent's `ttlMs` (D10). */
   readonly deadline: number;
   readonly status: RequestStatus;
-  readonly outcome?: 'allow' | 'deny' | 'terminal' | 'withdrawn';
+  readonly outcome?: 'allow' | 'deny' | 'answer' | 'terminal' | 'withdrawn';
   /** The agent's answer to this phone's decision, once it arrived. */
   readonly result?: DecisionResultMessage;
   /** The relay refused the decision's envelope (e.g. `unverified`, `expired`). */
   readonly relayError?: RelayErrorCode;
 }
+
+/** A pending approval (`kind` absent) or an `AskUserQuestion` to answer (M1-01). */
+export type ApprovalView = RequestViewBase & {
+  readonly kind?: 'approval';
+  readonly request: ApprovalRequest;
+};
+export type QuestionView = RequestViewBase & {
+  readonly kind: 'question';
+  readonly request: Question;
+};
+export type RequestView = ApprovalView | QuestionView;
+/** What arrives later for a request: its status, outcome and decision result. */
+export type RequestUpdate = Partial<Omit<RequestViewBase, 'machineId'>>;
 
 export interface RealtimeState {
   readonly connection: SocketStatus;

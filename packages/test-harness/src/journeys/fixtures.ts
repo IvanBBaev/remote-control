@@ -1,5 +1,5 @@
-import { permissionRequestPayload } from '@remote-control/fake-claude-code';
-import type { RequestMessage } from '@remote-control/protocol';
+import { permissionRequestPayload, preToolUsePayload } from '@remote-control/fake-claude-code';
+import type { QuestionMessage, RequestMessage } from '@remote-control/protocol';
 
 import type { Canaries } from '../canaries.js';
 import { eventually } from '../eventually.js';
@@ -36,6 +36,52 @@ export function permissionRequest(canaries: Canaries): Record<string, unknown> &
       },
     },
   );
+}
+
+/**
+ * A `PreToolUse` hook input for `AskUserQuestion` (04 §2.3, M1-01): two questions, one
+ * single- and one multi-select, whose texts, headers, option labels and descriptions are
+ * canaries, so the phone must see them and the relay never.
+ */
+export function questionRequest(canaries: Canaries): Record<string, unknown> & {
+  hook_event_name: string;
+} {
+  return preToolUsePayload(
+    {
+      sessionId: JOURNEY_SESSION_ID,
+      transcriptPath: `/home/synthetic/.claude/projects/${canaries.mint('PATH')}/session.jsonl`,
+      cwd: `/home/synthetic/${canaries.mint('CWD')}`,
+      permissionMode: 'default',
+    },
+    {
+      toolName: 'AskUserQuestion',
+      toolUseId: 'toolu_01HarnessQuestion',
+      toolInput: {
+        questions: [
+          {
+            question: `Which framework for ${canaries.mint('QUESTION')}?`,
+            header: canaries.mint('HEADER'),
+            options: [
+              { label: canaries.mint('OPTION'), description: canaries.mint('OPTIONDESC') },
+              { label: canaries.mint('OPTION') },
+            ],
+            multiSelect: false,
+          },
+          {
+            question: `Which checks for ${canaries.mint('QUESTION')}?`,
+            options: [{ label: canaries.mint('OPTION') }, { label: canaries.mint('OPTION') }],
+            multiSelect: true,
+          },
+        ],
+      },
+    },
+  );
+}
+
+/** Waits until the phone holds `count` decrypted `question` messages; returns the last. */
+export async function nextQuestion(phone: HeadlessPhone, count = 1): Promise<QuestionMessage> {
+  await eventually(() => phone.of('question').length >= count, 'phone: no question message');
+  return phone.of('question')[count - 1]!;
 }
 
 /** Waits until the phone holds `count` decrypted `request` messages; returns the last. */

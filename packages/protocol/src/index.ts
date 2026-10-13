@@ -34,7 +34,22 @@ export { Machine } from './domain/machine.js';
 export { Repository } from './domain/repository.js';
 export { ChangedFile, Session } from './domain/session.js';
 export { ApprovalRequest } from './domain/approval-request.js';
-export { Question, QuestionOption } from './domain/question.js';
+export {
+  MAX_OPTIONS,
+  MAX_QUESTIONS,
+  MIN_OPTIONS,
+  Question,
+  QuestionItem,
+  QuestionOption,
+} from './domain/question.js';
+export {
+  AnswerPayload,
+  MAX_OTHER_LENGTH,
+  MAX_RESPONSE_LENGTH,
+  QuestionAnswer,
+  encodeAnswerPayload,
+  parseAnswerPayload,
+} from './answer-payload.js';
 export { Decision } from './domain/decision.js';
 export { Instruction } from './domain/instruction.js';
 export { StartSession } from './domain/start-session.js';
@@ -80,6 +95,7 @@ export {
   HANDSHAKE_TAG,
   PairingHello,
   PhoneMessage,
+  QuestionMessage,
   RequestMessage,
   ResolvedMessage,
   SnapshotMessage,

@@ -90,12 +90,70 @@ describe('argv policy gate', () => {
     await expectViolation(/forbidden token --permission-mode/);
   });
 
-  it('fails on updatedInput outside decide.ts and allows it there', async () => {
-    await plant('core/planted.ts', 'export const x = { updatedInput: {} };\n');
-    await expectViolation(/updatedInput outside claude-code\/decide\.ts/);
-    await rm(join(dir, 'core/planted.ts'));
-    await plant('adapters/claude-code/decide.ts', 'export const x = { updatedInput: {} };\n');
-    expect((await gate(dir)).code).toBe(0);
+  describe('updatedInput (D11, M1-01)', () => {
+    const DECIDE = join('adapters', 'claude-code', 'decide.ts');
+    const GUARDED =
+      "import { ASK_USER_QUESTION } from '../../core/hook-dispatcher.js';\n" +
+      'export function answer(tool: string) {\n' +
+      '  if (tool !== ASK_USER_QUESTION) return {};\n' +
+      '  return { updatedInput: {} };\n' +
+      '}\n';
+
+    it('fails on updatedInput in any other module, even in a comment', async () => {
+      await plant('core/planted.ts', '// updatedInput\nexport const x = 1;\n');
+      await expectViolation(
+        /core\/planted\.ts:1: updatedInput outside adapters\/claude-code\/decide\.ts/,
+      );
+    });
+
+    it('fails on updatedInput in a test file other than decide.test.ts', async () => {
+      await plant('core/planted.test.ts', 'export const x = { updatedInput: {} };\n');
+      await expectViolation(/core\/planted\.test\.ts:1: updatedInput outside/);
+    });
+
+    it('fails on a decide.ts at another path', async () => {
+      await plant('core/decide.ts', GUARDED);
+      await expectViolation(/core\/decide\.ts:4: updatedInput outside/);
+    });
+
+    it.each([
+      ['an ASK_USER_QUESTION check', GUARDED],
+      ["an 'AskUserQuestion' check", GUARDED.replace('ASK_USER_QUESTION)', "'AskUserQuestion')")],
+    ])('allows one updatedInput property in decide.ts behind %s', async (_name, text) => {
+      await plant(DECIDE, text);
+      expect((await gate(dir)).code).toBe(0);
+    });
+
+    it.each([
+      [
+        'a check for another tool',
+        GUARDED.replace('tool !== ASK_USER_QUESTION', "tool !== 'Bash'"),
+        /decide\.ts:4: updatedInput without an ASK_USER_QUESTION check/,
+      ],
+      [
+        'no function at all',
+        'export const x = { updatedInput: {} };\n',
+        /decide\.ts:1: updatedInput without an ASK_USER_QUESTION check/,
+      ],
+      [
+        'a second property',
+        `${GUARDED}export const y = { updatedInput: {} };\n`,
+        /decide\.ts:6: updatedInput more than once/,
+      ],
+      [
+        'a string',
+        GUARDED.replace('return { updatedInput: {} }', "return 'updatedInput'"),
+        /decide\.ts:4: updatedInput other than as an object property/,
+      ],
+      [
+        'a property read',
+        GUARDED.replace('{ updatedInput: {} }', '{ x: tool.updatedInput }'),
+        /decide\.ts:4: updatedInput other than as an object property/,
+      ],
+    ])('fails on updatedInput in decide.ts as %s', async (_name, text, pattern) => {
+      await plant(DECIDE, text);
+      await expectViolation(pattern);
+    });
   });
 
   it.each([

@@ -19,6 +19,28 @@ export interface PermissionEvent {
   readonly alwaysSupported: boolean;
 }
 
+/** One option of an `AskUserQuestion` question, as Claude Code sends it. */
+export interface QuestionEventOption {
+  readonly label: string;
+  readonly description?: string;
+}
+
+/** One `AskUserQuestion` question in vendor-neutral form (04 §2.3). */
+export interface QuestionEventItem {
+  readonly question: string;
+  readonly header?: string;
+  readonly options: readonly QuestionEventOption[];
+  readonly multiSelect: boolean;
+}
+
+/** The coding agent asks the user 1–4 multiple-choice questions (M1-01, 04 §2.3). */
+export interface QuestionEvent {
+  readonly kind: 'question';
+  readonly sessionId: string;
+  readonly cwd: string;
+  readonly questions: readonly QuestionEventItem[];
+}
+
 /** A session starting or ending; seeds the session registry (04 §5.3). */
 export interface SessionEvent {
   readonly kind: 'session';
@@ -31,16 +53,28 @@ export interface SessionEvent {
 }
 
 /** A hook event in vendor-neutral form (04 §5.7); feed kinds arrive with 04 W8. */
-export type HookEvent = PermissionEvent | SessionEvent;
+export type HookEvent = PermissionEvent | QuestionEvent | SessionEvent;
+
+/**
+ * The answers to a question request, already checked against the pending questions:
+ * question text → the picked labels and/or the "Other" text, joined with ", " (04 §2.3).
+ */
+export interface QuestionAnswers {
+  readonly answers: Readonly<Record<string, string>>;
+  /** Optional free text for the whole question set. */
+  readonly response?: string;
+}
 
 /**
  * The phone's decision as the adapter sees it. `handoff` = no decision: the vendor's own
- * prompt appears in the terminal (D10).
+ * prompt appears in the terminal (D10). `answer` answers a question request (M1-01).
  */
 export interface AdapterDecision {
-  readonly behavior: 'allow' | 'deny' | 'handoff';
+  readonly behavior: 'allow' | 'deny' | 'handoff' | 'answer';
   /** For `deny`: the reason shown to the coding agent. */
   readonly message?: string;
+  /** For `answer`: the checked answers. */
+  readonly answer?: QuestionAnswers;
 }
 
 /**

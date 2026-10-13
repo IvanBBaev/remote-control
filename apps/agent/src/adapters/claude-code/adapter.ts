@@ -1,16 +1,22 @@
 import type { Capabilities } from '@remote-control/protocol';
 
-import type { AgentAdapter, HookEvent } from '../../ports/agent-adapter.js';
+import { ASK_USER_QUESTION } from '../../core/hook-dispatcher.js';
+import type {
+  AgentAdapter,
+  HookEvent,
+  QuestionEventItem,
+  QuestionEventOption,
+} from '../../ports/agent-adapter.js';
 import { decideClaudeCode } from './decide.js';
 
 /**
- * Claude Code in M0: approve or deny `PermissionRequest`. "Always" (M1-02), questions
- * (M1-01), follow-up and starting sessions turn on with their work packages.
+ * Claude Code: approve or deny `PermissionRequest`, answer `AskUserQuestion` (M1-01).
+ * "Always" (M1-02), follow-up and starting sessions turn on with their work packages.
  */
 export const CLAUDE_CODE_CAPABILITIES: Capabilities = Object.freeze({
   agent: 'claude-code',
   always: false,
-  questions: false,
+  questions: true,
   instructions: false,
   startSession: false,
 });
@@ -23,6 +29,36 @@ function isObject(value: unknown): value is Json {
 
 function text(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
+}
+
+function option(raw: unknown): QuestionEventOption | undefined {
+  if (!isObject(raw)) return undefined;
+  const label = text(raw['label']);
+  if (label === undefined) return undefined;
+  const description = text(raw['description']);
+  return description === undefined ? { label } : { label, description };
+}
+
+function questionItem(raw: unknown): QuestionEventItem | undefined {
+  if (!isObject(raw) || !Array.isArray(raw['options'])) return undefined;
+  const question = text(raw['question']);
+  const options = (raw['options'] as unknown[]).map(option);
+  if (question === undefined || options.some((entry) => entry === undefined)) return undefined;
+  const header = text(raw['header']);
+  return {
+    question,
+    ...(header === undefined ? {} : { header }),
+    options: options as QuestionEventOption[],
+    multiSelect: raw['multiSelect'] === true,
+  };
+}
+
+/** The `AskUserQuestion` input as questions; `undefined` when any part is malformed. */
+function questionItems(toolInput: unknown): QuestionEventItem[] | undefined {
+  if (!isObject(toolInput) || !Array.isArray(toolInput['questions'])) return undefined;
+  const items = (toolInput['questions'] as unknown[]).map(questionItem);
+  if (items.length === 0 || items.some((item) => item === undefined)) return undefined;
+  return items as QuestionEventItem[];
 }
 
 /** Maps a Claude Code hook payload (04 §2.1–2.2); `null` for anything malformed or unmapped. */
@@ -46,6 +82,11 @@ export function claudeCodeHookEvent(raw: unknown): HookEvent | null {
         suggestions,
         alwaysSupported: suggestions.length > 0,
       };
+    }
+    case 'PreToolUse': {
+      if (raw['tool_name'] !== ASK_USER_QUESTION) return null;
+      const questions = questionItems(raw['tool_input']);
+      return questions === undefined ? null : { kind: 'question', sessionId, cwd, questions };
     }
     case 'SessionStart':
     case 'SessionEnd': {

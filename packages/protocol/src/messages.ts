@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { CanonicalDecision } from './canonical-decision.js';
 import { ApprovalRequest } from './domain/approval-request.js';
 import { Machine } from './domain/machine.js';
+import { Question } from './domain/question.js';
 import { Session } from './domain/session.js';
 import { RequestId } from './ids.js';
 
@@ -20,6 +21,14 @@ export const RequestMessage = z.strictObject({
 });
 export type RequestMessage = z.infer<typeof RequestMessage>;
 
+/** A pending `AskUserQuestion` for the phone (M1-01); `ttlMs` as for `request`. */
+export const QuestionMessage = z.strictObject({
+  t: z.literal('question'),
+  question: Question,
+  ttlMs: z.int().nonnegative(),
+});
+export type QuestionMessage = z.infer<typeof QuestionMessage>;
+
 /**
  * Sent after every handshake (D4): the machine, its sessions, and the ids of every
  * request still pending, so the phone can drop any request it shows that is gone.
@@ -33,13 +42,13 @@ export const SnapshotMessage = z.strictObject({
 export type SnapshotMessage = z.infer<typeof SnapshotMessage>;
 
 /**
- * A request ended (D25): a phone decided it (`allow`, `deny`, `terminal`), or it left
+ * A request ended (D25): a phone decided it (`allow`, `deny`, `terminal`, `answer`), or it left
  * the agent some other way (`withdrawn`: answered in the terminal, replaced, shutdown).
  */
 export const ResolvedMessage = z.strictObject({
   t: z.literal('resolved'),
   requestId: RequestId,
-  outcome: z.enum(['allow', 'deny', 'terminal', 'withdrawn']),
+  outcome: z.enum(['allow', 'deny', 'terminal', 'answer', 'withdrawn']),
 });
 export type ResolvedMessage = z.infer<typeof ResolvedMessage>;
 
@@ -50,17 +59,23 @@ export const ExpiredMessage = z.strictObject({
 });
 export type ExpiredMessage = z.infer<typeof ExpiredMessage>;
 
-/** Why the agent refused a decision; the D7 checks in order, then the M0 limits. */
+/**
+ * Why the agent refused a decision; the D7 checks in order. `wrong_kind`: the kind does
+ * not fit the request (an `answer` for a permission, an `allow` for a question);
+ * `invalid_answer`: the answer payload does not fit the pending questions (M1-01).
+ */
 export const DecisionRejection = z.enum([
   'no_session',
   'unsupported',
   'unknown_request',
   'already_resolved',
+  'wrong_kind',
   'hash_mismatch',
   'expired',
   'too_late',
   'wrong_peer',
   'unverified',
+  'invalid_answer',
 ]);
 export type DecisionRejection = z.infer<typeof DecisionRejection>;
 
@@ -83,6 +98,7 @@ export type DecisionResultMessage = z.infer<typeof DecisionResultMessage>;
 /** Everything the agent sends to a phone inside a session. */
 export const AgentMessage = z.union([
   RequestMessage,
+  QuestionMessage,
   SnapshotMessage,
   ResolvedMessage,
   ExpiredMessage,

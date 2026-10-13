@@ -2,7 +2,12 @@ import type { ApprovalRequest } from '@remote-control/protocol';
 import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { MachineView, RequestView } from '../realtime/realtime-store.js';
+import type {
+  ApprovalView,
+  MachineView,
+  RequestUpdate,
+  RequestView,
+} from '../realtime/realtime-store.js';
 import { createTestPhone } from '../realtime/test-phone.js';
 import type { TestPhone } from '../realtime/test-phone.js';
 import { fixtures } from '../test-fixtures.js';
@@ -46,7 +51,7 @@ const machine: MachineView = {
   sessions: [],
 };
 
-function view(test: TestPhone, id: string, change: Partial<RequestView> = {}): RequestView {
+function view(test: TestPhone, id: string, change: Partial<ApprovalView> = {}): ApprovalView {
   return {
     machineId: AGENT,
     request: approval(id),
@@ -70,7 +75,7 @@ async function open(path: string, requests: (test: TestPhone) => RequestView[]) 
 }
 
 const text = () => mounted?.container.textContent ?? '';
-const set = (test: TestPhone, change: Partial<RequestView>, id = ID) => {
+const set = (test: TestPhone, change: RequestUpdate, id = ID) => {
   act(() => {
     const current = test.phone.realtime.getState().requests[id]!;
     test.phone.realtime.setState({
@@ -233,7 +238,7 @@ describe('approval card', () => {
     expect(() => mounted!.button('Allow')).toThrow();
   });
 
-  it.each<[string, Partial<RequestView>, string]>([
+  it.each<[string, RequestUpdate, string]>([
     ['allowed', { status: 'resolved', outcome: 'allow' }, 'Allowed.'],
     ['denied', { status: 'resolved', outcome: 'deny' }, 'Denied.'],
     ['answered in the terminal', { status: 'resolved', outcome: 'terminal' }, 'terminal.'],

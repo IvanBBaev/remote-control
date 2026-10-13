@@ -9,6 +9,7 @@ import {
 import {
   decisionHash,
   HANDSHAKE_TAG,
+  parseAnswerPayload,
   PhoneMessage,
   VERSION_TABLE,
   type AgentMessage,
@@ -20,15 +21,16 @@ import {
   type Session,
 } from '@remote-control/protocol';
 
-import type { AdapterDecision } from '../ports/agent-adapter.js';
+import type { AdapterDecision, QuestionAnswers } from '../ports/agent-adapter.js';
 import type { Clock } from '../ports/clock.js';
 import type { Peer } from '../ports/key-store.js';
 import type { Random } from '../ports/random.js';
 import { approvalView, pendingRequestHash } from './approval-view.js';
-import { checkDecision, M0_DECISION_KINDS } from './decision-check.js';
+import { checkDecision, DECISION_KINDS } from './decision-check.js';
 import { fromBase64Url } from './from-base64url.js';
 import type { PendingEvent, PendingRequest, PendingStore } from './pending-store.js';
 import { createPushSealer, pushSummaryText } from './push-summary.js';
+import { questionAnswers, questionView } from './question-view.js';
 import { uuidV7 } from './uuid.js';
 
 /** What the hub logs: event names and ids only, never a payload or a key (I3). */
@@ -80,7 +82,10 @@ interface PhoneSession {
 }
 
 /** Why a request left the phones' view, by the decision that ended it. */
-type Winner = { readonly phoneId: string; readonly outcome: 'allow' | 'deny' | 'terminal' };
+type Winner = {
+  readonly phoneId: string;
+  readonly outcome: 'allow' | 'deny' | 'terminal' | 'answer';
+};
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -105,7 +110,7 @@ function header(envelope: Envelope): EnvelopeHeader {
  * - KK responder per paired phone, prologue `rc/v1 || user || phone || agent`; a new
  *   handshake from the same phone replaces its session. After each handshake the phone
  *   gets every pending request (with the time left) and a snapshot.
- * - New permission requests go to every phone with a session; a paired phone without one
+ * - New requests (permissions and questions, M1-01) go to every phone with a session; a paired phone without one
  *   gets an empty `cls: request` doorbell, which the relay turns into a Web Push when
  *   the phone is offline. The doorbell carries no plaintext (I3).
  * - Decisions pass the D7 checks in order and apply exactly once (decide-once): the
@@ -257,12 +262,9 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     log('session_closed', { phone_device_id: phoneId, reason });
   }
 
-  /** Permission requests the phones can show, oldest first. */
+  /** Pending requests the phones can show (permissions and questions), oldest first. */
   function shownRequests(): PendingRequest[] {
-    return store
-      .list()
-      .filter((request) => request.kind === 'permission')
-      .sort((a, b) => a.createdAt - b.createdAt);
+    return [...store.list()].sort((a, b) => a.createdAt - b.createdAt);
   }
 
   function snapshot(views: readonly { request: PendingRequest }[]): AgentMessage {
@@ -289,9 +291,14 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
 
   /** The request message for a pending request, or `undefined` when the phone cannot show it. */
   async function requestMessage(request: PendingRequest): Promise<AgentMessage | undefined> {
-    const view = approvalView(request, await hashOf(request));
-    if (view === undefined) return undefined;
-    return { t: 'request', request: view, ttlMs: Math.max(0, request.deadline - clock.now()) };
+    const hash = await hashOf(request);
+    const ttlMs = Math.max(0, request.deadline - clock.now());
+    if (request.kind === 'question') {
+      const question = questionView(request, hash);
+      return question === undefined ? undefined : { t: 'question', question, ttlMs };
+    }
+    const view = approvalView(request, hash);
+    return view === undefined ? undefined : { t: 'request', request: view, ttlMs };
   }
 
   /** Re-reads `peers.json` at every handshake: a new pairing or a removal counts at once. */
@@ -402,12 +409,15 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     }
     const { decision } = parsed.data;
     const pending = store.get(decision.request_id);
-    const requestHash =
-      pending !== undefined && pending.kind === 'permission' ? await hashOf(pending) : undefined;
+    const requestHash = pending === undefined ? undefined : await hashOf(pending);
     const computed = await decisionHash(decision);
     // From here on synchronous: the checks and the store see the same state (decide-once).
-    const request = store.get(decision.request_id);
-    const shown = request !== undefined && request.kind === 'permission' ? request : undefined;
+    const shown = store.get(decision.request_id);
+    let answer: QuestionAnswers | undefined;
+    if (decision.kind === 'answer' && shown !== undefined) {
+      const payload = parseAnswerPayload(decision.payload);
+      answer = payload === undefined ? undefined : questionAnswers(shown, payload);
+    }
     const result = checkDecision({
       session: live.get(session.phoneId) === session,
       decision,
@@ -417,10 +427,15 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
       request:
         shown === undefined || requestHash === undefined || shown !== pending
           ? undefined
-          : { requestHash, deadline: shown.deadline },
+          : {
+              kind: shown.kind,
+              requestHash,
+              deadline: shown.deadline,
+              answerValid: answer !== undefined,
+            },
       ended: store.ended(decision.request_id),
       agentDeviceId: agentId ?? '',
-      supportedKinds: M0_DECISION_KINDS,
+      supportedKinds: DECISION_KINDS,
       now: clock.now(),
     });
     if (!result.ok) {
@@ -439,7 +454,9 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     const outcome = decision.kind as Winner['outcome'];
     winners.set(target.id, { phoneId: session.phoneId, outcome });
     if (outcome === 'terminal') store.release(target.id, 'released');
-    else store.resolve(target.id, options.decide(target, { behavior: outcome }));
+    else if (outcome === 'answer') {
+      store.resolve(target.id, options.decide(target, { behavior: outcome, answer: answer! }));
+    } else store.resolve(target.id, options.decide(target, { behavior: outcome }));
     log('decision_applied', {
       phone_device_id: session.phoneId,
       request_id: target.id,
@@ -449,7 +466,6 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
   }
 
   function added(request: PendingRequest, duplicate: boolean): void {
-    if (request.kind !== 'permission') return;
     void hashOf(request).catch(() => undefined);
     if (agentId === undefined) return;
     for (const session of live.values()) {
@@ -471,7 +487,6 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
   }
 
   function removed(request: PendingRequest, event: PendingEvent & { type: 'removed' }): void {
-    if (request.kind !== 'permission') return;
     const winner = winners.get(request.id);
     winners.delete(request.id);
     const { outcome } = event;

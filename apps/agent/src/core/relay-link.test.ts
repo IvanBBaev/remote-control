@@ -4,10 +4,17 @@ import {
   openPushSummary,
 } from '@remote-control/crypto';
 import { seededRandom } from '@remote-control/fake-claude-code';
-import { decodePushSummary, type ApprovalRequest, type Envelope } from '@remote-control/protocol';
+import {
+  decodePushSummary,
+  encodeAnswerPayload,
+  type ApprovalRequest,
+  type Envelope,
+  type Question,
+} from '@remote-control/protocol';
 import { describe, expect, it } from 'vitest';
 
 import { CLAUDE_CODE_CAPABILITIES, claudeCodeAdapter } from '../adapters/claude-code/adapter.js';
+import { decideClaudeCode } from '../adapters/claude-code/decide.js';
 import type { Peer } from '../ports/key-store.js';
 import { createFakePhone, type FakePhone } from '../testing/fake-phone.js';
 import { createFakeRelay } from '../testing/fake-relay.js';
@@ -30,6 +37,36 @@ function permission(command = 'npm test', overrides: Partial<RegisterInput> = {}
     },
     hookTimeoutMs: HOOK_TIMEOUT_MS,
     ...overrides,
+  };
+}
+
+const QUESTION_INPUT = {
+  questions: [
+    {
+      question: 'Which CANARY-q1 framework?',
+      header: 'Framework',
+      options: [
+        { label: 'React', description: 'Component library' },
+        { label: 'Vue', description: 'Progressive framework' },
+      ],
+      multiSelect: false,
+    },
+  ],
+};
+
+function askUserQuestion(): RegisterInput {
+  return {
+    sessionId: 's1',
+    kind: 'question',
+    fingerprint: `AskUserQuestion\0${JSON.stringify(QUESTION_INPUT)}`,
+    payload: {
+      hook_event_name: 'PreToolUse',
+      session_id: 's1',
+      cwd: '/Users/me/remote-control',
+      tool_name: 'AskUserQuestion',
+      tool_input: QUESTION_INPUT,
+    },
+    hookTimeoutMs: HOOK_TIMEOUT_MS,
   };
 }
 
@@ -87,6 +124,15 @@ async function setup(names: readonly string[] = ['Pixel'], seed = 11) {
       .at(-1)!.request;
   }
 
+  /** Waits until `phone` holds a question message for `id`; returns the latest one. */
+  async function questionOn(phone: FakePhone, id: string): Promise<Question> {
+    await waitFor(() => phone.of('question').some((m) => m.question.id === id));
+    return phone
+      .of('question')
+      .filter((m) => m.question.id === id)
+      .at(-1)!.question;
+  }
+
   async function resultOn(phone: FakePhone, count = 1) {
     await waitFor(() => phone.of('decision_result').length >= count);
     return phone.of('decision_result')[count - 1]!;
@@ -104,6 +150,7 @@ async function setup(names: readonly string[] = ['Pixel'], seed = 11) {
     deviceKey,
     open,
     requestOn,
+    questionOn,
     resultOn,
     setPeers: (list: readonly Peer[]) => (peers = list),
   };
@@ -561,5 +608,108 @@ describe('relay link (fake relay, fake phones)', () => {
     expect(await t.resultOn(phone)).toMatchObject({ reason: 'unknown_request' });
     await phone.decide('allow', request, { decision: { phone_device_id: t.agentId } });
     expect(await t.resultOn(phone, 2)).toMatchObject({ reason: 'wrong_peer' });
+  });
+
+  describe('questions (M1-01)', () => {
+    const answer = encodeAnswerPayload({ answers: [{ labels: ['React'] }] });
+
+    it('AC: answers a question with the answered tool input, and the other phones learn it', async () => {
+      const t = await setup(['Pixel', 'iPhone']);
+      const [first, second] = t.phones as [FakePhone, FakePhone];
+      await t.open(first);
+      await t.open(second);
+      const registration = t.store.register(askUserQuestion());
+      const question = await t.questionOn(first, registration.request.id);
+      expect(question).toMatchObject({
+        project: 'remote-control',
+        questions: [{ text: 'Which CANARY-q1 framework?', header: 'Framework', multi: false }],
+      });
+      expect(first.of('question').at(-1)!.ttlMs).toBe(HOOK_TIMEOUT_MS - 10_000);
+
+      await first.decide('answer', question, { decision: { payload: answer } });
+      expect(await t.resultOn(first)).toMatchObject({ result: 'accepted' });
+      // The hook output is exactly the decide module's answer (its own test pins the bytes).
+      await expect(registration.settled).resolves.toEqual({
+        type: 'decided',
+        response: decideClaudeCode(registration.request, {
+          behavior: 'answer',
+          answer: { answers: { 'Which CANARY-q1 framework?': 'React' } },
+        }),
+      });
+      await expect(registration.settled).resolves.toMatchObject({
+        response: {
+          hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' },
+        },
+      });
+      await waitFor(() => second.of('resolved').length === 1);
+      expect(second.of('resolved')[0]).toMatchObject({ outcome: 'answer' });
+      expect(plaintextLeaks(t.relay.routed, 'CANARY-q1')).toBe(false);
+    });
+
+    it('hands a question to a new session with the pending set', async () => {
+      const t = await setup();
+      const registration = t.store.register(askUserQuestion());
+      const [phone] = t.phones as [FakePhone];
+      await t.open(phone);
+      await t.questionOn(phone, registration.request.id);
+      expect(phone.of('snapshot')[0]!.pending).toEqual([registration.request.id]);
+    });
+
+    it('denies a question like any other request', async () => {
+      const t = await setup();
+      const [phone] = t.phones as [FakePhone];
+      await t.open(phone);
+      const registration = t.store.register(askUserQuestion());
+      const question = await t.questionOn(phone, registration.request.id);
+      await phone.decide('deny', question);
+      expect(await t.resultOn(phone)).toMatchObject({ result: 'accepted' });
+      await expect(registration.settled).resolves.toMatchObject({
+        response: { hookSpecificOutput: { permissionDecision: 'deny' } },
+      });
+    });
+
+    it('rejects an answer that does not fit, then accepts a fitting one', async () => {
+      const t = await setup();
+      const [phone] = t.phones as [FakePhone];
+      await t.open(phone);
+      const registration = t.store.register(askUserQuestion());
+      const question = await t.questionOn(phone, registration.request.id);
+      const unknown = encodeAnswerPayload({ answers: [{ labels: ['Angular'] }] });
+      await phone.decide('answer', question, { decision: { payload: unknown } });
+      expect(await t.resultOn(phone)).toMatchObject({ reason: 'invalid_answer' });
+      await phone.decide('answer', question, { decision: { payload: 'not json' } });
+      expect(await t.resultOn(phone, 2)).toMatchObject({ reason: 'invalid_answer' });
+      await phone.decide('allow', question);
+      expect(await t.resultOn(phone, 3)).toMatchObject({ reason: 'wrong_kind' });
+      expect(t.store.get(question.id)).toBe(registration.request);
+
+      await phone.decide('answer', question, { decision: { payload: answer } });
+      expect(await t.resultOn(phone, 4)).toMatchObject({ result: 'accepted' });
+    });
+
+    it('AC: an answer decision for a Bash request is rejected (wrong_kind)', async () => {
+      const t = await setup();
+      const [phone] = t.phones as [FakePhone];
+      await t.open(phone);
+      const registration = t.store.register(permission());
+      const request = await t.requestOn(phone, registration.request.id);
+      await phone.decide('answer', request, { decision: { payload: answer } });
+      expect(await t.resultOn(phone)).toMatchObject({ result: 'rejected', reason: 'wrong_kind' });
+      expect(t.store.get(request.id)).toBe(registration.request);
+    });
+
+    it('keeps a question the phone cannot show with the terminal', async () => {
+      const t = await setup();
+      const [phone] = t.phones as [FakePhone];
+      await t.open(phone);
+      const input = askUserQuestion();
+      const registration = t.store.register({
+        ...input,
+        payload: { ...input.payload, tool_input: { questions: [] } },
+      });
+      await t.link.hub.idle();
+      expect(phone.of('question')).toEqual([]);
+      expect(t.store.get(registration.request.id)).toBe(registration.request);
+    });
   });
 });

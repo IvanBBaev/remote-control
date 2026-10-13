@@ -1,6 +1,11 @@
 import { generateX25519KeyPair, webCryptoRandom } from '@remote-control/crypto';
 import { DECISION_TTL_SECONDS, VERSION_TABLE } from '@remote-control/protocol';
-import type { ApprovalRequest, CanonicalDecision, Machine } from '@remote-control/protocol';
+import type {
+  ApprovalRequest,
+  CanonicalDecision,
+  Machine,
+  Question,
+} from '@remote-control/protocol';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { RelayState } from '../auth/relay-api.js';
@@ -224,6 +229,35 @@ describe('realtime client', () => {
     await settle();
     expect(t.store.getState().requests[RID]?.status).toBe('expired');
     expect(Object.keys(t.store.getState().requests)).toHaveLength(2);
+  });
+
+  it('stores a question as a question view and resolves it as answered (M1-01)', async () => {
+    const t = await setup();
+    await t.client.start();
+    const socket = await t.connect();
+    const question: Question = {
+      id: RID,
+      sessionId: '5e5e5e5e-0000-4000-8000-000000000001',
+      requestHash: HASH,
+      expiresAt: 0,
+      questions: [{ text: 'Which?', options: [{ label: 'A' }, { label: 'B' }], multi: false }],
+    };
+    await t.agent.send(socket, { t: 'question', question, ttlMs: 30_000 });
+    await settle();
+    expect(t.store.getState().requests[RID]).toEqual({
+      machineId: AGENT,
+      kind: 'question',
+      request: question,
+      deadline: t.timer.now() + 30_000,
+      status: 'pending',
+    });
+    await t.agent.send(socket, { t: 'resolved', requestId: RID, outcome: 'answer' });
+    await settle();
+    expect(t.store.getState().requests[RID]).toMatchObject({
+      kind: 'question',
+      status: 'resolved',
+      outcome: 'answer',
+    });
   });
 
   it('ignores doorbells, unknown senders and frames outside a session', async () => {

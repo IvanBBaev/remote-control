@@ -25,6 +25,21 @@ const request = {
   alwaysSupported: false,
 };
 
+const question = {
+  id: REQUEST_ID,
+  sessionId: 'sess-1',
+  requestHash: request.requestHash,
+  expiresAt: 1_791_764_990_000,
+  questions: [
+    {
+      text: 'Which framework?',
+      header: 'Framework',
+      options: [{ label: 'React', description: 'Component library' }, { label: 'Vue' }],
+      multi: false,
+    },
+  ],
+};
+
 const machine = {
   id: MACHINE_ID,
   name: 'mac',
@@ -49,6 +64,8 @@ const session = {
 describe('AgentMessage', () => {
   it.each([
     { t: 'request', request, ttlMs: 0 },
+    { t: 'question', question, ttlMs: 1000 },
+    { t: 'resolved', requestId: REQUEST_ID, outcome: 'answer' },
     { t: 'snapshot', machine, sessions: [session], pending: [REQUEST_ID] },
     { t: 'resolved', requestId: REQUEST_ID, outcome: 'withdrawn' },
     { t: 'expired', requestId: REQUEST_ID },
@@ -60,6 +77,8 @@ describe('AgentMessage', () => {
 
   it.each([
     ['a negative ttl', { t: 'request', request, ttlMs: -1 }],
+    ['a question without a ttl', { t: 'question', question }],
+    ['a request under the question tag', { t: 'question', question: request, ttlMs: 0 }],
     ['an unknown outcome', { t: 'resolved', requestId: REQUEST_ID, outcome: 'maybe' }],
     [
       'a rejection without a reason',
@@ -81,11 +100,13 @@ describe('AgentMessage', () => {
       'unsupported',
       'unknown_request',
       'already_resolved',
+      'wrong_kind',
       'hash_mismatch',
       'expired',
       'too_late',
       'wrong_peer',
       'unverified',
+      'invalid_answer',
     ]);
   });
 });

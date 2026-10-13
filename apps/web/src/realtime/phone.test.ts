@@ -1,6 +1,11 @@
 import { pairingFingerprint } from '@remote-control/crypto';
-import { DECISION_TTL_SECONDS, decisionHash, toBase64Url } from '@remote-control/protocol';
-import type { ApprovalRequest } from '@remote-control/protocol';
+import {
+  DECISION_TTL_SECONDS,
+  decisionHash,
+  encodeAnswerPayload,
+  toBase64Url,
+} from '@remote-control/protocol';
+import type { ApprovalRequest, Question } from '@remote-control/protocol';
 import { describe, expect, it, vi } from 'vitest';
 
 import { RelayError } from '../auth/relay-api.js';
@@ -374,6 +379,74 @@ describe('phone decisions', () => {
     } finally {
       credentials.restore();
     }
+  });
+
+  it('answers a question with the encoded payload and a passkey assertion (M1-01)', async () => {
+    const credentials = mockCredentials();
+    try {
+      const t = await setup(assertingRelay());
+      await t.online();
+      const decide = vi.spyOn(t.phone.client!, 'decide');
+      const question: Question = {
+        id: REQUEST.id,
+        sessionId: REQUEST.sessionId,
+        requestHash: 'b'.repeat(64),
+        expiresAt: REQUEST.expiresAt,
+        questions: [{ text: 'Which?', options: [{ label: 'A' }, { label: 'B' }], multi: false }],
+      };
+      const answer = { answers: [{ labels: ['A'] }], response: 'Thanks' };
+      const pending = {
+        machineId: AGENT,
+        kind: 'question',
+        request: question,
+        deadline: t.timer.now() + 60_000,
+        status: 'pending',
+      } as const;
+      t.phone.realtime.setState({ requests: { [REQUEST.id]: pending } });
+      const result = await t.phone.answer(AGENT, question, answer);
+      expect(result).toMatchObject({ ok: true, asserted: true });
+      expect(credentials.get).toHaveBeenCalledOnce();
+      expect(decide).toHaveBeenCalledWith(
+        AGENT,
+        expect.objectContaining({
+          kind: 'answer',
+          request_id: question.id,
+          request_hash: question.requestHash,
+          payload: encodeAnswerPayload(answer),
+        }),
+        result.ok ? result.decisionHash : 'never',
+      );
+      // An answer is neither an approval nor a denial; only the asking session counts.
+      t.phone.realtime.setState({
+        requests: {
+          [REQUEST.id]: {
+            ...pending,
+            result: { t: 'decision_result', requestId: REQUEST.id, result: 'accepted' },
+          },
+        },
+      });
+      expect(machineUsage(t.phone.usage.getState(), AGENT)).toEqual({
+        approvals: 0,
+        denials: 0,
+        sessions: 1,
+      });
+    } finally {
+      credentials.restore();
+    }
+  });
+
+  it('refuses an answer while not connected', async () => {
+    const t = await setup();
+    const question: Question = {
+      id: REQUEST.id,
+      sessionId: REQUEST.sessionId,
+      requestHash: 'b'.repeat(64),
+      expiresAt: 0,
+      questions: [{ text: 'Which?', options: [{ label: 'A' }, { label: 'B' }], multi: false }],
+    };
+    await expect(
+      t.phone.answer(AGENT, question, { answers: [{ labels: ['A'] }] }),
+    ).resolves.toEqual({ ok: false, failure: 'offline' });
   });
 
   it('schedules on its clock', async () => {

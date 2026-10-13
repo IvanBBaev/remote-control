@@ -93,9 +93,14 @@ export interface HeadlessPhone {
   handshake(agentDeviceId: string, agentPublicKey: Uint8Array): Promise<void>;
   /**
    * Sends a decision on the open session, with the passkey ceremony at the relay first
-   * for the kinds that need one (D7); returns the command envelope id.
+   * for the kinds that need one (D7); returns the command envelope id. `payload` is the
+   * decision's signed payload (an encoded `AnswerPayload` for `answer`, M1-01).
    */
-  decide(kind: DecisionKind, request: Pick<ApprovalRequest, 'id' | 'requestHash'>): Promise<string>;
+  decide(
+    kind: DecisionKind,
+    request: Pick<ApprovalRequest, 'id' | 'requestHash'>,
+    payload?: string | null,
+  ): Promise<string>;
   /** Messages of type `t`. */
   of<T extends AgentMessage['t']>(t: T): Extract<AgentMessage, { t: T }>[];
 }
@@ -362,7 +367,7 @@ export async function createPhone(options: CreatePhoneOptions): Promise<Headless
         'phone: no snapshot after the handshake',
       );
     },
-    async decide(kind, request) {
+    async decide(kind, request, payload = null) {
       if (transport === undefined) throw new Error('phone: no session');
       const issuedAt = Math.floor(clock.now() / 1000);
       const decision: CanonicalDecision = {
@@ -370,7 +375,7 @@ export async function createPhone(options: CreatePhoneOptions): Promise<Headless
         kind,
         request_id: request.id,
         request_hash: request.requestHash,
-        payload: null,
+        payload,
         issued_at: issuedAt,
         expires_at: issuedAt + DECISION_TTL_SECONDS,
         phone_device_id: deviceId,

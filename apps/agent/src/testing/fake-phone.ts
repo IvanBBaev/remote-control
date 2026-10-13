@@ -63,7 +63,7 @@ export interface FakePhone {
   /** Sends a decision on the open session; returns the command envelope id. */
   decide(
     kind: DecisionKind,
-    request: ApprovalRequest,
+    request: Pick<ApprovalRequest, 'id' | 'requestHash'>,
     overrides?: DecideOverrides,
   ): Promise<string>;
   /** Joins a pairing slot with the code and runs the XXpsk0 initiator (D6). */

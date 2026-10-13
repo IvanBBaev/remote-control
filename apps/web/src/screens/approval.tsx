@@ -5,13 +5,14 @@ import { Navigate, useParams } from 'react-router';
 import { useStore } from 'zustand';
 
 import { useAppState } from '../app-state.js';
-import type { AssertDecisionResult } from '../auth/assert-decision.js';
 import { pendingRequests } from '../realtime/realtime-store.js';
-import type { RealtimeState, RequestView } from '../realtime/realtime-store.js';
+import type { ApprovalView, RealtimeState } from '../realtime/realtime-store.js';
 import { Notice, Screen } from './layout.js';
+import { QuestionCard } from './question.js';
+import { closedText, countdown, failureText, TAP_GUARD_MS } from './request-status.js';
+import type { Failure } from './request-status.js';
 
-/** Taps this soon after the card appears are ignored: no accidental Allow (05 Rec-2). */
-export const TAP_GUARD_MS = 600;
+export { countdown, TAP_GUARD_MS } from './request-status.js';
 
 const mostUrgent = (state: RealtimeState): string | undefined =>
   pendingRequests(state)[0]?.request.id;
@@ -32,53 +33,13 @@ export function revealNoun(toolName: string): string {
   return REVEAL_NOUNS[toolInfo(toolName).kind] ?? 'details';
 }
 
-/** `m:ss` for a countdown. */
-export function countdown(ms: number): string {
-  const seconds = Math.max(0, Math.ceil(ms / 1000));
-  return `${String(Math.floor(seconds / 60))}:${String(seconds % 60).padStart(2, '0')}`;
-}
-
-type Failure = Extract<AssertDecisionResult, { ok: false }>['failure'];
-
-function failureText(failure: Failure): string {
-  if (failure === 'cancelled') return 'Face ID was cancelled. Nothing was sent.';
-  if (failure === 'offline') return 'You are offline. Nothing was sent.';
-  if (failure === 'rate_limited') return 'Too many attempts. Wait a minute and try again.';
-  return 'Could not confirm with your passkey. Nothing was sent.';
-}
-
-const OUTCOMES: Record<NonNullable<RequestView['outcome']>, string> = {
-  allow: 'Allowed.',
-  deny: 'Denied.',
-  terminal: 'Answered in the terminal.',
-  withdrawn: 'The agent no longer needs this answer.',
-};
-
-const REJECTIONS: Partial<Record<string, string>> = {
-  already_resolved: 'Already answered elsewhere.',
-  expired: 'Too late: the request had expired.',
-  too_late: 'Too late: the request had expired.',
-  unknown_request: 'The computer no longer has this request.',
-};
-
-/** The final state of a request that is no longer pending, or a refused decision. */
-function closedText(view: RequestView): string | undefined {
-  if (view.result?.result === 'rejected') {
-    return REJECTIONS[view.result.reason] ?? 'Your computer refused the decision.';
-  }
-  if (view.relayError !== undefined) return 'The relay refused the decision. Try again.';
-  if (view.status === 'expired') return 'Expired. The terminal is asking again.';
-  if (view.status === 'resolved' && view.outcome !== undefined) return OUTCOMES[view.outcome];
-  return undefined;
-}
-
 /**
  * What the agent wants to do, the countdown, and Deny / Allow (M0-21; card rules 01 W6,
  * M1-11): the content stays hidden until a tap, Allow stays disabled while the content is
  * truncated, taps in the first `TAP_GUARD_MS` are ignored, there is no "Always" button
  * yet, and a closed or expired card has no decision buttons.
  */
-export function ApprovalCard({ view }: { readonly view: RequestView }) {
+export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
   const { phone } = useAppState();
   const machine = useStore(phone.realtime, (state) => state.machines[view.machineId]?.name);
   const [shownAt] = useState(() => phone.now());
@@ -181,7 +142,7 @@ export function ApprovalCard({ view }: { readonly view: RequestView }) {
 }
 
 /**
- * One approval request. A push carries the doorbell's id, not the request's (D5), so an
+ * One approval request or question (M1-01). A push carries the doorbell's id, not the request's (D5), so an
  * unknown id falls back to the most urgent pending request (05 Rec-2).
  */
 export function RequestScreen() {
@@ -194,9 +155,11 @@ export function RequestScreen() {
     return <Navigate to={`/requests/${urgent}`} replace />;
   }
   return (
-    <Screen title="Approval request" back="/sessions">
+    <Screen title={view?.kind === 'question' ? 'Question' : 'Approval request'} back="/sessions">
       {view === undefined ? (
         <Notice>{connected ? 'Nothing is waiting for you.' : 'Connecting…'}</Notice>
+      ) : view.kind === 'question' ? (
+        <QuestionCard key={view.request.id} view={view} />
       ) : (
         <ApprovalCard key={view.request.id} view={view} />
       )}

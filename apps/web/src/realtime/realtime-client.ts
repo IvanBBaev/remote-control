@@ -23,7 +23,7 @@ import type { Timer, TimerHandle } from '../ports/timer.js';
 import { fromBase64, header, toBase64, uuidV7 } from './envelope.js';
 import { createRelaySocket } from './relay-socket.js';
 import type { SocketFactory } from './relay-socket.js';
-import type { MachineView, RealtimeState, RealtimeStore, RequestView } from './realtime-store.js';
+import type { MachineView, RealtimeState, RealtimeStore, RequestUpdate } from './realtime-store.js';
 
 /** Rec-5: after this many failed socket attempts, `/api/state` polling takes over. */
 export const POLL_AFTER_FAILURES = 2;
@@ -144,7 +144,7 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
     });
   };
 
-  const updateRequest = (requestId: string, change: Partial<RequestView>): void => {
+  const updateRequest = (requestId: string, change: RequestUpdate): void => {
     update((state) => {
       const current = state.requests[requestId];
       if (current === undefined) return {};
@@ -375,6 +375,20 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
             [message.request.id]: {
               machineId,
               request: message.request,
+              deadline: timer.now() + message.ttlMs,
+              status: 'pending',
+            },
+          },
+        }));
+        return;
+      case 'question':
+        update((state) => ({
+          requests: {
+            ...state.requests,
+            [message.question.id]: {
+              machineId,
+              kind: 'question',
+              request: message.question,
               deadline: timer.now() + message.ttlMs,
               status: 'pending',
             },

@@ -1,6 +1,13 @@
 import { pairingFingerprint } from '@remote-control/crypto';
-import { DECISION_TTL_SECONDS, VERSION_TABLE } from '@remote-control/protocol';
-import type { ApprovalRequest, CanonicalDecision, Random } from '@remote-control/protocol';
+import { DECISION_TTL_SECONDS, VERSION_TABLE, encodeAnswerPayload } from '@remote-control/protocol';
+import type {
+  AnswerPayload,
+  ApprovalRequest,
+  CanonicalDecision,
+  DecisionKind,
+  Question,
+  Random,
+} from '@remote-control/protocol';
 
 import { assertDecision } from '../auth/assert-decision.js';
 import type { AssertDecisionResult } from '../auth/assert-decision.js';
@@ -87,8 +94,18 @@ export interface PhoneService {
    */
   decide(
     machineId: string,
-    request: ApprovalRequest,
+    request: ApprovalRequest | Question,
     kind: 'allow' | 'deny',
+  ): Promise<AssertDecisionResult>;
+  /**
+   * Answers an `AskUserQuestion` (M1-01): the answer rides in the decision's payload, so
+   * the passkey assertion (always required for an answer, D7) signs exactly what was
+   * picked. Call it from the tap handler, like `decide`.
+   */
+  answer(
+    machineId: string,
+    question: Question,
+    answer: AnswerPayload,
   ): Promise<AssertDecisionResult>;
 }
 
@@ -182,6 +199,39 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
     await client.start();
   }
 
+  /**
+   * Builds the canonical decision for `target`, asks for the passkey assertion when the
+   * kind needs one (D7), then queues it for the agent.
+   */
+  async function send(
+    machineId: string,
+    target: Pick<ApprovalRequest, 'id' | 'requestHash'>,
+    kind: DecisionKind,
+    payload: string | null,
+  ): Promise<AssertDecisionResult> {
+    const live = client;
+    if (live === undefined || phoneDeviceId === undefined) return { ok: false, failure: 'offline' };
+    // Relay time: the clock both ends agree on, whatever the phone's own says (D7).
+    const relayNow = options.timer.now() + realtime.getState().relayOffset;
+    const issuedAt = Math.floor(relayNow / 1000);
+    const decision: CanonicalDecision = {
+      v: VERSION_TABLE.v,
+      kind,
+      request_id: target.id,
+      request_hash: target.requestHash,
+      payload,
+      issued_at: issuedAt,
+      expires_at: issuedAt + DECISION_TTL_SECONDS,
+      phone_device_id: phoneDeviceId,
+      agent_device_id: machineId,
+    };
+    const result = await assertDecision(decision, relay);
+    if (result.ok) {
+      live.decide(machineId, decision, result.asserted ? result.decisionHash : undefined);
+    }
+    return result;
+  }
+
   function connect(forUser: string): Promise<void> {
     if (userId === forUser && connecting !== undefined) return connecting;
     client?.stop();
@@ -266,30 +316,12 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
     },
     enroll: (name) => relay.enrollAgent(name),
     async decide(machineId, request, kind) {
-      const live = client;
-      if (live === undefined || phoneDeviceId === undefined)
-        return { ok: false, failure: 'offline' };
-      // Relay time: the clock both ends agree on, whatever the phone's own says (D7).
-      const relayNow = options.timer.now() + realtime.getState().relayOffset;
-      const issuedAt = Math.floor(relayNow / 1000);
-      const decision: CanonicalDecision = {
-        v: VERSION_TABLE.v,
-        kind,
-        request_id: request.id,
-        request_hash: request.requestHash,
-        payload: null,
-        issued_at: issuedAt,
-        expires_at: issuedAt + DECISION_TTL_SECONDS,
-        phone_device_id: phoneDeviceId,
-        agent_device_id: machineId,
-      };
-      const result = await assertDecision(decision, relay);
-      if (result.ok) {
-        sent.set(request.id, kind);
-        live.decide(machineId, decision, result.asserted ? result.decisionHash : undefined);
-      }
+      const result = await send(machineId, request, kind, null);
+      if (result.ok) sent.set(request.id, kind);
       return result;
     },
+    answer: (machineId, question, answer) =>
+      send(machineId, question, 'answer', encodeAnswerPayload(answer)),
     async pair(code) {
       const normalized = normalizePairingCode(code);
       if (normalized === undefined) throw new PairingError('Enter all 12 characters of the code.');
