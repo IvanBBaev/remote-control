@@ -977,7 +977,7 @@ Scope: agent setting `always.destinations: ["session"]` extendable to `localSett
 AC: test shows a destination outside the setting is never emitted.
 
 #### M2-08 — Optional notifications on turn finished / needs input
-Size S · Deps M1-06 · Status todo · Sources 01 Q5, 04 §2.4
+Size S · Deps M1-06 · Status done 5abb8b9 (setting lives in the per-machine agent config, default off) · Sources 01 Q5, 04 §2.4
 Scope: per-user setting (default off) to push on `Stop` and `agent_needs_input`
 notifications with the encrypted summary.
 AC: setting off → no push (test); on → push body is ciphertext.
