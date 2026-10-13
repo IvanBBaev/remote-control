@@ -5,6 +5,7 @@ import {
   MAX_CONTENT_LENGTH,
   approvalView,
   pendingRequestHash,
+  projectName,
   toolContent,
   toolLabel,
 } from './approval-view.js';
@@ -32,7 +33,9 @@ describe('toolLabel', () => {
     ['Write', 'Write a file'],
     ['Read', 'Read a file'],
     ['WebFetch', 'Fetch a web page'],
-    ['Glob', 'Use Glob'],
+    ['Glob', 'Find files'],
+    ['mcp__github__create_issue', 'github: create issue'],
+    ['FutureTool', 'Use tool FutureTool'],
   ])('%s -> %s', (name, label) => {
     expect(toolLabel(name)).toBe(label);
   });
@@ -42,14 +45,50 @@ describe('toolLabel', () => {
   });
 });
 
+describe('projectName', () => {
+  it('keeps only the folder name (D21)', () => {
+    expect(projectName('/Users/me/dev/remote-control')).toBe('remote-control');
+    expect(projectName('/Users/me/dev/app/')).toBe('app');
+    expect(projectName('C:\\work\\api')).toBe('api');
+    expect(projectName('x'.repeat(300))).toHaveLength(128);
+  });
+
+  it('has nothing to show for a missing or root directory', () => {
+    expect(projectName(undefined)).toBeUndefined();
+    expect(projectName(42)).toBeUndefined();
+    expect(projectName('/')).toBeUndefined();
+    expect(projectName('')).toBeUndefined();
+  });
+});
+
 describe('toolContent', () => {
-  it('prefers the command, then the file path, then the url, then JSON', () => {
+  it('falls back through command, file path and url for unknown tools, then JSON', () => {
     expect(toolContent({ command: 'ls', file_path: '/a' })).toBe('ls');
     expect(toolContent({ file_path: '/a' })).toBe('/a');
     expect(toolContent({ url: 'https://x' })).toBe('https://x');
     expect(toolContent({ pattern: '*.ts' })).toBe('{"pattern":"*.ts"}');
     expect(toolContent(null)).toBe('null');
     expect(toolContent({ command: 1 })).toBe('{"command":1}');
+  });
+
+  it.each([
+    ['Bash', { command: 'npm test', description: 'Run tests' }, 'npm test'],
+    ['Edit', { file_path: '/repo/a.ts', old_string: 'a', new_string: 'b' }, '/repo/a.ts'],
+    ['NotebookEdit', { notebook_path: '/repo/n.ipynb', new_source: 'x' }, '/repo/n.ipynb'],
+    ['LS', { path: '/repo' }, '/repo'],
+    ['Grep', { pattern: 'TODO', path: '/repo/src' }, 'TODO\nin /repo/src'],
+    ['Glob', { pattern: '**/*.ts' }, '**/*.ts'],
+    ['WebFetch', { url: 'https://example.com', prompt: 'summarise' }, 'https://example.com'],
+    ['WebSearch', { query: 'zod 4 strictObject' }, 'zod 4 strictObject'],
+    ['Task', { description: 'Find the bug', prompt: 'long prompt' }, 'Find the bug'],
+    ['Skill', { skill: 'worklog' }, 'worklog'],
+    ['SlashCommand', { command: '/review' }, '/review'],
+    ['ExitPlanMode', { plan: '1. Do it' }, '1. Do it'],
+    ['mcp__github__create_issue', { title: 'Bug' }, '{"title":"Bug"}'],
+    ['AskUserQuestion', { questions: [] }, '{"questions":[]}'],
+    ['Edit', { old_string: 'a' }, '{"old_string":"a"}'],
+  ])('%s shows what it will do', (name, input, content) => {
+    expect(toolContent(input, name)).toBe(content);
   });
 });
 
@@ -70,6 +109,22 @@ describe('approvalView', () => {
       suggestions: [],
       expiresAt: 2000,
       alwaysSupported: false,
+    });
+  });
+
+  it('names the project by its folder, never the full path (D21)', () => {
+    const view = approvalView(
+      pending({
+        tool_name: 'Edit',
+        cwd: '/Users/me/dev/remote-control',
+        tool_input: { file_path: 'src/a.ts' },
+      }),
+      HASH,
+    );
+    expect(view).toMatchObject({
+      toolLabel: 'Edit a file',
+      project: 'remote-control',
+      content: 'src/a.ts',
     });
   });
 

@@ -5,8 +5,10 @@ import { toBase64Url } from '@remote-control/protocol';
 import { CLAUDE_CODE_CAPABILITIES, claudeCodeAdapter } from '../adapters/claude-code/adapter.js';
 import { NO_DECISION_MESSAGE } from '../adapters/claude-code/decide.js';
 import { KeyStoreError } from '../adapters/file-key-store.js';
+import { createFileStatsStore, type StatsStore } from '../adapters/file-stats-store.js';
 import { HookReceiverBindError, type HookReceiver } from '../adapters/hook-receiver.js';
 import { DEFAULT_HOLD_SECONDS } from '../core/agent-config.js';
+import { projectName } from '../core/approval-view.js';
 import { defaultConfigText } from '../core/default-config-text.js';
 import { createHookDispatcher } from '../core/hook-dispatcher.js';
 import {
@@ -21,6 +23,7 @@ import { createPendingStore } from '../core/pending-store.js';
 import { createRelayLink, type RelayLink } from '../core/relay-link.js';
 import { relayEndpoints } from '../core/relay-url.js';
 import { resolveRepository } from '../core/resolve-repository.js';
+import { decisionStat, formatStats, isSessionStart } from '../core/usage-stats.js';
 import type { Container } from '../container.js';
 import { installService, serviceStatusLine, uninstallService } from './service.js';
 import { startUpdateChecks, updateCommand, updateStatusLine } from './update.js';
@@ -196,6 +199,9 @@ async function runCommand(
   const credentials = await c.keyStore.readRelayCredentials();
   const log = await c.openLog();
   const updates = startUpdateChecks(c, log.logger);
+  const stats = openStats(c, (message) =>
+    log.logger.warn({ event: 'stats_write_failed' }, message),
+  );
   let link: RelayLink | undefined;
   const store = createPendingStore({
     clock: c.clock,
@@ -221,7 +227,10 @@ async function runCommand(
   });
   const handler = createHookDispatcher({
     store,
-    onEvent: (input) => log.logger.debug({ event: 'hook', hook: input.hook_event_name }),
+    onEvent: (input) => {
+      log.logger.debug({ event: 'hook', hook: input.hook_event_name });
+      if (isSessionStart(input)) void stats.record(projectName(input['cwd']), 'sessionsStarted');
+    },
     ...(config.agent.onExpire === 'deny'
       ? {
           onDeadline: (request) =>
@@ -240,7 +249,11 @@ async function runCommand(
       deviceKey: key.keyPair,
       store,
       listPeers: () => c.keyStore.listPeers(),
-      decide: (request, decision) => claudeCodeAdapter.decide(request, decision),
+      decide: (request, decision) => {
+        const field = decisionStat(decision.behavior);
+        if (field !== undefined) void stats.record(projectName(request.payload['cwd']), field);
+        return claudeCodeAdapter.decide(request, decision);
+      },
       machine: {
         name: c.hostname,
         platform: snapshotPlatform(c.platform),
@@ -337,9 +350,17 @@ async function statusCommand(args: readonly string[], c: Container): Promise<num
     `device key:      ${key === undefined ? '(not created yet)' : toBase64Url(key.keyPair.publicKey)}`,
   );
   out(`paired devices:  ${(await c.keyStore.listPeers()).length}`);
+  const [statsHead, ...statsProjects] = formatStats(await openStats(c, () => undefined).read());
+  out(`local counters:  ${statsHead!}`);
+  for (const line of statsProjects) out(line);
   out(`service:         ${await serviceStatusLine(c)}`);
   out(`update:          ${await updateStatusLine(c)}`);
   return exitCode;
+}
+
+/** The local usage counters (M1-11): this computer only, never sent to the relay (I1/I3). */
+function openStats(c: Container, onWarning: (message: string) => void): StatsStore {
+  return createFileStatsStore({ dir: c.paths.data, fs: c.fs, paths: c.pathPort, onWarning });
 }
 
 /** The snapshot's platform (D-protocol `Machine.platform`); other Unixes report `linux`. */

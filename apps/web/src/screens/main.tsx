@@ -3,12 +3,17 @@ import { useStore } from 'zustand';
 
 import { useAppState } from '../app-state.js';
 import { presenceLabel } from '../realtime/realtime-store.js';
+import { machineUsage, usageSummary } from '../realtime/usage-stats.js';
 import { Notice, Screen } from './layout.js';
 
-/** Paired computers and their online state, from relay timestamps (M0-20). */
+/**
+ * Paired computers and their online state, from relay timestamps (M0-20), with this
+ * phone's local counters per computer and project (M1-11).
+ */
 export function MachinesScreen() {
   const { phone } = useAppState();
   const realtime = useStore(phone.realtime);
+  const usage = useStore(phone.usage);
   const machines = Object.values(realtime.machines).sort((a, b) => a.name.localeCompare(b.name));
   return (
     <Screen title="Computers">
@@ -18,10 +23,24 @@ export function MachinesScreen() {
         <ul className="machine-list">
           {machines.map((machine) => {
             const presence = presenceLabel(machine, realtime, phone.now());
+            const totals = machineUsage(usage, machine.deviceId);
+            const projects = Object.entries(usage.machines[machine.deviceId] ?? {}).sort(
+              ([a], [b]) => a.localeCompare(b),
+            );
             return (
               <li key={machine.deviceId} className={presence.online ? 'online' : 'offline'}>
                 <span className="machine-name">{machine.name}</span>
                 <span className="meta">{presence.text}</span>
+                {totals !== undefined && (
+                  <div className="machine-usage">
+                    <p className="meta">From this phone: {usageSummary(totals)}</p>
+                    {projects.map(([project, counts]) => (
+                      <p key={project} className="meta project-usage">
+                        <span className="project-name">{project}</span> {usageSummary(counts)}
+                      </p>
+                    ))}
+                  </div>
+                )}
               </li>
             );
           })}

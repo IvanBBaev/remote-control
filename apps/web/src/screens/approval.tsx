@@ -1,3 +1,5 @@
+import { toolInfo } from '@remote-control/protocol';
+import type { ToolKind } from '@remote-control/protocol';
 import { useEffect, useRef, useState } from 'react';
 import { Navigate, useParams } from 'react-router';
 import { useStore } from 'zustand';
@@ -10,18 +12,24 @@ import { Notice, Screen } from './layout.js';
 
 /** Taps this soon after the card appears are ignored: no accidental Allow (05 Rec-2). */
 export const TAP_GUARD_MS = 600;
-/** The argument line on the card; the rest is behind "Show details". */
-export const SUMMARY_LENGTH = 60;
 
 const mostUrgent = (state: RealtimeState): string | undefined =>
   pendingRequests(state)[0]?.request.id;
 const isConnected = (state: RealtimeState): boolean => state.connection === 'open';
 
-/** The first line of `content`, cut to `SUMMARY_LENGTH` with an ellipsis. */
-export function summaryLine(content: string): string {
-  const [first = ''] = content.split('\n', 1);
-  const cut = first.length > SUMMARY_LENGTH || first.length < content.length;
-  return cut ? `${first.slice(0, SUMMARY_LENGTH).trimEnd()}…` : first;
+const REVEAL_NOUNS: Partial<Record<ToolKind, string>> = {
+  command: 'command',
+  file: 'file',
+  search: 'search',
+  web: 'address',
+};
+
+/**
+ * What the reveal button names (01 W6, §5.3): a command or path is never on screen
+ * before the user taps for it. Keyed by the tool's kind, so an unknown tool says "details".
+ */
+export function revealNoun(toolName: string): string {
+  return REVEAL_NOUNS[toolInfo(toolName).kind] ?? 'details';
 }
 
 /** `m:ss` for a countdown. */
@@ -64,7 +72,12 @@ function closedText(view: RequestView): string | undefined {
   return undefined;
 }
 
-/** What the agent wants to do, the countdown, and Deny / Allow (M0-21). */
+/**
+ * What the agent wants to do, the countdown, and Deny / Allow (M0-21; card rules 01 W6,
+ * M1-11): the content stays hidden until a tap, Allow stays disabled while the content is
+ * truncated, taps in the first `TAP_GUARD_MS` are ignored, there is no "Always" button
+ * yet, and a closed or expired card has no decision buttons.
+ */
 export function ApprovalCard({ view }: { readonly view: RequestView }) {
   const { phone } = useAppState();
   const machine = useStore(phone.realtime, (state) => state.machines[view.machineId]?.name);
@@ -104,16 +117,24 @@ export function ApprovalCard({ view }: { readonly view: RequestView }) {
     else setFailure(result.failure);
   };
 
+  const noun = revealNoun(request.toolName);
   return (
     <article className="approval-card">
-      <p className="meta">{machine ?? 'Unknown computer'}</p>
+      <p className="meta">
+        {machine ?? 'Unknown computer'}
+        {request.project !== undefined && (
+          <>
+            {' · '}
+            <span className="project-name">{request.project}</span>
+          </>
+        )}
+      </p>
       <h2>{request.toolLabel}</h2>
-      <pre className="command">{summaryLine(request.content)}</pre>
       <button type="button" aria-expanded={details} onClick={() => setDetails((d) => !d)}>
-        {details ? 'Hide details' : 'Show details'}
+        {details ? `Hide ${noun}` : `Show ${noun}`}
       </button>
       {details && (
-        <pre className="command details">
+        <pre className="command details" tabIndex={0}>
           {request.toolName}
           {'\n'}
           {request.content}

@@ -8,7 +8,7 @@ import type { TestPhone } from '../realtime/test-phone.js';
 import { fixtures } from '../test-fixtures.js';
 import { click, renderApp, settle } from '../test-render.js';
 import type { RenderedApp } from '../test-render.js';
-import { TAP_GUARD_MS, countdown, summaryLine } from './approval.js';
+import { TAP_GUARD_MS, countdown, revealNoun } from './approval.js';
 
 const AGENT = 'agent-1';
 const ID = '0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b';
@@ -85,10 +85,17 @@ const tick = (test: TestPhone, ms: number) => {
 };
 
 describe('approval card helpers', () => {
-  it('summarises the first line and formats the countdown', () => {
-    expect(summaryLine('ls -la')).toBe('ls -la');
-    expect(summaryLine('first\nsecond')).toBe('first…');
-    expect(summaryLine('x'.repeat(80))).toBe(`${'x'.repeat(60)}…`);
+  it('names what the reveal button shows by tool kind', () => {
+    expect(revealNoun('Bash')).toBe('command');
+    expect(revealNoun('Edit')).toBe('file');
+    expect(revealNoun('Grep')).toBe('search');
+    expect(revealNoun('WebFetch')).toBe('address');
+    expect(revealNoun('Task')).toBe('details');
+    expect(revealNoun('mcp__github__create_issue')).toBe('details');
+    expect(revealNoun('FutureTool')).toBe('details');
+  });
+
+  it('formats the countdown', () => {
     expect(countdown(125_000)).toBe('2:05');
     expect(countdown(1)).toBe('0:01');
     expect(countdown(-5)).toBe('0:00');
@@ -96,27 +103,57 @@ describe('approval card helpers', () => {
 });
 
 describe('approval card', () => {
-  it('shows the machine, the tool, the argument and the countdown', async () => {
-    const { test } = await open(`/requests/${ID}`, (t) => [view(t, ID)]);
-    expect(text()).toContain('Studio Mac');
+  it('shows the machine, the project, the tool and the countdown', async () => {
+    const { test } = await open(`/requests/${ID}`, (t) => [
+      view(t, ID, { request: approval(ID, { project: 'remote-control' }) }),
+    ]);
+    expect(mounted?.container.querySelector('.approval-card .meta')?.textContent).toBe(
+      'Studio Mac · remote-control',
+    );
     expect(mounted?.container.querySelector('h2')?.textContent).toBe('Run a command');
-    expect(text()).toContain('npm test -- --watch=false');
     expect(text()).toContain('Time left: 2:00');
     tick(test, 1000);
     expect(text()).toContain('Time left: 1:59');
   });
 
-  it('reveals the full content behind "Show details"', async () => {
+  it('omits the project when the computer did not name one', async () => {
+    await open(`/requests/${ID}`, (t) => [view(t, ID)]);
+    expect(mounted?.container.querySelector('.approval-card .meta')?.textContent).toBe(
+      'Studio Mac',
+    );
+  });
+
+  it('hides the command until a deliberate tap (01 W6)', async () => {
     await open(`/requests/${ID}`, (t) => [
       view(t, ID, { request: approval(ID, { content: 'line one\nline two' }) }),
     ]);
+    expect(text()).not.toContain('line one');
     expect(mounted?.container.querySelector('pre.details')).toBeNull();
-    await click(mounted!.button('Show details'));
-    expect(mounted?.container.querySelector('pre.details')?.textContent).toBe(
-      'Bash\nline one\nline two',
+    await click(mounted!.button('Show command'));
+    const shown = mounted?.container.querySelector('pre.details');
+    expect(shown?.textContent).toBe('Bash\nline one\nline two');
+    expect(shown?.getAttribute('tabindex')).toBe('0');
+    await click(mounted!.button('Hide command'));
+    expect(mounted?.container.querySelector('pre.details')).toBeNull();
+  });
+
+  it('names a file reveal by its kind', async () => {
+    await open(`/requests/${ID}`, (t) => [
+      view(t, ID, {
+        request: approval(ID, { toolName: 'Edit', toolLabel: 'Edit a file', content: 'a.ts' }),
+      }),
+    ]);
+    expect(text()).not.toContain('a.ts');
+    await click(mounted!.button('Show file'));
+    expect(text()).toContain('a.ts');
+  });
+
+  it('never offers "Always" while the agent does not support it', async () => {
+    await open(`/requests/${ID}`, (t) => [view(t, ID)]);
+    const labels = [...(mounted?.container.querySelectorAll('.approval-card button') ?? [])].map(
+      (button) => button.textContent,
     );
-    await click(mounted!.button('Hide details'));
-    expect(mounted?.container.querySelector('pre.details')).toBeNull();
+    expect(labels).toEqual(['Show command', 'Deny', 'Allow', 'Reply in terminal']);
   });
 
   it('names an unknown computer', async () => {

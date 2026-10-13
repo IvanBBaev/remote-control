@@ -12,6 +12,7 @@ import { createIndexedDbKeyStore } from './pairing/key-store.js';
 import { cameraQrScanner } from './pairing/qr-scanner.js';
 import { createPhoneService, phoneNameFrom, relaySocketUrl } from './realtime/phone.js';
 import { bindLifecycle } from './realtime/realtime-client.js';
+import { browserUsageStorage } from './realtime/usage-stats.js';
 
 /** Sent in `hello`; the relay refuses versions below its floor. */
 const APP_VERSION = '0.0.0';
@@ -30,6 +31,7 @@ const phone = createPhoneService({
   version: APP_VERSION,
   phoneName: phoneNameFrom(navigator.userAgent),
   isVisible: () => document.visibilityState === 'visible',
+  usageStorage: browserUsageStorage(() => window.localStorage),
 });
 bindLifecycle(phone, { window, document });
 // `cameraQrScanner` also copes with `mediaDevices` missing outside a secure context.

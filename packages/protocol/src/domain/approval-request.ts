@@ -13,6 +13,11 @@ export const ApprovalRequest = z.strictObject({
   /** Plain-language label, never raw JSON ("Run a command"). */
   toolLabel: z.string().min(1).max(200),
   toolName: z.string().min(1).max(200),
+  /**
+   * Folder name of the session's working directory (D21: never the full path). Optional:
+   * agents before M1-11 do not send it. It travels only inside the sealed session.
+   */
+  project: z.string().min(1).max(128).optional(),
   /** What the tool will do (command, path, summary). */
   content: z.string().max(4000),
   /** `true` when `content` was cut; Allow is then disabled on the phone. */

@@ -258,6 +258,40 @@ describe('runCli', () => {
         platform: 'linux',
         agentVersion: AGENT_VERSION,
       });
+
+      // M1-11: a new session and a phone decision move the local counters.
+      const endpoint = JSON.parse(await readFile(join(h.c.paths.data, 'agent.json'), 'utf8')) as {
+        port: number;
+        token: string;
+      };
+      const postHook = (body: Record<string, unknown>): Promise<Response> =>
+        fetch(`http://127.0.0.1:${endpoint.port}/hook`, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${endpoint.token}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ session_id: 's1', cwd: '/work/remote-control', ...body }),
+        });
+      expect((await postHook({ hook_event_name: 'SessionStart', source: 'startup' })).ok).toBe(
+        true,
+      );
+      const answer = postHook({
+        hook_event_name: 'PermissionRequest',
+        tool_name: 'Bash',
+        tool_input: { command: 'pnpm test' },
+      });
+      await waitFor(() => phone.of('request').length > 0);
+      const request = phone.of('request')[0]!.request;
+      expect(request).toMatchObject({ toolLabel: 'Run a command', project: 'remote-control' });
+      await phone.decide('allow', request);
+      expect((await answer).status).toBe(200);
+      await vi.waitFor(async () => {
+        expect(JSON.parse(await readFile(join(h.c.paths.data, 'stats.json'), 'utf8'))).toEqual({
+          version: 1,
+          projects: { 'remote-control': { approvals: 1, denials: 0, sessionsStarted: 1 } },
+        });
+      });
       controller.abort();
       expect(await running).toBe(EXIT_OK);
       expect(r.relay.online(r.relay.agent.id)).toBe(false);
@@ -559,6 +593,27 @@ describe('runCli', () => {
       expect(h.out()).toContain('paired devices:  0');
       expect(h.out()).toContain('service:         not installed (`remotectl install`)\n');
       expect(h.out()).toContain('update:          check disabled\n');
+      expect(h.out()).toContain('local counters:  (none yet)\n');
+    });
+
+    it('shows the local counters per project (M1-11)', async () => {
+      await mkdir(h.c.paths.data, { recursive: true });
+      await writeFile(
+        join(h.c.paths.data, 'stats.json'),
+        JSON.stringify({
+          version: 1,
+          projects: {
+            web: { approvals: 1, denials: 0, sessionsStarted: 1 },
+            api: { approvals: 2, denials: 1, sessionsStarted: 0 },
+          },
+        }),
+      );
+      expect(await h.run(['status'])).toBe(EXIT_OK);
+      expect(h.out()).toContain(
+        'local counters:  3 approved, 1 denied, 1 session\n' +
+          '  api  2 approved, 1 denied, 0 sessions\n' +
+          '  web  1 approved, 0 denied, 1 session\n',
+      );
     });
 
     it('reports the config, each repository root and the public key', async () => {

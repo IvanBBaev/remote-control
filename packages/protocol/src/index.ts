@@ -51,6 +51,16 @@ export { decisionHash } from './decision-hash.js';
 export { decisionChallenge } from './decision-challenge.js';
 export { requestHash } from './request-hash.js';
 export type { RequestHashInput } from './request-hash.js';
+export {
+  CLAUDE_CODE_TOOL_NAMES,
+  CLAUDE_CODE_TOOLS,
+  MAX_TOOL_LABEL_LENGTH,
+  mcpToolName,
+  toolInfo,
+  toolLabel,
+  unknownToolLabel,
+} from './tool-labels.js';
+export type { ClaudeCodeTool, ToolInfo, ToolKind } from './tool-labels.js';
 
 export type { Clock } from './ports/clock.js';
 export type { Random } from './ports/random.js';

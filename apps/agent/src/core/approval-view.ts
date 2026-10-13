@@ -1,19 +1,12 @@
-import { ApprovalRequest, requestHash } from '@remote-control/protocol';
+import { ApprovalRequest, requestHash, toolInfo } from '@remote-control/protocol';
+import type { ToolKind } from '@remote-control/protocol';
 
 import type { PendingRequest } from './pending-store.js';
 
 /** `ApprovalRequest.content` cap (04 §5.2): longer content is cut and flagged. */
 export const MAX_CONTENT_LENGTH = 4000;
-const MAX_NAME_LENGTH = 200;
-
-const TOOL_LABELS: Readonly<Record<string, string>> = Object.freeze({
-  Bash: 'Run a command',
-  Edit: 'Edit a file',
-  MultiEdit: 'Edit a file',
-  Write: 'Write a file',
-  Read: 'Read a file',
-  WebFetch: 'Fetch a web page',
-});
+/** `ApprovalRequest.project` cap, as `Repository.name`. */
+const MAX_PROJECT_LENGTH = 128;
 
 /** The tool name and input of a permission hook, as Claude Code sends them. */
 export interface ToolCall {
@@ -34,9 +27,19 @@ export function pendingRequestHash(request: PendingRequest): Promise<string> {
   return requestHash(toolCall(request));
 }
 
-/** A short human label for the tool ("Run a command", "Use Glob"). */
+/** The protocol's plain-word label (01 W4): "Run a command", "github: create issue". */
 export function toolLabel(toolName: string): string {
-  return (TOOL_LABELS[toolName] ?? `Use ${toolName}`).slice(0, MAX_NAME_LENGTH);
+  return toolInfo(toolName).label;
+}
+
+/**
+ * The last segment of a working directory (D21: the folder name, never the full path).
+ * `undefined` when there is none to show.
+ */
+export function projectName(cwd: unknown): string | undefined {
+  if (typeof cwd !== 'string') return undefined;
+  const name = cwd.split(/[\\/]+/).findLast((segment) => segment !== '');
+  return name === undefined ? undefined : name.slice(0, MAX_PROJECT_LENGTH);
 }
 
 function stringField(input: unknown, key: string): string | undefined {
@@ -45,14 +48,32 @@ function stringField(input: unknown, key: string): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
-/** What the phone shows: the command, else the file path, else the input as JSON. */
-export function toolContent(toolInput: unknown): string {
-  return (
-    stringField(toolInput, 'command') ??
-    stringField(toolInput, 'file_path') ??
-    stringField(toolInput, 'url') ??
-    JSON.stringify(toolInput)
-  );
+/** Input fields that say what each kind of tool will do, most telling first. */
+const CONTENT_FIELDS: Readonly<Record<ToolKind, readonly string[]>> = {
+  command: ['command'],
+  file: ['file_path', 'notebook_path', 'path'],
+  search: ['pattern'],
+  web: ['url', 'query'],
+  agent: ['description', 'prompt', 'skill'],
+  plan: ['plan'],
+  question: [],
+  mcp: [],
+  other: ['command', 'file_path', 'url'],
+};
+
+/**
+ * What the phone shows (01 W4): the command, the file path, the search pattern (with its
+ * folder), the URL or query, the subagent's task; anything else is the input as JSON.
+ */
+export function toolContent(toolInput: unknown, toolName = ''): string {
+  const { kind } = toolInfo(toolName);
+  for (const field of CONTENT_FIELDS[kind]) {
+    const value = stringField(toolInput, field);
+    if (value === undefined) continue;
+    const where = kind === 'search' ? stringField(toolInput, 'path') : undefined;
+    return where === undefined ? value : `${value}\nin ${where}`;
+  }
+  return JSON.stringify(toolInput);
 }
 
 /**
@@ -62,7 +83,8 @@ export function toolContent(toolInput: unknown): string {
  */
 export function approvalView(request: PendingRequest, hash: string): ApprovalRequest | undefined {
   const { toolName, toolInput } = toolCall(request);
-  const content = toolContent(toolInput);
+  const content = toolContent(toolInput, toolName);
+  const project = projectName(request.payload['cwd']);
   const truncated = content.length > MAX_CONTENT_LENGTH;
   const parsed = ApprovalRequest.safeParse({
     id: request.id,
@@ -70,6 +92,7 @@ export function approvalView(request: PendingRequest, hash: string): ApprovalReq
     requestHash: hash,
     toolLabel: toolLabel(toolName),
     toolName,
+    ...(project === undefined ? {} : { project }),
     content: truncated ? content.slice(0, MAX_CONTENT_LENGTH) : content,
     truncated,
     suggestions: [],

@@ -17,6 +17,8 @@ import type { RealtimeClient } from './realtime-client.js';
 import type { SocketFactory } from './relay-socket.js';
 import { createRealtimeStore } from './realtime-store.js';
 import type { RealtimeStore } from './realtime-store.js';
+import { createUsageStatsStore, memoryUsageStorage, trackUsage } from './usage-stats.js';
+import type { UsageStatsStorage, UsageStatsStore } from './usage-stats.js';
 
 /** A completed handshake waiting for the user to compare the fingerprint (D6). */
 export interface PendingPairing {
@@ -50,11 +52,15 @@ export interface PhoneServiceOptions {
   readonly phoneName: string;
   readonly isVisible?: () => boolean;
   readonly onError?: (error: unknown) => void;
+  /** Where the local usage counters persist (M1-11); default: memory only. */
+  readonly usageStorage?: UsageStatsStorage;
 }
 
 /** The phone's device-side services, behind the screens. */
 export interface PhoneService {
   readonly realtime: RealtimeStore;
+  /** Local usage counters per computer and project; never leave this phone (M1-11). */
+  readonly usage: UsageStatsStore;
   /** The local clock the realtime client runs on, for labels such as "last seen". */
   now(): number;
   /** Schedules on the same clock, for countdowns. */
@@ -130,6 +136,10 @@ export function phoneNameFrom(userAgent: string): string {
 export function createPhoneService(options: PhoneServiceOptions): PhoneService {
   const { relay, keyStore } = options;
   const realtime = createRealtimeStore();
+  const usage = createUsageStatsStore(options.usageStorage ?? memoryUsageStorage());
+  /** Decisions sent and not yet answered, for the counters: request id → kind. */
+  const sent = new Map<string, 'allow' | 'deny'>();
+  trackUsage(realtime, usage, sent);
   let client: RealtimeClient | undefined;
   let connecting: Promise<void> | undefined;
   let userId: string | undefined;
@@ -233,6 +243,7 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
 
   return {
     realtime,
+    usage,
     now: () => options.timer.now(),
     after: (ms, callback) => options.timer.after(ms, callback),
     get client() {
@@ -274,6 +285,7 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
       };
       const result = await assertDecision(decision, relay);
       if (result.ok) {
+        sent.set(request.id, kind);
         live.decide(machineId, decision, result.asserted ? result.decisionHash : undefined);
       }
       return result;

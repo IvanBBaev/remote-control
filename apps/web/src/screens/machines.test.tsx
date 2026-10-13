@@ -51,4 +51,30 @@ describe('machines screen', () => {
     ]);
     expect(mounted.container.querySelector('a.button')?.textContent).toBe('Add a computer');
   });
+
+  it("shows this phone's counters per computer and project (M1-11)", async () => {
+    const test = createTestPhone();
+    const now = test.timer.now();
+    mounted = await renderApp('/machines', fixtures.onboarded, { phone: test.phone });
+    act(() => {
+      test.phone.realtime.setState({
+        confirmedAt: now,
+        machines: { a: machine('a', 'Studio Mac', true, null) },
+      });
+      test.phone.usage.setState({
+        machines: {
+          a: {
+            web: { approvals: 1, denials: 0, sessions: 1 },
+            api: { approvals: 2, denials: 1, sessions: 1 },
+          },
+        },
+      });
+    });
+    const usage = [...mounted.container.querySelectorAll('.machine-usage p')];
+    expect(usage.map((line) => line.textContent)).toEqual([
+      'From this phone: 3 approved, 1 denied, 2 sessions',
+      'api 2 approved, 1 denied, 1 session',
+      'web 1 approved, 0 denied, 1 session',
+    ]);
+  });
 });

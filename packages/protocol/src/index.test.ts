@@ -7,6 +7,13 @@ describe('@remote-control/protocol barrel', () => {
     expect(Object.keys(protocol).sort()).toEqual(
       [
         'Ack',
+        'CLAUDE_CODE_TOOLS',
+        'CLAUDE_CODE_TOOL_NAMES',
+        'MAX_TOOL_LABEL_LENGTH',
+        'mcpToolName',
+        'toolInfo',
+        'toolLabel',
+        'unknownToolLabel',
         'AgentMessage',
         'DecisionMessage',
         'DecisionRejection',

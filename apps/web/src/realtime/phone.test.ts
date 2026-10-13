@@ -11,6 +11,7 @@ import { PairingError, phoneNameFrom, relaySocketUrl } from './phone.js';
 import { PAIRING_TIMEOUT_MS } from './realtime-client.js';
 import { createTestAgent } from './test-agent.js';
 import { createTestPhone } from './test-phone.js';
+import { machineUsage } from './usage-stats.js';
 
 const USER = '0d6f8a52-3c5e-4f0b-9a4e-000000000000';
 const PHONE = '0d6f8a52-3c5e-4f0b-9a4e-111111111111';
@@ -303,6 +304,36 @@ describe('phone decisions', () => {
       asserted: false,
     });
     expect(decide).toHaveBeenCalledWith(AGENT, decision, undefined);
+  });
+
+  it('counts a decision locally once the computer accepted it (M1-11)', async () => {
+    const t = await setup();
+    await t.online();
+    vi.spyOn(t.phone.client!, 'decide').mockReturnValue(undefined);
+    const pending = {
+      machineId: AGENT,
+      request: { ...REQUEST, project: 'api' },
+      deadline: t.timer.now() + 60_000,
+      status: 'pending',
+    } as const;
+    t.phone.realtime.setState({ requests: { [REQUEST.id]: pending } });
+    expect(await t.phone.decide(AGENT, REQUEST, 'deny')).toMatchObject({ ok: true });
+    expect(machineUsage(t.phone.usage.getState(), AGENT)).toEqual({
+      approvals: 0,
+      denials: 0,
+      sessions: 1,
+    });
+    t.phone.realtime.setState({
+      requests: {
+        [REQUEST.id]: {
+          ...pending,
+          result: { t: 'decision_result', requestId: REQUEST.id, result: 'accepted' },
+        },
+      },
+    });
+    expect(t.phone.usage.getState().machines[AGENT]).toEqual({
+      api: { approvals: 0, denials: 1, sessions: 1 },
+    });
   });
 
   it('allows with a passkey assertion and sends its hash', async () => {

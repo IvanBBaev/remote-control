@@ -302,6 +302,23 @@ label.confirm input {
   color: var(--color-accent);
 }
 
+.machine-list .machine-usage {
+  margin-top: 6px;
+}
+
+.machine-list .machine-usage p {
+  margin: 2px 0 0;
+}
+
+.machine-list li.online .machine-usage .meta {
+  color: var(--color-muted);
+}
+
+.machine-list .project-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
 .approval-card {
   display: flex;
   flex-direction: column;
@@ -316,6 +333,9 @@ label.confirm input {
 .approval-card pre.details {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  /* A long command scrolls inside the card instead of pushing the buttons away. */
+  max-height: 40vh;
+  overflow-y: auto;
 }
 
 .countdown {
