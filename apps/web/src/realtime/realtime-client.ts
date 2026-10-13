@@ -301,8 +301,8 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
         socket.send({ v: VERSION_TABLE.v, kind: 'ack', ids: [frame.id] });
         await onEnvelope(frame);
         return;
-      /* v8 ignore next 2 -- the relay sends no other kind after hello_ok */
-      default:
+      case 'hello':
+      case 'ping':
         return;
     }
   }

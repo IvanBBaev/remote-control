@@ -131,7 +131,7 @@ export function packedManifestProblems(manifest: Record<string, unknown>): strin
   return problems;
 }
 
-/* c8 ignore start -- CLI wrapper; the logic above is unit-tested. */
+// CLI wrapper; the logic above is unit-tested.
 function main(argv: readonly string[]): number {
   const root = fileURLToPath(new URL('..', import.meta.url));
   const manifestPath = `${root}apps/agent/package.json`;
@@ -178,4 +178,3 @@ function main(argv: readonly string[]): number {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   process.exitCode = main(process.argv.slice(2));
 }
-/* c8 ignore stop */

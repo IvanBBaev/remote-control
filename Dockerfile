@@ -23,6 +23,13 @@ RUN pnpm --filter @remote-control/relay deploy --prod --legacy /out/relay \
   && if [ -f apps/web/dist/index.html ]; then cp -R apps/web/dist/. /out/relay/public/; fi
 
 FROM ${NODE_IMAGE} AS runtime
+# The relay needs only `node`. The base image's bundled npm and corepack are dropped (they
+# carry the image scanner's language findings), and Debian security updates newer than
+# the pinned digest are applied so the Trivy gate (M0-25) stays meaningful between bumps.
+RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+ && apt-get update \
+ && apt-get upgrade --yes --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production \
     RC_PUBLIC_DIR=/app/public
 WORKDIR /app

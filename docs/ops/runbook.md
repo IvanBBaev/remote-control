@@ -23,6 +23,39 @@ addresses, quoted strings and token-like runs replaced), stack frames, and the t
 breadcrumbs (the relay does not use the Sentry SDK — see the relay README). At most
 20 reports per minute are sent; drops are logged as `sentry_rate_limited`.
 
+## CI and branch protection
+
+| Workflow  | Jobs                                     | Runs on                                 | Checks                                                                                                                                                  |
+| --------- | ---------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CI`      | `ci`                                     | every PR, push to `main`                | `pnpm audit --prod --audit-level=high`, `pnpm audit signatures`, `pnpm check` (coverage thresholds per D18 + `tools/coverage-policy.test.ts`, journeys) |
+| `CI`      | `image`                                  | every PR, push to `main`                | `docker build` of the relay image, Trivy scan (fixable HIGH/CRITICAL fail)                                                                              |
+| `CI`      | `agent-os (ubuntu/macos/windows-latest)` | every PR, push to `main`                | agent + fake Claude Code suites, journeys J1/J2/J5; `agent-os` passes only when all three do                                                            |
+| `pg-real` | `pg-real`                                | push to `main`, nightly, manual         | relay suites against a real Postgres 17 service                                                                                                         |
+| `e2e`     | `browser-crypto`                         | push to `main`, nightly, PR label `e2e` | crypto known-answer vectors in Chromium and WebKit (`pnpm test:browser`); Playwright journeys join in M1-12                                             |
+
+Dependabot opens grouped weekly PRs for npm, GitHub Actions and the Docker base image;
+they go through the same checks, and pnpm's 7-day `minimumReleaseAge` still applies.
+
+Branch protection on `main` (Settings → Branches, or the API) requires these status
+checks, up to date before merging:
+
+- `ci`
+- `agent-os`
+- `image`
+
+```sh
+gh api -X PUT repos/IvanBBaev/remote-control/branches/main/protection \
+  -F 'required_status_checks[strict]=true' \
+  -f 'required_status_checks[contexts][]=ci' \
+  -f 'required_status_checks[contexts][]=agent-os' \
+  -f 'required_status_checks[contexts][]=image' \
+  -F enforce_admins=false -F required_pull_request_reviews=null -F restrictions=null
+```
+
+A red `pg-real` or `e2e` on `main` does not block merges; fix it before the next deploy.
+Coverage thresholds live in `vitest.config.ts`; lowering one below its D18 floor, adding
+a package without a threshold, or adding a `v8`/`c8`/`istanbul` ignore pragma fails `ci`.
+
 ## Deploy
 
 Pushes to `main` deploy automatically once CI is green. A deployment builds the image,

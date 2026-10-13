@@ -149,7 +149,6 @@ export function createIndexedDbKeyStore({ indexedDB, random }: IndexedDbKeyStore
     async setDeviceId(deviceId) {
       const current = await (identity ??= load());
       const stored = await read<StoredIdentity>(IDENTITY, PHONE_KEY);
-      /* v8 ignore next -- load() wrote the record before this read */
       if (stored === undefined) throw new Error('key store: identity record missing');
       await putIdentity({ ...stored, deviceId });
       identity = Promise.resolve({ ...current, deviceId });

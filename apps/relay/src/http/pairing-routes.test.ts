@@ -4,7 +4,7 @@ import { createLogger, createMemoryDestination, type MemoryDestination } from '@
 import { toBase64Url, toHex } from '@remote-control/protocol';
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createDrizzleAccountStore } from '../adapters/drizzle-account-store.js';
 import { createDrizzleDeviceDirectory } from '../adapters/drizzle-device-directory.js';
@@ -66,6 +66,7 @@ interface Relay {
 const running: FastifyInstance[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(running.splice(0).map((app) => app.close()));
 });
 
@@ -354,6 +355,15 @@ describe('agent enrolment and token rotation (02 §5.5)', () => {
     const logs = relay.logs.lines().join('\n');
     expect(logs).not.toContain(s.agentToken);
     expect(logs).not.toContain(token);
+  });
+
+  it('answers 401 when a concurrent rotation already consumed the token', async () => {
+    const relay = await startRelay();
+    const s = await setup(relay);
+    vi.spyOn(PairingService.prototype, 'rotateToken').mockResolvedValueOnce(null);
+    const res = await s.agent('POST', '/api/agents/token');
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: 'unauthenticated' });
   });
 
   it('refuses malformed and unknown bearer tokens', async () => {

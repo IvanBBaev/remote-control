@@ -147,7 +147,7 @@ export function registerPairingRoutes(app: FastifyInstance, deps: PairingRouteDe
         const agent = await auth.agent(request, reply, limit('rotate', limits.rotateToken));
         if (agent === undefined) return reply;
         const token = await pairing.rotateToken(agent.identity, agent.token);
-        /* v8 ignore next 3 -- only a concurrent rotation of the same token lands here */
+        // Only a concurrent rotation of the same token lands here.
         if (token === null) {
           return reply.code(401).send({ error: 'unauthenticated' });
         }

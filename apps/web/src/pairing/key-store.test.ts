@@ -26,6 +26,25 @@ afterEach(() => {
 });
 
 describe('IndexedDB key store', () => {
+  it('fails to set the device id when the identity record vanished', async () => {
+    const indexedDB = new IDBFactory();
+    const store = createIndexedDbKeyStore({ indexedDB, random: seeded(5) });
+    await store.identity();
+    await new Promise<void>((resolve, reject) => {
+      const open = indexedDB.open('remote-control');
+      open.onerror = () => reject(new Error('cannot open the key store'));
+      open.onsuccess = () => {
+        const transaction = open.result.transaction('identity', 'readwrite');
+        transaction.objectStore('identity').clear();
+        transaction.oncomplete = () => {
+          open.result.close();
+          resolve();
+        };
+      };
+    });
+    await expect(store.setDeviceId('phone-1')).rejects.toThrow('identity record missing');
+  });
+
   it('creates the identity once and keeps it across reopen', async () => {
     const indexedDB = new IDBFactory();
     const first = createIndexedDbKeyStore({ indexedDB, random: seeded(7) });

@@ -8,17 +8,21 @@ export default defineConfig({
       include: ['{apps,packages}/*/src/**/*.{ts,tsx}'],
       exclude: ['**/*.test.{ts,tsx}', '**/*.d.ts'],
       reporter: ['text-summary', 'text'],
-      // Per-package thresholds; packages without an entry are reported, not gated.
+      // Per-package thresholds. D18 floors are enforced by tools/coverage-policy.test.ts:
+      // lowering one below its floor, or dropping a package, fails `ci`.
       thresholds: {
-        'packages/log/src/**': { lines: 100 },
-        'packages/fake-claude-code/src/**': { lines: 90 },
-        'apps/agent/src/**': { lines: 90 },
+        'packages/log/src/**': { lines: 100, functions: 100, branches: 100, statements: 100 },
+        // 07 §5.13: test tooling is held to the agent/relay bar.
+        'packages/fake-claude-code/src/**': { lines: 90, branches: 85 },
+        // The harness runs journeys; its defensive waits are only partly exercised (77 % measured).
+        'packages/test-harness/src/**': { lines: 90, branches: 75 },
+        // D18: agent and relay lines 90 / branches 85.
+        'apps/agent/src/**': { lines: 90, branches: 85 },
+        'apps/relay/src/**': { lines: 90, branches: 85 },
         // 07 §5.13: the protocol package is the trust boundary and stays fully covered.
         'packages/protocol/src/**': { lines: 100, functions: 100, branches: 100, statements: 100 },
         'packages/crypto/src/**': { lines: 100, functions: 100, branches: 100, statements: 100 },
-        // D18: relay lines 90 / branches 85.
-        'apps/relay/src/**': { lines: 90, branches: 85 },
-        // M0-18: the PWA's probe, gate and route table; set just under the measured value.
+        // D18 floor is 80 / 70; set just under the measured value (M0-18).
         'apps/web/src/**': { lines: 95, functions: 95, branches: 90, statements: 95 },
       },
     },

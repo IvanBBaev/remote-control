@@ -1,4 +1,6 @@
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import pg from 'pg';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,6 +15,13 @@ import { FORBIDDEN_COLUMNS, RELAY_TABLES, introspectSchema } from './schema-intr
 // Real Postgres (vitest project `pg-real`, CI job from M0-25). PGlite is a single
 // connection, so the advisory-lock contention can only be proven here.
 const url = process.env['RC_TEST_DATABASE_URL'];
+
+// Counted from the journal so a new migration does not silently break this suite.
+const SHIPPED = (
+  JSON.parse(readFileSync(join(MIGRATIONS_DIR, 'meta', '_journal.json'), 'utf8')) as {
+    entries: unknown[];
+  }
+).entries.length;
 
 async function withClient<T>(fn: (client: pg.Client) => Promise<T>): Promise<T> {
   const client = new pg.Client({ connectionString: url });
@@ -61,11 +70,11 @@ describe.skipIf(url === undefined)('migrations on real Postgres', () => {
           migratePostgres(connectionString, { migrationsFolder: fixture.folder }),
         ),
       );
-      expect(reports.map((report) => report.applied).sort()).toEqual([0, 0, 3]);
-      expect(reports.every((report) => report.total === 3)).toBe(true);
+      expect(reports.map((report) => report.applied).sort()).toEqual([0, 0, SHIPPED + 1]);
+      expect(reports.every((report) => report.total === SHIPPED + 1)).toBe(true);
       const hashes = await recordedHashes();
-      expect(hashes).toHaveLength(3);
-      expect(new Set(hashes).size).toBe(3);
+      expect(hashes).toHaveLength(SHIPPED + 1);
+      expect(new Set(hashes).size).toBe(SHIPPED + 1);
     } finally {
       fixture.remove();
     }
@@ -86,7 +95,7 @@ describe.skipIf(url === undefined)('migrations on real Postgres', () => {
       for (const { app } of servers) {
         expect((await app.inject('/health')).json()).toMatchObject({ db: 'ok' });
       }
-      expect(await recordedHashes()).toHaveLength(2);
+      expect(await recordedHashes()).toHaveLength(SHIPPED);
     } finally {
       await Promise.all(servers.map(({ app }) => app.close()));
     }
@@ -107,7 +116,7 @@ describe.skipIf(url === undefined)('migrations on real Postgres', () => {
       await new Promise((resolve) => setTimeout(resolve, 300));
       expect(settled).toBe(false);
       await holder.query(`SELECT pg_advisory_unlock(${MIGRATION_LOCK_KEY})`);
-      expect(await waiting).toEqual({ applied: 3, total: 3 });
+      expect(await waiting).toEqual({ applied: SHIPPED, total: SHIPPED });
     });
   });
 

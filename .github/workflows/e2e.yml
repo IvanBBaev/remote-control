@@ -1,0 +1,41 @@
+name: e2e
+
+# Browser-level checks. Today: the crypto known-answer vectors in Chromium and WebKit (07 W9).
+# The Playwright journey specs land in M1-12. Runs on `main`, nightly, and on PRs labelled `e2e`.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  schedule:
+    - cron: '41 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser-crypto:
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'e2e')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Enable corepack (pnpm from packageManager field)
+        run: corepack enable
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium and WebKit
+        run: pnpm exec playwright install --with-deps chromium webkit
+
+      - run: pnpm test:browser

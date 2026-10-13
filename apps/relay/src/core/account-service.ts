@@ -230,7 +230,6 @@ export class AccountService {
       return { ok: false, reason: 'invalid_code' };
     }
     const user = await this.deps.store.findUser(stored.userId);
-    /* v8 ignore next -- recovery codes cascade with their user */
     if (user === undefined) return { ok: false, reason: 'invalid_code' };
     const challenge = this.#newChallenge({
       kind: 'recovery',

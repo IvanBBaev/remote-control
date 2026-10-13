@@ -13,6 +13,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Typecheck, lint, format, every node/web suite with the D18 coverage thresholds and the
+  # coverage-policy honesty test, the privacy-gate journeys, and the build.
   ci:
     runs-on: ubuntu-latest
     steps:
@@ -28,4 +30,77 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level=high
+
+      - name: Verify registry signatures
+        run: pnpm audit signatures
+
       - run: pnpm check
+
+  # The relay image as Railway builds it, scanned for fixable HIGH/CRITICAL findings.
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build the relay image
+        run: docker build --tag remote-control-relay:ci .
+
+      - name: Scan the image
+        # trivy-action v0.36.0, pinned by commit.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          image-ref: remote-control-relay:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+  # The agent runs on the owner's machine: conformance against the fake Claude Code, hook
+  # install/uninstall (including corrupt settings JSON), `service --dry-run` and a real
+  # launchd / systemd --user / Task Scheduler round trip, and the pair / allow / expiry
+  # journeys on every OS the daemon supports.
+  agent-os-matrix:
+    name: agent-os (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Enable corepack (pnpm from packageManager field)
+        run: corepack enable
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+
+      - name: Agent, fake Claude Code and journeys J1/J2/J5
+        env:
+          # Real service round trips (temp HOME, stand-in script); each one runs only on its OS.
+          RC_TEST_REAL_LAUNCHCTL: '1'
+          RC_TEST_REAL_SYSTEMCTL: '1'
+          RC_TEST_REAL_SCHTASKS: '1'
+        run: >-
+          pnpm vitest run --project node --coverage.enabled=false
+          apps/agent/src
+          packages/fake-claude-code/src
+          packages/test-harness/src/journeys/j1-pair.test.ts
+          packages/test-harness/src/journeys/j2-allow.test.ts
+          packages/test-harness/src/journeys/j5-expiry.test.ts
+
+  # Single required status for branch protection (docs/ops/runbook.md).
+  agent-os:
+    needs: agent-os-matrix
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every OS passed
+        run: test "${{ needs.agent-os-matrix.result }}" = success

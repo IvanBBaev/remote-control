@@ -112,13 +112,9 @@ export async function registerWsRoute(app: FastifyInstance, deps: WsRouteDeps): 
     '/ws',
     { websocket: true, preValidation: authorize },
     (socket: WebSocket, request: FastifyRequest) => {
-      const identity = identities.get(request);
+      // preValidation either stores an identity or replies, so the handler always finds one.
+      const identity = identities.get(request)!;
       identities.delete(request);
-      /* v8 ignore next 4 -- unreachable: preValidation either stores an identity or replies */
-      if (identity === undefined) {
-        socket.terminate();
-        return;
-      }
       const events = deps.router.accept(identity, socket);
       request.log.info(
         { event: 'ws_open', device_id: identity.deviceId, kind: identity.kind },

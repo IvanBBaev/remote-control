@@ -327,6 +327,16 @@ describe('realtime client', () => {
     });
   });
 
+  it('ignores frames the relay does not send after hello_ok', async () => {
+    const t = await setup();
+    await t.client.start();
+    const socket = await t.connect();
+    const before = t.store.getState();
+    socket.receive({ v: 1, kind: 'ping', t: t.timer.now() });
+    await settle();
+    expect(t.store.getState()).toEqual(before);
+  });
+
   describe('decisions', () => {
     it('queues until the session opens, then sends with the decision hash', async () => {
       const t = await setup();

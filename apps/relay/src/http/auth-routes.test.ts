@@ -2,7 +2,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { sha256, utf8, webCryptoRandom } from '@remote-control/crypto';
 import { createLogger, createMemoryDestination, type MemoryDestination } from '@remote-control/log';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createDrizzleAccountStore } from '../adapters/drizzle-account-store.js';
 import { createPgliteDb } from '../adapters/pglite-db.js';
@@ -44,6 +44,10 @@ beforeAll(async () => {
 });
 
 afterAll(() => client.close());
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 interface Harness {
   readonly app: FastifyInstance;
@@ -505,6 +509,15 @@ describe('recovery', () => {
       const res = await h.post('/api/auth/recovery/options', { recoveryCode: code });
       expect(res.statusCode).toBe(403);
     }
+  });
+
+  it('rejects a code whose user is gone', async () => {
+    const h = await harness();
+    const { recoveryCode } = await register(h);
+    vi.spyOn(store, 'findUser').mockResolvedValueOnce(undefined);
+    const res = await h.post('/api/auth/recovery/options', { recoveryCode });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({ error: 'invalid_code' });
   });
 
   it('uses the code once even when two recoveries race', async () => {

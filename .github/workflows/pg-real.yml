@@ -1,0 +1,50 @@
+name: pg-real
+
+# The relay against a real Postgres 17 (the Railway version): migrations, advisory-lock
+# contention and the schema introspection that PGlite cannot prove (07 W14).
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pg-real-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pg-real:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          # Throwaway CI database on localhost only; no password is needed or stored.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      RC_TEST_DATABASE_URL: postgres://postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Enable corepack (pnpm from packageManager field)
+        run: corepack enable
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm vitest run --project pg-real --coverage.enabled=false

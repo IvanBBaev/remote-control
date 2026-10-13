@@ -32,7 +32,6 @@ export default tseslint.config(
         projectService: {
           allowDefaultProject: [
             '*.mjs',
-            '*.ts',
             'packages/*/bin/*.mjs',
             'apps/*/tsdown.config.ts',
             'apps/agent/scripts/*.mjs',
