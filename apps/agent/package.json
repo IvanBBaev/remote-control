@@ -27,7 +27,8 @@
     }
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./hook": "./src/hook/run-hook.ts"
   },
   "scripts": {
     "build": "node scripts/check-argv-policy.mjs && tsdown src/cli.ts --no-config --platform node --target node22 --format esm --sourcemap --shims --no-dts --clean && tsdown src/hook/hook.ts --no-config --platform node --target node22 --format cjs --no-dts --no-clean"

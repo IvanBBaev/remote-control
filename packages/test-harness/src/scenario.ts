@@ -1,9 +1,8 @@
-import { assertNoCanary } from '@remote-control/log';
-
 import { startAgent, type HarnessAgent } from './agent.js';
 import { createCanaries, type Canaries } from './canaries.js';
 import { createFakeClock, type FakeClock } from './fake-clock.js';
 import { createPhone, type HeadlessPhone } from './phone.js';
+import { assertNoLeaks, type LeakSource } from './privacy-gate.js';
 import { startRelay, type HarnessRelay } from './relay.js';
 
 export interface ScenarioOptions {
@@ -29,9 +28,16 @@ export interface Scenario {
   readonly bootMs: number;
   /** The agent's relay device id. */
   readonly agentDeviceId: string;
+  /** The agent's static X25519 key, as the phone learnt it in the pairing handshake. */
+  readonly agentPublicKey: Uint8Array;
   /**
-   * The I1/I2 scan (07 §5.12): no canary in any relay log line or push body. Run it
-   * after the scenario's traffic, before `close`.
+   * What the privacy gate scans: relay log lines, a PGlite dump, every push (wire body
+   * and what it decrypts to) and the agent's log lines.
+   */
+  leakSources(): Promise<LeakSource[]>;
+  /**
+   * The I1/I2 gate (07 §5.12): no canary in any of {@link leakSources}. Run it after the
+   * scenario's traffic, before `close`.
    */
   assertNoLeaks(): Promise<void>;
   close(): Promise<void>;
@@ -77,6 +83,22 @@ export async function scenario(options: ScenarioOptions = {}): Promise<Scenario>
     await agent.run();
     await phone.handshake(paired.agentDeviceId, paired.agentPublicKey);
 
+    const leakSources = async (): Promise<LeakSource[]> => {
+      await relay.idle();
+      return [
+        { name: 'relay-log', lines: relay.logs() },
+        { name: 'pglite', lines: await relay.dump() },
+        // The push message as the relay built it: the wire body and what it decrypts to.
+        {
+          name: 'push',
+          lines: relay.push.received.flatMap((push) => [
+            Buffer.from(push.body).toString('latin1'),
+            push.plaintext ?? '',
+          ]),
+        },
+        { name: 'agent-log', lines: agent.logs() },
+      ];
+    };
     return {
       clock,
       relay,
@@ -85,14 +107,10 @@ export async function scenario(options: ScenarioOptions = {}): Promise<Scenario>
       canaries,
       bootMs,
       agentDeviceId: paired.agentDeviceId,
+      agentPublicKey: paired.agentPublicKey,
+      leakSources,
       async assertNoLeaks() {
-        await relay.idle();
-        // The push message as the relay built it: the wire body and what it decrypts to.
-        const pushes = relay.push.received.flatMap((push) => [
-          Buffer.from(push.body).toString('latin1'),
-          push.plaintext ?? '',
-        ]);
-        assertNoCanary([...relay.logs(), ...pushes], canaries.all());
+        assertNoLeaks(await leakSources(), canaries.all());
       },
       close,
     };

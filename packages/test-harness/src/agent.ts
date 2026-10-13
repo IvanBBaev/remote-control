@@ -1,9 +1,11 @@
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
 import { writeClaudeShim } from '@remote-control/fake-claude-code';
+import { createLogger, createMemoryDestination } from '@remote-control/log';
 import { createContainer, runCli, type Container } from 'remotectl';
+import { DEFAULT_HOOK_TIMEOUT_SECONDS, runHook } from 'remotectl/hook';
 
 import { eventually } from './eventually.js';
 import type { FakeClock } from './fake-clock.js';
@@ -25,6 +27,14 @@ export interface PairingRun {
   readonly done: Promise<number>;
 }
 
+/** What `hook.cjs` printed for one hook event; it always exits 0 (D10, D11). */
+export interface HookResult {
+  /** Stdout verbatim: the agent's JSON answer, or `''` when the hook fell through. */
+  readonly stdout: string;
+  /** The answer parsed; `undefined` for empty stdout. */
+  readonly output: Readonly<Record<string, unknown>> | undefined;
+}
+
 export interface HarnessAgent {
   /** The temp root: `home/`, `tmp/` and `bin/` (the `claude` shim on `PATH`). */
   readonly base: string;
@@ -38,12 +48,25 @@ export interface HarnessAgent {
   pair(): PairingRun;
   /** `remotectl run` in the background, until `stop` or `close`. */
   run(): Promise<void>;
+  /** Stops `remotectl run` (Ctrl-C) and waits for it to exit. */
+  stop(): Promise<void>;
+  /**
+   * Fires one hook event the way Claude Code runs `hook.cjs [T]`: the hook's own logic
+   * (`runHook`) in process, reading `agent.json` from the data directory. `T` defaults to
+   * Claude Code's 600 s; the agent holds a blocking request until `T − 10 s` on the
+   * fake clock.
+   */
+  fire(input: Readonly<Record<string, unknown>>, timeoutSeconds?: number): Promise<HookResult>;
+  /** Every agent log line (JSON), for canary scans and the decision log. */
+  logs(): string[];
   /** The agent's X25519 public key (after `pair` or `run` created it). */
   publicKey(): Promise<Uint8Array>;
   close(): Promise<void>;
 }
 
 const PAIRING_CODE = /Pairing code: (\S+)/;
+/** The file `hook.cjs` reads next to itself (D11). */
+const AGENT_ENDPOINT_FILE = 'agent.json';
 
 /**
  * The agent in process (07 §5.6): the real `remotectl` CLI and container on a temp HOME
@@ -75,10 +98,17 @@ export async function startAgent(options: StartAgentOptions): Promise<HarnessAge
     prompt: { confirm: () => Promise.resolve(options.confirm ?? true) },
     hostname: options.name,
   });
+  const destination = createMemoryDestination();
   const container: Container = {
     ...real,
     // Port 0: harness agents never collide with each other or a real agent.
     startHookReceiver: (receiver) => real.startHookReceiver({ ...receiver, port: 0 }),
+    // Captured in memory instead of the rolling file, for the privacy gate (07 §5.12).
+    openLog: () =>
+      Promise.resolve({
+        logger: createLogger({ name: 'agent', destination }),
+        close: () => Promise.resolve(),
+      }),
   };
   await mkdir(container.paths.config, { recursive: true });
   await writeFile(
@@ -89,6 +119,10 @@ export async function startAgent(options: StartAgentOptions): Promise<HarnessAge
   const cli = (argv: readonly string[], signal = new AbortController().signal) =>
     runCli(argv, container, { signal });
   const running: { controller: AbortController; exit: Promise<number> }[] = [];
+  const stop = async () => {
+    for (const { controller } of running) controller.abort();
+    await Promise.all(running.splice(0).map(({ exit }) => exit));
+  };
 
   return {
     base,
@@ -111,14 +145,32 @@ export async function startAgent(options: StartAgentOptions): Promise<HarnessAge
       running.push({ controller, exit: cli(['run'], controller.signal) });
       await eventually(() => out.includes('press Ctrl-C to stop'), '`run` did not start');
     },
+    stop,
+    async fire(input, timeoutSeconds = DEFAULT_HOOK_TIMEOUT_SECONDS) {
+      let stdout = '';
+      await runHook({
+        argv: [String(timeoutSeconds)],
+        readStdin: () => Promise.resolve(JSON.stringify(input)),
+        readEndpoint: () => readFile(join(container.paths.data, AGENT_ENDPOINT_FILE), 'utf8'),
+        write: (text) => {
+          stdout += text;
+          return Promise.resolve();
+        },
+      });
+      return {
+        stdout,
+        output:
+          stdout === '' ? undefined : (JSON.parse(stdout) as Readonly<Record<string, unknown>>),
+      };
+    },
+    logs: () => destination.lines(),
     async publicKey() {
       const key = await container.keyStore.readDeviceKey();
       if (key === undefined) throw new Error('agent: no device key yet');
       return key.keyPair.publicKey;
     },
     async close() {
-      for (const { controller } of running) controller.abort();
-      await Promise.all(running.splice(0).map(({ exit }) => exit));
+      await stop();
       await rm(base, { recursive: true, force: true });
     },
   };

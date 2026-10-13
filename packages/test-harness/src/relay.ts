@@ -49,11 +49,37 @@ export interface HarnessRelay {
   readonly push: FakePushService;
   /** Every relay log line (JSON), for canary scans. */
   logs(): string[];
+  /**
+   * Every row of every table, one line per row (`schema.table: {json}`, byte columns as
+   * latin1), for canary scans (07 §5.12).
+   */
+  dump(): Promise<string[]>;
   /** A single-use invite code, as `rcadmin invites` mints them. */
   mintInvite(): Promise<string>;
   /** Waits for in-flight pushes and audit writes. */
   idle(): Promise<void>;
   close(): Promise<void>;
+}
+
+const textOf = (_key: string, value: unknown): unknown => {
+  if (value instanceof Uint8Array) return Buffer.from(value).toString('latin1');
+  return typeof value === 'bigint' ? value.toString() : value;
+};
+
+async function dumpTables(client: PGlite): Promise<string[]> {
+  const tables = await client.query<{ table_schema: string; table_name: string }>(
+    `SELECT table_schema, table_name FROM information_schema.tables
+     WHERE table_type = 'BASE TABLE'
+       AND table_schema NOT IN ('pg_catalog', 'information_schema')
+     ORDER BY table_schema, table_name`,
+  );
+  const lines: string[] = [];
+  for (const { table_schema: schema, table_name: table } of tables.rows) {
+    const name = `"${schema.replaceAll('"', '""')}"."${table.replaceAll('"', '""')}"`;
+    const rows = await client.query<Record<string, unknown>>(`SELECT * FROM ${name}`);
+    for (const row of rows.rows) lines.push(`${schema}.${table}: ${JSON.stringify(row, textOf)}`);
+  }
+  return lines;
 }
 
 /**
@@ -137,6 +163,7 @@ export async function startRelay(options: StartRelayOptions): Promise<HarnessRel
     rpId: RELAY_RP_ID,
     push,
     logs: () => destination.lines(),
+    dump: () => dumpTables(client),
     async mintInvite() {
       const [code] = await mintInvites({ store: accountStore, random, clock }, 1, INVITE_TTL_MS);
       return code!;
