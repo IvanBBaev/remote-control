@@ -489,7 +489,7 @@ push to `main`; `/health` unit test covers the 503 draining case; `docker build`
 as non-root.
 
 #### M0-03 — Device feasibility spike (GO / NO-GO for the PWA)
-Size M · Deps M0-02 · Status todo · Sources 05 W1, 05 §4, 01-roles "native engineer"
+Size M · Deps M0-02 · Status doing — code done 81021f0; device runs pending owner (domain Q2, iPhone + Android) · Sources 05 W1, 05 §4, 01-roles "native engineer"
 Scope: a throwaway page at the production domain (so passkeys bind to the final RP ID):
 installability on iPhone (Safari 17+) and Android Chrome; `PushManager.subscribe` in the
 installed app; push received with the app closed and the phone locked; tap opens a
