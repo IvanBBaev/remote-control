@@ -708,7 +708,7 @@ AC: tests with the harness' in-process relay: pairing completes and the phone de
 frame from the in-process agent; reconnect re-handshakes and receives the pending set.
 
 #### M0-21 — PWA: push subscription, service worker, approval card
-Size M · Deps M0-20, M0-12 · Status todo · Sources 05 W4, 05 W9, 05 W14, 05 Rec-1–2, 05 Rec-9, 01 W6, D5
+Size M · Deps M0-20, M0-12 · Status done 94725e8 (manual locked-iPhone push waits for the M0-02/M0-03 device run; the card's project line waits for repository data in the snapshot) · Sources 05 W4, 05 W9, 05 W14, 05 Rec-1–2, 05 Rec-9, 01 W6, D5
 Scope: subscribe with the VAPID public key and register on the relay; `src/sw.ts` with
 pure functions `handlePush(data)` / `handleClick(event)` (M0: generic text "Approval
 needed on <machine>", **always** `showNotification`, tap → `/requests/:rid`, focus an
