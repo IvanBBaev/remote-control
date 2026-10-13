@@ -75,27 +75,6 @@ export function SessionScreen() {
   );
 }
 
-/** One approval request: what the agent wants to do, and Allow / Deny. */
-export function RequestScreen() {
-  const { id = '' } = useParams();
-  return (
-    <Screen title="Approval request" back="/sessions">
-      <p className="meta">
-        Request <code>{id}</code>
-      </p>
-      <Notice>Loading the request…</Notice>
-      <div className="actions split">
-        <button type="button" className="danger" disabled>
-          Deny
-        </button>
-        <button type="button" className="primary" disabled>
-          Allow
-        </button>
-      </div>
-    </Screen>
-  );
-}
-
 /** Start a new agent session on a paired computer. */
 export function NewSessionScreen() {
   return (

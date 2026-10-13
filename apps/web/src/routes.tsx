@@ -5,13 +5,14 @@ import type { RouteObject } from 'react-router';
 import { useAppState } from './app-state.js';
 import { ONBOARDING_ROUTES, nextOnboardingStep, onboardingRedirect } from './onboarding.js';
 import type { OnboardingStep } from './onboarding.js';
+import { PendingWatch } from './push/pending-watch.js';
+import { RequestScreen } from './screens/approval.js';
 import { AppShell, BareShell } from './screens/layout.js';
 import { LoginScreen, PasskeyScreen } from './screens/auth.js';
 import {
   MachinesScreen,
   NewSessionScreen,
   NotFoundScreen,
-  RequestScreen,
   SessionScreen,
   SessionsScreen,
 } from './screens/main.js';
@@ -38,7 +39,13 @@ function CurrentStep() {
 /** The main app is reachable only once onboarding is complete (05 Rec-3). */
 function OnboardingGate() {
   const redirect = onboardingRedirect(useAppState().state);
-  return redirect === undefined ? <AppShell /> : <Navigate to={redirect} replace />;
+  if (redirect !== undefined) return <Navigate to={redirect} replace />;
+  return (
+    <>
+      <PendingWatch />
+      <AppShell />
+    </>
+  );
 }
 
 /** The pairing screen stays reachable after onboarding, to add more computers. */

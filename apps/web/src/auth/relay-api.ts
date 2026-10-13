@@ -64,6 +64,13 @@ export interface EnrolledAgent {
   readonly enrollToken: string;
 }
 
+/** `PushSubscription.toJSON()`: what `PUT /api/push/subscription` takes. */
+export interface PushSubscriptionInput {
+  readonly endpoint: string;
+  readonly expirationTime?: number | null;
+  readonly keys: { readonly p256dh: string; readonly auth: string };
+}
+
 /** The relay's HTTP endpoints, as the PWA calls them. */
 export interface RelayApi {
   registerOptions(input: {
@@ -86,6 +93,10 @@ export interface RelayApi {
   joinPairing(codeHash: string): Promise<{ agentDeviceId: string }>;
   /** Relay-side state (devices, presence, last seen), all or changed after `since`. */
   state(since?: number): Promise<RelayState>;
+  /** The relay's VAPID public key (base64url), for `pushManager.subscribe` (D5). */
+  pushKey(): Promise<{ publicKey: string }>;
+  /** Stores this phone's push subscription; 409 `endpoint_taken` if another phone has it. */
+  savePushSubscription(subscription: PushSubscriptionInput): Promise<void>;
 }
 
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
@@ -108,7 +119,11 @@ export function createRelayApi(
   fetchImpl: FetchLike,
   { baseUrl = '', timeoutMs = 15_000 }: { baseUrl?: string; timeoutMs?: number } = {},
 ): RelayApi {
-  async function call(method: 'GET' | 'POST', path: string, body?: unknown): Promise<Response> {
+  async function call(
+    method: 'GET' | 'POST' | 'PUT',
+    path: string,
+    body?: unknown,
+  ): Promise<Response> {
     const headers: Record<string, string> = { 'x-rc-client': 'pwa' };
     // Fastify rejects an empty body declared as JSON, so a call without a body sends none.
     if (body !== undefined) headers['content-type'] = 'application/json';
@@ -162,5 +177,9 @@ export function createRelayApi(
     joinPairing: (codeHash) => json('POST', '/api/pairings/join', { codeHash }),
     state: (since) =>
       json('GET', since === undefined ? '/api/state' : `/api/state?since=${String(since)}`),
+    pushKey: () => json('GET', '/api/push/key'),
+    async savePushSubscription(subscription) {
+      await call('PUT', '/api/push/subscription', subscription);
+    },
   };
 }

@@ -301,3 +301,23 @@ label.confirm input {
 .machine-list li.online .meta {
   color: var(--color-accent);
 }
+
+.approval-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.approval-card h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.approval-card pre.details {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.countdown {
+  font-variant-numeric: tabular-nums;
+}

@@ -6,6 +6,7 @@ import { isSignedIn } from './auth/auth-store.js';
 import type { AuthState, AuthStore } from './auth/auth-store.js';
 import type { RelayApi } from './auth/relay-api.js';
 import type { NotificationPermissionState, OnboardingState } from './onboarding.js';
+import type { NavigationSource } from './push/navigation.js';
 import type { PhoneService } from './realtime/phone.js';
 import type { RealtimeState } from './realtime/realtime-store.js';
 
@@ -13,6 +14,12 @@ import type { RealtimeState } from './realtime/realtime-store.js';
 export interface PlatformActions {
   /** Must run inside the tap handler: iOS grants permission only to a user gesture. */
   readonly requestNotificationPermission: () => Promise<NotificationPermissionState>;
+  /** Subscribes to Web Push and stores the subscription on the relay (M0-21). */
+  readonly registerPush?: () => Promise<unknown>;
+  /** The home-screen badge: the number of pending requests (05 Rec-2). */
+  readonly setBadge?: (count: number) => void;
+  /** Where the service worker posts `navigate` after a notification tap. */
+  readonly serviceWorker?: NavigationSource;
 }
 
 export interface AppStateValue {
@@ -20,6 +27,7 @@ export interface AppStateValue {
   readonly auth: AuthStore;
   readonly relay: RelayApi;
   readonly phone: PhoneService;
+  readonly platform: PlatformActions;
   readonly skipInstall: () => void;
   readonly requestNotifications: () => Promise<void>;
 }
@@ -57,14 +65,19 @@ export function AppStateProvider({
   const signedIn = useStore(auth, isSignedIn);
   const userId = useStore(auth, signedInUser);
   const machines = useStore(phone.realtime, hasMachines);
+  const permission = device.notificationPermission;
   useEffect(() => {
     if (userId === null) {
       phone.disconnect();
       return;
     }
     // A failure (e.g. offline) is retried when the app wakes up; see `PhoneService.wake`.
-    phone.connect(userId).catch(() => undefined);
-  }, [phone, userId]);
+    // Push needs the bound phone (the relay answers `no_phone` before), so it follows.
+    phone
+      .connect(userId)
+      .then(() => (permission === 'granted' ? platform.registerPush?.() : undefined))
+      .catch(() => undefined);
+  }, [phone, userId, permission, platform]);
   const state = useMemo(
     () => ({ ...device, signedIn, paired: device.paired || machines }),
     [device, signedIn, machines],
@@ -77,8 +90,8 @@ export function AppStateProvider({
     setState((s) => ({ ...s, notificationPermission }));
   }, [platform]);
   const value = useMemo(
-    () => ({ state, auth, relay, phone, skipInstall, requestNotifications }),
-    [state, auth, relay, phone, skipInstall, requestNotifications],
+    () => ({ state, auth, relay, phone, platform, skipInstall, requestNotifications }),
+    [state, auth, relay, phone, platform, skipInstall, requestNotifications],
   );
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
 }

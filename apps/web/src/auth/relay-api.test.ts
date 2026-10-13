@@ -77,6 +77,18 @@ describe('createRelayApi', () => {
     ]);
   });
 
+  it('wraps push calls in the relay request shapes', async () => {
+    const fetchImpl = respond(200, { publicKey: 'BPk' });
+    const api = createRelayApi(fetchImpl);
+    await expect(api.pushKey()).resolves.toEqual({ publicKey: 'BPk' });
+    const subscription = { endpoint: 'https://push.example/1', keys: { p256dh: 'p', auth: 'a' } };
+    await expect(api.savePushSubscription(subscription)).resolves.toBeUndefined();
+    expect(fetchImpl.mock.calls.map(([url, init]) => [init.method, url, init.body])).toEqual([
+      ['GET', '/api/push/key', undefined],
+      ['PUT', '/api/push/subscription', JSON.stringify(subscription)],
+    ]);
+  });
+
   it('reads the session, and a 401 as signed out', async () => {
     await expect(createRelayApi(respond(200, { userId: 'u' })).session()).resolves.toEqual({
       userId: 'u',

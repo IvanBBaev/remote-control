@@ -1,9 +1,11 @@
 import { pairingFingerprint } from '@remote-control/crypto';
+import { DECISION_TTL_SECONDS, decisionHash } from '@remote-control/protocol';
+import type { ApprovalRequest } from '@remote-control/protocol';
 import { describe, expect, it, vi } from 'vitest';
 
 import { RelayError } from '../auth/relay-api.js';
 import type { RelayApi } from '../auth/relay-api.js';
-import { fakeRelay } from '../auth/test-credentials.js';
+import { fakeRelay, mockCredentials, userCancelled } from '../auth/test-credentials.js';
 import { pairingSecrets } from '../pairing/pairing-code.js';
 import { PairingError, phoneNameFrom, relaySocketUrl } from './phone.js';
 import { PAIRING_TIMEOUT_MS } from './realtime-client.js';
@@ -203,6 +205,121 @@ describe('phone service', () => {
       enrollToken: 'rc-enroll:abc',
     });
     expect(t.mocks.enrollAgent).toHaveBeenCalledWith('Studio Mac');
+  });
+});
+
+describe('phone decisions', () => {
+  const REQUEST: ApprovalRequest = {
+    id: '7a1b2c3d-4e5f-4a6b-8c7d-000000000001',
+    sessionId: '5e5e5e5e-0000-4000-8000-000000000001',
+    requestHash: 'a'.repeat(64),
+    toolLabel: 'Run a command',
+    toolName: 'Bash',
+    content: 'pnpm test',
+    truncated: false,
+    suggestions: [],
+    expiresAt: Date.UTC(2026, 9, 1, 0, 5),
+    alwaysSupported: true,
+  };
+
+  const hexToBase64Url = (hex: string): string =>
+    btoa(String.fromCharCode(...(hex.match(/../g) ?? []).map((pair) => parseInt(pair, 16))))
+      .replaceAll('+', '-')
+      .replaceAll('/', '_')
+      .replace(/=+$/, '');
+
+  /** A relay that issues the challenge for the hash it was given, like the real one. */
+  const assertingRelay = () => {
+    let last = '';
+    return {
+      decisionChallenge: vi.fn((hash: string) => {
+        last = hash;
+        return Promise.resolve({ challenge: hexToBase64Url(hash), rpId: 'localhost' });
+      }),
+      decisionVerify: vi.fn(() => Promise.resolve({ decisionHash: last, verifiedUntil: 0 })),
+    };
+  };
+
+  it('refuses while not connected', async () => {
+    const t = await setup();
+    await expect(t.phone.decide(AGENT, REQUEST, 'deny')).resolves.toEqual({
+      ok: false,
+      failure: 'offline',
+    });
+  });
+
+  it('denies without a passkey, stamped with relay time', async () => {
+    const t = await setup();
+    await t.online();
+    t.phone.realtime.setState({ relayOffset: 90_000 });
+    const decide = vi.spyOn(t.phone.client!, 'decide');
+    const result = await t.phone.decide(AGENT, REQUEST, 'deny');
+    const issuedAt = Math.floor((t.timer.now() + 90_000) / 1000);
+    const decision = {
+      v: 1,
+      kind: 'deny',
+      request_id: REQUEST.id,
+      request_hash: REQUEST.requestHash,
+      payload: null,
+      issued_at: issuedAt,
+      expires_at: issuedAt + DECISION_TTL_SECONDS,
+      phone_device_id: PHONE,
+      agent_device_id: AGENT,
+    } as const;
+    expect(result).toEqual({
+      ok: true,
+      decisionHash: await decisionHash(decision),
+      asserted: false,
+    });
+    expect(decide).toHaveBeenCalledWith(AGENT, decision, undefined);
+  });
+
+  it('allows with a passkey assertion and sends its hash', async () => {
+    const credentials = mockCredentials();
+    try {
+      const relay = assertingRelay();
+      const t = await setup(relay);
+      await t.online();
+      const decide = vi.spyOn(t.phone.client!, 'decide');
+      const result = await t.phone.decide(AGENT, REQUEST, 'allow');
+      expect(result).toMatchObject({ ok: true, asserted: true });
+      expect(credentials.get).toHaveBeenCalledOnce();
+      expect(decide).toHaveBeenCalledWith(
+        AGENT,
+        expect.objectContaining({ kind: 'allow' }),
+        result.ok ? result.decisionHash : 'never',
+      );
+    } finally {
+      credentials.restore();
+    }
+  });
+
+  it('sends nothing when the user cancels the passkey sheet', async () => {
+    const credentials = mockCredentials();
+    credentials.get.mockRejectedValueOnce(userCancelled());
+    try {
+      const t = await setup(assertingRelay());
+      await t.online();
+      const decide = vi.spyOn(t.phone.client!, 'decide');
+      await expect(t.phone.decide(AGENT, REQUEST, 'allow')).resolves.toEqual({
+        ok: false,
+        failure: 'cancelled',
+      });
+      expect(decide).not.toHaveBeenCalled();
+      // Disconnecting forgets the bound device id.
+      t.phone.disconnect();
+      await expect(t.phone.decide(AGENT, REQUEST, 'deny')).resolves.toMatchObject({ ok: false });
+    } finally {
+      credentials.restore();
+    }
+  });
+
+  it('schedules on its clock', async () => {
+    const t = await setup();
+    const callback = vi.fn();
+    t.phone.after(1000, callback);
+    t.timer.advance(1000);
+    expect(callback).toHaveBeenCalledOnce();
   });
 });
 

@@ -15,6 +15,8 @@ const RELAY_METHODS = [
   'enrollAgent',
   'joinPairing',
   'state',
+  'pushKey',
+  'savePushSubscription',
 ] as const satisfies readonly (keyof RelayApi)[];
 
 /** A relay whose every call fails loudly unless the test stubs it. */

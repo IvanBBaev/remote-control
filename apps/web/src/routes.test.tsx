@@ -52,12 +52,9 @@ describe('route table (onboarded user)', () => {
     expect(app.path()).toBe('/sessions');
   });
 
-  it('shows the route parameter on the session and request screens', async () => {
+  it('shows the route parameter on the session screen', async () => {
     const session = await mount('/sessions/s-42', onboarded);
     expect(session.container.textContent).toContain('s-42');
-    session.unmount();
-    const request = await mount('/requests/r-7', onboarded);
-    expect(request.container.textContent).toContain('r-7');
   });
 
   it('shows the tab bar inside the gated app only', async () => {

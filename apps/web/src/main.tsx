@@ -36,6 +36,8 @@ void bootstrap({
   container,
   env: readBrowserEnvironment(window),
   notifications: 'Notification' in window ? Notification : undefined,
+  ...('serviceWorker' in navigator && { serviceWorker: navigator.serviceWorker }),
+  badge: navigator,
   relay,
   phone,
   hint: storageSessionHint(() => window.localStorage),

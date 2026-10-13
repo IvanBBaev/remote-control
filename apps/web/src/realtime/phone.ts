@@ -1,11 +1,15 @@
 import { pairingFingerprint } from '@remote-control/crypto';
-import type { Random } from '@remote-control/protocol';
+import { DECISION_TTL_SECONDS, VERSION_TABLE } from '@remote-control/protocol';
+import type { ApprovalRequest, CanonicalDecision, Random } from '@remote-control/protocol';
+
+import { assertDecision } from '../auth/assert-decision.js';
+import type { AssertDecisionResult } from '../auth/assert-decision.js';
 
 import { RelayError } from '../auth/relay-api.js';
 import type { EnrolledAgent, RelayApi } from '../auth/relay-api.js';
 import type { KeyStore } from '../pairing/key-store.js';
 import { normalizePairingCode, pairingSecrets } from '../pairing/pairing-code.js';
-import type { Timer } from '../ports/timer.js';
+import type { Timer, TimerHandle } from '../ports/timer.js';
 import { createRealtimeClient, PairingTimeoutError } from './realtime-client.js';
 import type { RealtimeClient } from './realtime-client.js';
 import type { SocketFactory } from './relay-socket.js';
@@ -51,6 +55,8 @@ export interface PhoneService {
   readonly realtime: RealtimeStore;
   /** The local clock the realtime client runs on, for labels such as "last seen". */
   now(): number;
+  /** Schedules on the same clock, for countdowns. */
+  after(ms: number, callback: () => void): TimerHandle;
   /** How many computers this phone has paired, from the key store. */
   pairedCount(): Promise<number>;
   /** Binds this phone to the signed-in account and connects; repeated calls are no-ops. */
@@ -64,6 +70,16 @@ export interface PhoneService {
   pair(code: string): Promise<PendingPairing>;
   /** The live client, once connected (M0-21 sends decisions through it). */
   readonly client: RealtimeClient | undefined;
+  /**
+   * Answers `request` on `machineId`: builds the canonical decision, asks for the passkey
+   * assertion when the kind needs one (Allow, D7), then queues it for the agent. Call it
+   * from the tap handler, so iOS lets the passkey sheet open.
+   */
+  decide(
+    machineId: string,
+    request: ApprovalRequest,
+    kind: 'allow' | 'deny',
+  ): Promise<AssertDecisionResult>;
 }
 
 /** What the relay's pairing answers mean to the user (D6, M0-10). */
@@ -112,6 +128,8 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
   let client: RealtimeClient | undefined;
   let connecting: Promise<void> | undefined;
   let userId: string | undefined;
+  /** The id the relay bound this phone to on the current connection. */
+  let phoneDeviceId: string | undefined;
 
   /** `POST /api/devices/phone`, keeping the id the relay already knows this phone by. */
   async function bind(): Promise<string> {
@@ -131,6 +149,7 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
 
   async function open(forUser: string): Promise<void> {
     const deviceId = await bind();
+    phoneDeviceId = deviceId;
     const { keyPair } = await keyStore.identity();
     client = createRealtimeClient({
       url: options.url,
@@ -165,6 +184,7 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
   return {
     realtime,
     now: () => options.timer.now(),
+    after: (ms, callback) => options.timer.after(ms, callback),
     get client() {
       return client;
     },
@@ -173,6 +193,7 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
     disconnect() {
       client?.stop();
       client = undefined;
+      phoneDeviceId = undefined;
       connecting = undefined;
       userId = undefined;
     },
@@ -183,6 +204,30 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
         connect(userId).catch(() => undefined);
     },
     enroll: (name) => relay.enrollAgent(name),
+    async decide(machineId, request, kind) {
+      const live = client;
+      if (live === undefined || phoneDeviceId === undefined)
+        return { ok: false, failure: 'offline' };
+      // Relay time: the clock both ends agree on, whatever the phone's own says (D7).
+      const relayNow = options.timer.now() + realtime.getState().relayOffset;
+      const issuedAt = Math.floor(relayNow / 1000);
+      const decision: CanonicalDecision = {
+        v: VERSION_TABLE.v,
+        kind,
+        request_id: request.id,
+        request_hash: request.requestHash,
+        payload: null,
+        issued_at: issuedAt,
+        expires_at: issuedAt + DECISION_TTL_SECONDS,
+        phone_device_id: phoneDeviceId,
+        agent_device_id: machineId,
+      };
+      const result = await assertDecision(decision, relay);
+      if (result.ok) {
+        live.decide(machineId, decision, result.asserted ? result.decisionHash : undefined);
+      }
+      return result;
+    },
     async pair(code) {
       const normalized = normalizePairingCode(code);
       if (normalized === undefined) throw new PairingError('Enter all 12 characters of the code.');

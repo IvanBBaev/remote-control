@@ -20,16 +20,67 @@ describe('notification permission', () => {
 
   it('requests the permission through the API', async () => {
     const api = notificationApi('default');
-    await expect(createPlatformActions(api).requestNotificationPermission()).resolves.toBe(
-      'granted',
-    );
+    await expect(
+      createPlatformActions(api, { relay: fakeRelay() }).requestNotificationPermission(),
+    ).resolves.toBe('granted');
     expect(api.requestPermission).toHaveBeenCalledOnce();
   });
 
   it('answers unsupported without the API', async () => {
-    await expect(createPlatformActions(undefined).requestNotificationPermission()).resolves.toBe(
-      'unsupported',
-    );
+    await expect(
+      createPlatformActions(undefined, { relay: fakeRelay() }).requestNotificationPermission(),
+    ).resolves.toBe('unsupported');
+  });
+});
+
+describe('push and badge actions', () => {
+  it('has no push without a service worker', () => {
+    const actions = createPlatformActions(undefined, { relay: fakeRelay() });
+    expect(actions.registerPush).toBeUndefined();
+    expect(actions.serviceWorker).toBeUndefined();
+    expect(() => {
+      actions.setBadge?.(2);
+    }).not.toThrow();
+  });
+
+  it('registers push through the ready worker', async () => {
+    const subscription = {
+      options: { applicationServerKey: null },
+      toJSON: () => ({ endpoint: 'https://push.example/1', keys: { p256dh: 'p', auth: 'a' } }),
+      unsubscribe: () => Promise.resolve(true),
+    };
+    const serviceWorker = {
+      ready: Promise.resolve({
+        pushManager: {
+          getSubscription: () => Promise.resolve(null),
+          subscribe: () => Promise.resolve(subscription),
+        },
+      }),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    const saved = vi.fn(() => Promise.resolve());
+    const relay = fakeRelay({
+      pushKey: () => Promise.resolve({ publicKey: 'BPk_-w' }),
+      savePushSubscription: saved,
+    });
+    const actions = createPlatformActions(undefined, { relay, serviceWorker });
+    expect(actions.serviceWorker).toBe(serviceWorker);
+    await expect(actions.registerPush?.()).resolves.toBe('registered');
+    expect(saved).toHaveBeenCalledOnce();
+  });
+
+  it('sets the badge to the count and clears it at zero, ignoring refusals', async () => {
+    const badge = {
+      setAppBadge: vi.fn(() => Promise.reject(new Error('not allowed'))),
+      clearAppBadge: vi.fn(() => Promise.resolve()),
+    };
+    const actions = createPlatformActions(undefined, { relay: fakeRelay(), badge });
+    actions.setBadge?.(3);
+    actions.setBadge?.(0);
+    await Promise.resolve();
+    expect(badge.setAppBadge).toHaveBeenCalledWith(3);
+    expect(badge.clearAppBadge).toHaveBeenCalledOnce();
   });
 });
 
@@ -41,7 +92,7 @@ describe('bootstrap', () => {
 
   async function boot(
     path: string,
-    options: Pick<BootstrapOptions, 'relay' | 'hint'> &
+    options: Pick<BootstrapOptions, 'relay' | 'hint' | 'serviceWorker' | 'badge'> &
       Partial<Pick<BootstrapOptions, 'phone' | 'env'>>,
   ) {
     const container = document.createElement('div');
@@ -114,6 +165,28 @@ describe('bootstrap', () => {
       env: installed,
     });
     expect(window.location.pathname).toBe('/sessions');
+    app.unmount();
+  });
+
+  it('wires the service worker and the badge into the app', async () => {
+    const serviceWorker = {
+      ready: new Promise<never>(() => undefined),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    const badge = { clearAppBadge: vi.fn(() => Promise.resolve()) };
+    const test = createTestPhone(fakeRelay());
+    vi.spyOn(test.phone, 'pairedCount').mockResolvedValue(1);
+    const app = await boot('/sessions', {
+      phone: test.phone,
+      relay: fakeRelay({ session: () => Promise.resolve({ userId: 'user-1' }) }),
+      env: installed,
+      serviceWorker,
+      badge,
+    });
+    expect(window.location.pathname).toBe('/sessions');
+    expect(serviceWorker.addEventListener).toHaveBeenCalledWith('message', expect.any(Function));
+    expect(badge.clearAppBadge).toHaveBeenCalled();
     app.unmount();
   });
 

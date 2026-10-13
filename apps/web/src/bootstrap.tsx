@@ -11,6 +11,9 @@ import type { PlatformActions } from './app-state.js';
 import { probeCapabilities } from './capabilities.js';
 import type { BrowserEnvironment, WebCryptoCheck } from './capabilities.js';
 import type { NotificationPermissionState } from './onboarding.js';
+import type { NavigationSource } from './push/navigation.js';
+import { registerPush } from './push/push-subscription.js';
+import type { PushManagerLike } from './push/push-subscription.js';
 import type { PhoneService } from './realtime/phone.js';
 import { AppRoutes } from './routes.js';
 
@@ -26,11 +29,40 @@ export function readNotificationPermission(
   return api === undefined ? 'unsupported' : api.permission;
 }
 
-export function createPlatformActions(api: NotificationApi | undefined): PlatformActions {
+/** The slice of `ServiceWorkerContainer` the app uses. */
+export interface ServiceWorkerApi extends NavigationSource {
+  readonly ready: Promise<{ readonly pushManager: PushManagerLike }>;
+}
+
+/** The Badging API on `navigator`; missing where the platform has no badge. */
+export interface BadgeApi {
+  readonly setAppBadge?: (count: number) => Promise<void>;
+  readonly clearAppBadge?: () => Promise<void>;
+}
+
+export interface PlatformApis {
+  readonly relay: Pick<RelayApi, 'pushKey' | 'savePushSubscription'>;
+  readonly serviceWorker?: ServiceWorkerApi;
+  readonly badge?: BadgeApi;
+}
+
+export function createPlatformActions(
+  api: NotificationApi | undefined,
+  { relay, serviceWorker, badge }: PlatformApis,
+): PlatformActions {
   return {
     requestNotificationPermission: async () => {
       if (api === undefined) return 'unsupported';
       return api.requestPermission();
+    },
+    ...(serviceWorker && {
+      serviceWorker,
+      registerPush: async () => registerPush((await serviceWorker.ready).pushManager, relay),
+    }),
+    setBadge: (count) => {
+      // The badge is a hint: a refusal (e.g. no notification permission) changes nothing.
+      const pending = count > 0 ? badge?.setAppBadge?.(count) : badge?.clearAppBadge?.();
+      pending?.catch(() => undefined);
     },
   };
 }
@@ -39,6 +71,8 @@ export interface BootstrapOptions {
   readonly container: Element;
   readonly env: BrowserEnvironment;
   readonly notifications: NotificationApi | undefined;
+  readonly serviceWorker?: ServiceWorkerApi;
+  readonly badge?: BadgeApi;
   readonly relay: RelayApi;
   readonly phone: PhoneService;
   readonly hint?: SessionHint;
@@ -68,7 +102,11 @@ export async function bootstrap(options: BootstrapOptions): Promise<Root> {
       <BrowserRouter>
         <AppStateProvider
           initialState={initialState}
-          platform={createPlatformActions(options.notifications)}
+          platform={createPlatformActions(options.notifications, {
+            relay,
+            ...(options.serviceWorker && { serviceWorker: options.serviceWorker }),
+            ...(options.badge && { badge: options.badge }),
+          })}
           auth={auth}
           relay={relay}
           phone={options.phone}
