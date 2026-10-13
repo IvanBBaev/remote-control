@@ -722,7 +722,7 @@ push arrives on the owner's locked iPhone and the tap lands on the card (logged 
 M0 exit record).
 
 #### M0-22 — Journeys J1–J3, J5–J7 and the privacy gate
-Size L · Deps M0-17, M0-21 · Status todo · Sources 07 W10–W11, 01 §1.4, D4
+Size L · Deps M0-17, M0-21 · Status done f28370c (ubuntu CI + local macOS; Windows run comes with the CI matrix in M0-24) · Sources 07 W10–W11, 01 §1.4, D4
 Scope: scenario files J1 pair, J2 allow (real UV assertion via software authenticator),
 J3 deny, J5 expiry (FakeClock to `T − 10 s`, agent answers `handoff`, phone sees
 `expired`, late decision rejected), J6 agent offline (hook falls through, exit 0 empty),
