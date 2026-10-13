@@ -838,7 +838,7 @@ AC: golden mapping tests; snapshot size test; J8 green; the session screen rende
 fixture session in jsdom with no payload larger than the cap.
 
 #### M1-06 — Encrypted push summary
-Size M · Deps M0-22 · Status todo · Sources 05 Rec-1, 07 W20, 02 §5.2, D5
+Size M · Deps M0-22 · Status done 24f60ed (ADR 0001) · Sources 05 Rec-1, 07 W20, 02 §5.2, D5
 Scope: notification key = HKDF(DH(statics), `"rc/v1/push"`) derived at pairing on both
 ends; agent attaches `push_blob` (AES-256-GCM of `{project, toolLabel, line}` ≤ 1 KiB)
 to request headers; relay copies it into the push payload (≤ 3.5 KB); SW imports the
