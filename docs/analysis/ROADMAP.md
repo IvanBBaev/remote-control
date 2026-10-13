@@ -751,7 +751,7 @@ AC: `install --dry-run` prints the plist; temp-HOME test installs, verifies idem
 uninstalls cleanly (runs in the `agent-os` macOS job from M0-25).
 
 #### M0-25 — CI completion: OS matrix, coverage, pg-real, Dependabot, browser vectors
-Size M · Deps M0-22, M0-24 · Status todo · Sources 07 W13–W18, 07 W9, 06 W3, 06 W22
+Size M · Deps M0-22, M0-24 · Status done d1e5ff0 (GitHub runs on macOS/Windows, pg-real on `main` and branch protection pending first push + owner `gh api` step; pg-real green locally on Postgres 17) · Sources 07 W13–W18, 07 W9, 06 W3, 06 W22
 Scope: workflows `ci` (ubuntu, PGlite), `agent-os` (ubuntu/macOS/Windows: fake-claude
 conformance, hooks install/uninstall/corrupt-JSON, service `--dry-run`, J1/J2/J5),
 `pg-real` (`services: postgres`, on `main` + nightly), `e2e` skeleton (label/`main`/
