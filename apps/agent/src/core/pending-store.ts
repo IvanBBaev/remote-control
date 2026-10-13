@@ -1,14 +1,13 @@
-import { toHex } from '@remote-control/protocol';
-
 import type { Clock } from '../ports/clock.js';
 import type { Random } from '../ports/random.js';
 import type { Timer, TimerHandle } from '../ports/timer.js';
+import { uuidV4 } from './uuid.js';
 
 /** The pending store answers `DEADLINE_MARGIN_MS` before the hook's own timeout (D10). */
 export const DEADLINE_MARGIN_MS = 10_000;
 /** A repeat of the same request within this window is a duplicate (same id). */
 export const DUPLICATE_WINDOW_MS = 2_000;
-/** How many released ids are remembered to reject late decisions. */
+/** How many ended ids are remembered to reject late and second decisions. */
 export const RELEASED_MEMORY = 1_000;
 
 /** `permission` = `PermissionRequest`; `question` = `PreToolUse` for `AskUserQuestion`. */
@@ -86,7 +85,8 @@ export interface PendingStore {
   register(input: RegisterInput): Registration;
   /**
    * Settles the request with a hook response. `released` when the request already
-   * ended (deadline, replacement, release): late decisions are rejected (04 risk 8).
+   * ended (decided, deadline, replacement, release): late and second decisions are
+   * rejected (04 risk 8, D25).
    */
   resolve(id: string, response: Readonly<Record<string, unknown>>): ResolveResult;
   /** Hands the request back to the terminal early ("Reply in terminal"). */
@@ -95,6 +95,8 @@ export interface PendingStore {
   releaseAll(reason: HandoffReason): void;
   list(): readonly PendingRequest[];
   get(id: string): PendingRequest | undefined;
+  /** True when the id is remembered as ended (decided, deadline, replaced, released). */
+  ended(id: string): boolean;
 }
 
 export interface PendingStoreOptions {
@@ -140,15 +142,17 @@ export function createPendingStore(options: PendingStoreOptions): PendingStore {
     if (bySlot.get(entry.key) === entry) bySlot.delete(entry.key);
     if (byId.get(entry.request.id) === entry) {
       byId.delete(entry.request.id);
-      // A replaced duplicate keeps its id alive in the new entry; only a real end counts.
-      if (outcome.type === 'handoff') remember(entry.request.id);
+      // A replaced duplicate keeps its id alive in the new entry; only a real end counts,
+      // so a second decision for a decided request is refused too (decide-once, D25).
+      remember(entry.request.id);
     }
     entry.settle(outcome);
     options.onEvent?.({ type: 'removed', request: entry.request, outcome });
   }
 
+  /** A UUID: the id travels to the phone as `ApprovalRequest.id` (D7). */
   function newId(): string {
-    return `req_${toHex(random.bytes(12))}`;
+    return uuidV4(random);
   }
 
   return {
@@ -225,6 +229,9 @@ export function createPendingStore(options: PendingStoreOptions): PendingStore {
     },
     get(id) {
       return byId.get(id)?.request;
+    },
+    ended(id) {
+      return released.has(id);
     },
   };
 }

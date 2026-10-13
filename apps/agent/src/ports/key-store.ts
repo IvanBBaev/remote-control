@@ -28,6 +28,14 @@ export interface HookEndpoint {
   readonly generation: number;
 }
 
+/** The agent's relay credentials, as stored in `relay.json`. */
+export interface RelayCredentials {
+  /** Bearer token for the relay's agent endpoints and WebSocket. */
+  readonly token: string;
+  /** The account's user id, lower-case canonical UUID (bound into the Noise prologues). */
+  readonly userId: string;
+}
+
 /**
  * Agent key material (Q16: plain files at 0600 in the env-paths data dir, no OS
  * keychain in MVP). Pairing (M0-16) adds peers; revocation (M1-10) removes them.
@@ -46,4 +54,8 @@ export interface KeyStore {
   publishHookEndpoint(endpoint: { port: number; token: string }): Promise<HookEndpoint>;
   /** The current `agent.json`, or `undefined` when missing or unreadable. */
   readHookEndpoint(): Promise<HookEndpoint | undefined>;
+  /** The stored relay credentials, or `undefined` before `remotectl login`. */
+  readRelayCredentials(): Promise<RelayCredentials | undefined>;
+  /** Stores the relay credentials (0600); rejects an invalid record with `KeyStoreError`. */
+  writeRelayCredentials(credentials: RelayCredentials): Promise<void>;
 }

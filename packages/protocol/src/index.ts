@@ -54,3 +54,17 @@ export type { RequestHashInput } from './request-hash.js';
 
 export type { Clock } from './ports/clock.js';
 export type { Random } from './ports/random.js';
+
+export {
+  AgentMessage,
+  DecisionMessage,
+  DecisionRejection,
+  DecisionResultMessage,
+  ExpiredMessage,
+  HANDSHAKE_TAG,
+  PairingHello,
+  PhoneMessage,
+  RequestMessage,
+  ResolvedMessage,
+  SnapshotMessage,
+} from './messages.js';

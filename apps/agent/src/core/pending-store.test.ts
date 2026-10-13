@@ -67,7 +67,9 @@ describe('PendingStore', () => {
   it('holds a request until T - 10 s and then hands off', async () => {
     const { time, store } = setup();
     const registration = store.register(input());
-    expect(registration.request.id).toMatch(/^req_[0-9a-f]{24}$/);
+    expect(registration.request.id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
     expect(registration.request.deadline - registration.request.createdAt).toBe(
       T - DEADLINE_MARGIN_MS,
     );
@@ -87,19 +89,21 @@ describe('PendingStore', () => {
     await expect(registration.settled).resolves.toEqual({ type: 'decided', response });
     expect(time.active()).toBe(0);
     expect(events.map((event) => event.type)).toEqual(['added', 'removed']);
-    // A decided id is gone, not "released".
-    expect(store.resolve(registration.request.id, {})).toBe('unknown');
+    // A decided id is remembered: a second decision is refused (decide-once).
+    expect(store.resolve(registration.request.id, {})).toBe('released');
   });
 
   it('rejects a decision that arrives after the deadline', async () => {
     const { time, store } = setup();
     const registration = store.register(input());
+    expect(store.ended(registration.request.id)).toBe(false);
     time.advance(T);
     await registration.settled;
+    expect(store.ended(registration.request.id)).toBe(true);
     expect(store.resolve(registration.request.id, { allow: true })).toBe('released');
     expect(store.release(registration.request.id)).toBe('released');
-    expect(store.resolve('req_unknown', {})).toBe('unknown');
-    expect(store.release('req_unknown')).toBe('unknown');
+    expect(store.resolve('00000000-0000-4000-8000-000000000000', {})).toBe('unknown');
+    expect(store.release('00000000-0000-4000-8000-000000000000')).toBe('unknown');
   });
 
   it('never holds a request with a timeout below the margin', async () => {

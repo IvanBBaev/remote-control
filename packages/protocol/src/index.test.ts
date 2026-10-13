@@ -7,6 +7,17 @@ describe('@remote-control/protocol barrel', () => {
     expect(Object.keys(protocol).sort()).toEqual(
       [
         'Ack',
+        'AgentMessage',
+        'DecisionMessage',
+        'DecisionRejection',
+        'DecisionResultMessage',
+        'ExpiredMessage',
+        'HANDSHAKE_TAG',
+        'PairingHello',
+        'PhoneMessage',
+        'RequestMessage',
+        'ResolvedMessage',
+        'SnapshotMessage',
         'AgentId',
         'ApprovalRequest',
         'CanonicalDecision',

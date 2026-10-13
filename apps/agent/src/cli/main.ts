@@ -2,7 +2,7 @@ import { parseArgs } from 'node:util';
 
 import { toBase64Url } from '@remote-control/protocol';
 
-import { claudeCodeAdapter } from '../adapters/claude-code/adapter.js';
+import { CLAUDE_CODE_CAPABILITIES, claudeCodeAdapter } from '../adapters/claude-code/adapter.js';
 import { NO_DECISION_MESSAGE } from '../adapters/claude-code/decide.js';
 import { KeyStoreError } from '../adapters/file-key-store.js';
 import { HookReceiverBindError, type HookReceiver } from '../adapters/hook-receiver.js';
@@ -15,7 +15,11 @@ import {
   type HookStateEntry,
 } from '../core/hooks-installer.js';
 import { loadConfig, type LoadConfigResult } from '../core/load-config.js';
+import { createPairingLock, PAIRING_LOCK_FILE } from '../core/pairing-lock.js';
+import { runPairing, type PairingOutcome } from '../core/pairing.js';
 import { createPendingStore } from '../core/pending-store.js';
+import { createRelayLink, type RelayLink } from '../core/relay-link.js';
+import { relayEndpoints } from '../core/relay-url.js';
 import { resolveRepository } from '../core/resolve-repository.js';
 import type { Container } from '../container.js';
 import { installService, serviceStatusLine, uninstallService } from './service.js';
@@ -43,6 +47,8 @@ Commands:
                            Task Scheduler)
   uninstall [--dry-run]    Stop and remove the login service
   status                   Show configuration, allowed repositories and keys
+  login <rc-enroll:token> --user-id <uuid>
+                           Store the relay credentials from the enrolment token
   pair                     Pair a phone with this agent
   devices                  List paired phones
   hooks install            Install the Claude Code approval hooks
@@ -73,6 +79,7 @@ type Command = (args: readonly string[], c: Container, options: RunCliOptions) =
 const COMMANDS: Readonly<Record<string, Command>> = {
   run: runCommand,
   status: statusCommand,
+  login: loginCommand,
   pair: pairCommand,
   devices: devicesCommand,
   hooks: hooksCommand,
@@ -186,13 +193,16 @@ async function runCommand(
   }
   const { config } = loaded;
   const key = await c.keyStore.loadOrCreateDeviceKey();
+  const credentials = await c.keyStore.readRelayCredentials();
   const log = await c.openLog();
   const updates = startUpdateChecks(c, log.logger);
+  let link: RelayLink | undefined;
   const store = createPendingStore({
     clock: c.clock,
     timer: c.timer,
     random: c.random,
     onEvent: (event) => {
+      link?.hub.pendingEvent(event);
       // Ids, kinds and outcomes only: hook payloads never reach the log.
       const { id, kind, sessionId } = event.request;
       if (event.type === 'added') {
@@ -219,6 +229,39 @@ async function runCommand(
         }
       : {}),
   });
+  if (config.relay !== undefined && credentials !== undefined) {
+    const endpoints = relayEndpoints(config.relay.url);
+    const lock = createPairingLock(c.fs, c.pathPort.join(c.paths.data, PAIRING_LOCK_FILE), c.clock);
+    link = createRelayLink({
+      clock: c.clock,
+      random: c.random,
+      timer: c.timer,
+      userId: credentials.userId,
+      deviceKey: key.keyPair,
+      store,
+      listPeers: () => c.keyStore.listPeers(),
+      decide: (request, decision) => claudeCodeAdapter.decide(request, decision),
+      machine: {
+        name: c.hostname,
+        platform: snapshotPlatform(c.platform),
+        agentVersion: c.version,
+      },
+      capabilities: [CLAUDE_CODE_CAPABILITIES],
+      url: endpoints.ws,
+      token: credentials.token,
+      version: c.version,
+      webSocket: c.webSocket,
+      // `remotectl pair` owns the device's relay socket while it runs.
+      canConnect: async () => !(await lock.held()),
+      // Event names, ids and codes only (I3).
+      log: (event, fields) => log.logger.info({ ...fields, event }),
+    });
+  } else {
+    log.logger.info({
+      event: 'relay_disabled',
+      reason: config.relay === undefined ? 'no_relay_url' : 'not_logged_in',
+    });
+  }
   const token = toBase64Url(c.random.bytes(HOOK_TOKEN_BYTES));
   let receiver: HookReceiver | undefined;
   try {
@@ -241,6 +284,7 @@ async function runCommand(
       },
       'agent started',
     );
+    link?.start();
     c.output.stdout(
       `remotectl ${c.version} running; hooks on 127.0.0.1:${endpoint.port}; press Ctrl-C to stop.\n`,
     );
@@ -252,6 +296,7 @@ async function runCommand(
     c.output.stderr(`remotectl run: ${error.message}\n`);
     return EXIT_ERROR;
   } finally {
+    link?.stop();
     // Held hooks get `{}` (handoff) instead of a dropped connection.
     store.releaseAll('shutdown');
     await receiver?.close();
@@ -297,10 +342,116 @@ async function statusCommand(args: readonly string[], c: Container): Promise<num
   return exitCode;
 }
 
-function pairCommand(args: readonly string[], c: Container): Promise<number> {
+/** The snapshot's platform (D-protocol `Machine.platform`); other Unixes report `linux`. */
+function snapshotPlatform(platform: NodeJS.Platform): 'darwin' | 'linux' | 'win32' {
+  return platform === 'darwin' || platform === 'win32' ? platform : 'linux';
+}
+
+const ENROLL_PREFIX = 'rc-enroll:';
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** The relay URL from a valid config, or an error message. */
+async function relayUrl(c: Container): Promise<string | undefined> {
+  const loaded = await loadConfig(c.paths.config, c.fs, c.pathPort);
+  if (loaded.status === 'invalid') {
+    reportInvalidConfig(c, loaded);
+    return undefined;
+  }
+  if (loaded.status === 'ok' && loaded.config.relay !== undefined) return loaded.config.relay.url;
+  c.output.stderr(`remotectl: no relay configured; set "relay": { "url": … } in ${loaded.path}\n`);
+  return undefined;
+}
+
+/**
+ * `remotectl login <rc-enroll:token> --user-id <uuid>`: trades the one-time enrolment
+ * token for a fresh agent token (the enrolment token stops working) and stores both
+ * with the user id in `relay.json` (0600).
+ */
+async function loginCommand(args: readonly string[], c: Container): Promise<number> {
+  const { values, positionals } = parse(args, {
+    allowPositionals: true,
+    options: { 'user-id': { type: 'string' } },
+  });
+  const [enroll, ...extra] = positionals;
+  if (enroll === undefined || extra.length > 0) {
+    throw new UsageError('expects exactly one enrolment token');
+  }
+  const userId = values['user-id'];
+  if (typeof userId !== 'string' || !UUID_PATTERN.test(userId)) {
+    throw new UsageError('--user-id must be the lower-case account UUID');
+  }
+  const url = await relayUrl(c);
+  if (url === undefined) return EXIT_ERROR;
+  const token = enroll.startsWith(ENROLL_PREFIX) ? enroll.slice(ENROLL_PREFIX.length) : enroll;
+  const rotated = await c.relayApi(relayEndpoints(url).http, token).rotateToken();
+  if (!rotated.ok) {
+    c.output.stderr(`remotectl login: the relay refused the token (${rotated.error})\n`);
+    return EXIT_ERROR;
+  }
+  await c.keyStore.writeRelayCredentials({ token: rotated.value.token, userId });
+  c.output.stdout('Logged in; relay credentials stored. Run `remotectl pair` next.\n');
+  return EXIT_OK;
+}
+
+const PAIRING_FAILURES: Readonly<Record<string, string>> = {
+  attempts: 'three failed handshakes; the pairing slot is closed. Start again',
+  expired: 'the code expired; start again',
+  aborted: 'cancelled',
+  relay: 'the relay refused the request',
+};
+
+function describePairing(outcome: Exclude<PairingOutcome, { status: 'paired' }>): string {
+  if (outcome.status === 'declined') return 'declined; nothing was stored';
+  const text = PAIRING_FAILURES[outcome.reason]!;
+  return outcome.detail === undefined ? text : `${text} (${outcome.detail})`;
+}
+
+async function pairCommand(
+  args: readonly string[],
+  c: Container,
+  options: RunCliOptions,
+): Promise<number> {
   noArguments(args);
-  c.output.stderr('remotectl pair: pairing is not available in this version yet.\n');
-  return Promise.resolve(EXIT_ERROR);
+  const url = await relayUrl(c);
+  if (url === undefined) return EXIT_ERROR;
+  const credentials = await c.keyStore.readRelayCredentials();
+  if (credentials === undefined) {
+    c.output.stderr('remotectl pair: not logged in; run `remotectl login` first\n');
+    return EXIT_ERROR;
+  }
+  const key = await c.keyStore.loadOrCreateDeviceKey();
+  const endpoints = relayEndpoints(url);
+  const lock = createPairingLock(c.fs, c.pathPort.join(c.paths.data, PAIRING_LOCK_FILE), c.clock);
+  await lock.acquire();
+  let outcome: PairingOutcome;
+  try {
+    outcome = await runPairing({
+      clock: c.clock,
+      random: c.random,
+      timer: c.timer,
+      userId: credentials.userId,
+      deviceKey: key.keyPair,
+      agentName: c.hostname,
+      relayHost: endpoints.host,
+      wsUrl: endpoints.ws,
+      token: credentials.token,
+      version: c.version,
+      webSocket: c.webSocket,
+      api: c.relayApi(endpoints.http, credentials.token),
+      prompt: c.prompt,
+      print: (line) => c.output.stdout(`${line}\n`),
+      addPeer: (peer) => c.keyStore.addPeer(peer),
+      signal: options.signal,
+    });
+  } finally {
+    await lock.release();
+  }
+  if (outcome.status === 'paired') {
+    c.output.stdout(`Paired with "${outcome.peer.name}" (${outcome.peer.deviceId}).\n`);
+    return EXIT_OK;
+  }
+  c.output.stderr(`remotectl pair: ${describePairing(outcome)}\n`);
+  return EXIT_ERROR;
 }
 
 async function devicesCommand(args: readonly string[], c: Container): Promise<number> {

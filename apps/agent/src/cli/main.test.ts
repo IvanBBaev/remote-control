@@ -12,11 +12,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { seededRandom } from '@remote-control/fake-claude-code';
 import { toBase64Url } from '@remote-control/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HookReceiverBindError } from '../adapters/hook-receiver.js';
+import { createRelayHttp } from '../adapters/relay-http.js';
 import { createContainer, type Container } from '../container.js';
+import { createPairingLock } from '../core/pairing-lock.js';
+import { createFakePhone } from '../testing/fake-phone.js';
+import { createFakeRelay } from '../testing/fake-relay.js';
+import { manualTime, waitFor } from '../testing/manual-time.js';
 import type { ProcessResult } from '../ports/process-result.js';
 import type { Systemctl } from '../ports/systemctl.js';
 import { AGENT_VERSION } from '../version.js';
@@ -139,10 +145,162 @@ describe('runCli', () => {
     });
   });
 
-  describe('not yet available commands', () => {
-    it('pair reports that it is not available', async () => {
-      expect(await h.run(['pair'])).toBe(EXIT_ERROR);
-      expect(h.err()).toContain('remotectl pair: pairing is not available');
+  describe('relay: login, pair and run (fake relay, fake phone)', () => {
+    const RELAY_URL = 'ws://127.0.0.1:8787';
+
+    function relayHarness(answer = true) {
+      const time = manualTime();
+      const random = seededRandom(3);
+      const relay = createFakeRelay(time.clock);
+      const questions: string[] = [];
+      const c: Container = {
+        ...h.c,
+        clock: time.clock,
+        timer: time.timer,
+        random,
+        webSocket: relay.webSocket,
+        relayApi: (baseUrl, token) => createRelayHttp({ baseUrl, token, fetch: relay.fetch }),
+        prompt: {
+          confirm(question) {
+            questions.push(question);
+            return Promise.resolve(answer);
+          },
+        },
+        hostname: 'build-box',
+      };
+      const run = (argv: readonly string[], signal = new AbortController().signal) =>
+        runCli(argv, c, { signal });
+      const login = () =>
+        run(['login', `rc-enroll:${relay.agent.token}`, '--user-id', relay.userId]);
+      /** The code `pair` printed, once the slot is open. */
+      async function code(): Promise<string> {
+        await waitFor(() => /Pairing code: (\S+)/.test(h.out()));
+        return /Pairing code: (\S+)/.exec(h.out())![1]!;
+      }
+      return { time, random, relay, c, run, login, code, questions };
+    }
+
+    it('login trades the enrolment token and stores relay.json owner-only', async () => {
+      const r = relayHarness();
+      expect(await r.run(['login'])).toBe(EXIT_USAGE);
+      expect(await r.run(['login', 'a', 'b', '--user-id', r.relay.userId])).toBe(EXIT_USAGE);
+      expect(await r.run(['login', 'rc-enroll:x', '--user-id', 'NOT-A-UUID'])).toBe(EXIT_USAGE);
+      expect(h.err()).toContain('--user-id must be the lower-case account UUID');
+      // No relay configured yet.
+      expect(await r.login()).toBe(EXIT_ERROR);
+      expect(h.err()).toContain('no relay configured');
+      await writeConfig('{');
+      expect(await r.login()).toBe(EXIT_ERROR);
+      await writeConfig({ relay: { url: RELAY_URL } });
+      expect(await r.run(['login', 'rc-enroll:wrong', '--user-id', r.relay.userId])).toBe(
+        EXIT_ERROR,
+      );
+      expect(h.err()).toContain('the relay refused the token (unauthorized)');
+      expect(await r.login()).toBe(EXIT_OK);
+      const stored = await h.c.keyStore.readRelayCredentials();
+      expect(stored).toMatchObject({ userId: r.relay.userId });
+      expect(stored!.token).not.toBe(r.relay.agent.token);
+      if (process.platform !== 'win32') {
+        expect((await stat(join(h.c.paths.data, 'relay.json'))).mode & 0o777).toBe(0o600);
+      }
+      // The enrolment token is spent.
+      expect(await r.login()).toBe(EXIT_ERROR);
+    });
+
+    it('pair needs a relay and a login', async () => {
+      const r = relayHarness();
+      expect(await r.run(['pair'])).toBe(EXIT_ERROR);
+      expect(h.err()).toContain('no relay configured');
+      await writeConfig({ relay: { url: RELAY_URL } });
+      expect(await r.run(['pair'])).toBe(EXIT_ERROR);
+      expect(h.err()).toContain('not logged in');
+      expect(await r.run(['pair', 'extra'])).toBe(EXIT_USAGE);
+    });
+
+    it('pairs a phone, then `run` gives that phone a KK session with the snapshot', async () => {
+      const r = relayHarness();
+      await writeConfig({ relay: { url: RELAY_URL } });
+      expect(await r.login()).toBe(EXIT_OK);
+      const phone = await createFakePhone(r.relay, 'Pixel', r.time.clock, r.random);
+      await phone.connect();
+      const pairing = r.run(['pair']);
+      await phone.pair(await r.code());
+      expect(await pairing).toBe(EXIT_OK);
+      expect(h.out()).toContain(`QR text:      rc1:127.0.0.1:8787:${r.relay.agent.id}:`);
+      expect(h.out()).toContain(`Paired with "Pixel" (${phone.device.id}).`);
+      expect(r.questions).toHaveLength(1);
+      expect(await h.c.keyStore.listPeers()).toEqual([phone.peer(r.time.clock.now())]);
+      // The pairing lock is gone, so `run` may connect.
+      await expect(stat(join(h.c.paths.data, 'pairing.lock'))).rejects.toThrow();
+
+      const controller = new AbortController();
+      const running = r.run(['run'], controller.signal);
+      await vi.waitFor(() => expect(h.out()).toContain('press Ctrl-C to stop'));
+      await waitFor(() => r.relay.online(r.relay.agent.id));
+      const key = (await h.c.keyStore.readDeviceKey())!.keyPair;
+      await phone.handshake(r.relay.agent.id, key.publicKey);
+      expect(phone.of('snapshot')[0]!.machine).toMatchObject({
+        id: r.relay.agent.id,
+        name: 'build-box',
+        platform: 'linux',
+        agentVersion: AGENT_VERSION,
+      });
+      controller.abort();
+      expect(await running).toBe(EXIT_OK);
+      expect(r.relay.online(r.relay.agent.id)).toBe(false);
+      const log = await readFile(join(h.c.paths.log, 'agent.1.log'), 'utf8');
+      expect(log).toContain('"event":"relay_ready"');
+      expect(log).not.toContain('relay_disabled');
+    });
+
+    it('pair reports a declined fingerprint and stores nothing', async () => {
+      const r = relayHarness(false);
+      await writeConfig({ relay: { url: RELAY_URL } });
+      expect(await r.login()).toBe(EXIT_OK);
+      const phone = await createFakePhone(r.relay, 'Pixel', r.time.clock, r.random);
+      await phone.connect();
+      const pairing = r.run(['pair']);
+      await phone.pair(await r.code());
+      expect(await pairing).toBe(EXIT_ERROR);
+      expect(h.err()).toContain('remotectl pair: declined; nothing was stored');
+      expect(await h.c.keyStore.listPeers()).toEqual([]);
+    });
+
+    it('pair reports an expired code and a relay refusal', async () => {
+      const r = relayHarness();
+      await writeConfig({ relay: { url: RELAY_URL } });
+      expect(await r.login()).toBe(EXIT_OK);
+      const pairing = r.run(['pair']);
+      await r.code();
+      r.time.advance(5 * 60_000);
+      expect(await pairing).toBe(EXIT_ERROR);
+      expect(h.err()).toContain('remotectl pair: the code expired; start again');
+
+      const refusing: Container = {
+        ...r.c,
+        relayApi: () => ({
+          ...createRelayHttp({ baseUrl: 'http://x', token: 't', fetch: r.relay.fetch }),
+          openSlot: () => Promise.resolve({ ok: false, status: 429, error: 'rate_limited' }),
+        }),
+      };
+      expect(await runCli(['pair'], refusing, { signal: new AbortController().signal })).toBe(
+        EXIT_ERROR,
+      );
+      expect(h.err()).toContain('the relay refused the request (rate_limited)');
+    });
+
+    it('run holds its relay connection while a pairing lock is held', async () => {
+      const r = relayHarness();
+      await writeConfig({ relay: { url: RELAY_URL } });
+      expect(await r.login()).toBe(EXIT_OK);
+      await createPairingLock(h.c.fs, join(h.c.paths.data, 'pairing.lock'), r.time.clock).acquire();
+      const controller = new AbortController();
+      const running = r.run(['run'], controller.signal);
+      await vi.waitFor(() => expect(h.out()).toContain('press Ctrl-C to stop'));
+      await delay(20);
+      expect(r.relay.attempts(r.relay.agent.id)).toBe(0);
+      controller.abort();
+      expect(await running).toBe(EXIT_OK);
     });
   });
 
@@ -249,15 +407,20 @@ describe('runCli', () => {
         .trim()
         .split('\n')
         .map((line) => JSON.parse(line) as Record<string, unknown>);
-      expect(lines.map((line) => line['event'])).toEqual(['agent_start', 'agent_stop']);
-      expect(lines[0]).toMatchObject({ name: 'agent', version: AGENT_VERSION, keyCreated: true });
+      expect(lines.map((line) => line['event'])).toEqual([
+        'relay_disabled',
+        'agent_start',
+        'agent_stop',
+      ]);
+      expect(lines[0]).toMatchObject({ reason: 'no_relay_url' });
+      expect(lines[1]).toMatchObject({ name: 'agent', version: AGENT_VERSION, keyCreated: true });
       expect(log).not.toContain('privateKey');
       // The hook endpoint is published owner-only, with the bound port (D11).
       const endpointPath = join(h.c.paths.data, 'agent.json');
       expect((await stat(endpointPath)).mode & 0o777).toBe(0o600);
       const endpoint = JSON.parse(await readFile(endpointPath, 'utf8')) as Record<string, unknown>;
       expect(endpoint).toMatchObject({ version: 1, generation: 1 });
-      expect(endpoint['port']).toBe(lines[0]?.['hookPort']);
+      expect(endpoint['port']).toBe(lines[1]?.['hookPort']);
       expect(log).not.toContain(endpoint['token'] as string);
     });
 

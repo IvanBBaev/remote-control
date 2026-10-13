@@ -11,6 +11,7 @@ import {
   DEVICE_KEY_FILE,
   KeyStoreError,
   PEERS_FILE,
+  RELAY_FILE,
   createFileKeyStore,
   type FileKeyStoreOptions,
 } from './file-key-store.js';
@@ -183,6 +184,33 @@ describe('createFileKeyStore', () => {
       await expect(store().publishHookEndpoint({ port: 4327, token: '' })).rejects.toThrow(
         /invalid format/,
       );
+    });
+  });
+
+  describe('relay credentials (relay.json)', () => {
+    const USER = '6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f';
+
+    posixOnly('stores the token and user id owner-only', async () => {
+      const keys = store();
+      expect(await keys.readRelayCredentials()).toBeUndefined();
+      await keys.writeRelayCredentials({ token: 'tok', userId: USER });
+      expect(await keys.readRelayCredentials()).toEqual({ token: 'tok', userId: USER });
+      const path = join(dir, RELAY_FILE);
+      expect((await stat(path)).mode & 0o777).toBe(0o600);
+      expect((await stat(dir)).mode & 0o777).toBe(0o700);
+    });
+
+    it('refuses invalid credentials and a corrupt file', async () => {
+      const keys = store();
+      await expect(keys.writeRelayCredentials({ token: '', userId: USER })).rejects.toThrow(
+        KeyStoreError,
+      );
+      await expect(keys.writeRelayCredentials({ token: 't', userId: 'nope' })).rejects.toThrow(
+        /invalid format/,
+      );
+      await keys.writeRelayCredentials({ token: 't', userId: USER });
+      await writeFile(join(dir, RELAY_FILE), '{"version":1}', { mode: 0o600 });
+      await expect(keys.readRelayCredentials()).rejects.toThrow(/invalid format/);
     });
   });
 });

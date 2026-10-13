@@ -2,10 +2,21 @@ import { X25519_KEY_LENGTH, bytesEqual, x25519KeyPairFromPrivateKey } from '@rem
 import { toBase64Url } from '@remote-control/protocol';
 
 import { fromBase64Url } from '../core/from-base64url.js';
-import { AgentEndpointFile, DeviceKeyFile, PeersFile } from '../core/key-files.js';
+import {
+  AgentEndpointFile,
+  DeviceKeyFile,
+  PeersFile,
+  RelayCredentialsFile,
+} from '../core/key-files.js';
 import type { Clock } from '../ports/clock.js';
 import type { FileSystem } from '../ports/file-system.js';
-import type { DeviceKey, HookEndpoint, KeyStore, Peer } from '../ports/key-store.js';
+import type {
+  DeviceKey,
+  HookEndpoint,
+  KeyStore,
+  Peer,
+  RelayCredentials,
+} from '../ports/key-store.js';
 import type { PathPort } from '../ports/path-port.js';
 import type { Random } from '../ports/random.js';
 
@@ -17,6 +28,8 @@ export const DEVICE_KEY_FILE = 'device-key.json';
 export const PEERS_FILE = 'peers.json';
 /** Read by `hook.cjs` from its own directory (D11). */
 export const AGENT_ENDPOINT_FILE = 'agent.json';
+/** The relay bearer token and user id (`remotectl login`). */
+export const RELAY_FILE = 'relay.json';
 
 /** A key file exists but cannot be used; the agent refuses to start rather than re-key. */
 export class KeyStoreError extends Error {
@@ -54,6 +67,7 @@ export function createFileKeyStore(options: FileKeyStoreOptions): KeyStore {
   const keyPath = paths.join(dir, DEVICE_KEY_FILE);
   const peersPath = paths.join(dir, PEERS_FILE);
   const endpointPath = paths.join(dir, AGENT_ENDPOINT_FILE);
+  const relayPath = paths.join(dir, RELAY_FILE);
 
   async function readSecret(path: string): Promise<string | undefined> {
     const text = await fs.readText(path);
@@ -110,9 +124,25 @@ export function createFileKeyStore(options: FileKeyStoreOptions): KeyStore {
     return { port, token, generation };
   }
 
+  async function readRelayCredentials(): Promise<RelayCredentials | undefined> {
+    const text = await readSecret(relayPath);
+    if (text === undefined) return undefined;
+    const parsed = RelayCredentialsFile.safeParse(decodeJson(text, RELAY_FILE));
+    if (!parsed.success) throw new KeyStoreError(`${RELAY_FILE} has an invalid format`);
+    return { token: parsed.data.token, userId: parsed.data.userId };
+  }
+
   return {
     readDeviceKey,
     readHookEndpoint,
+    readRelayCredentials,
+    async writeRelayCredentials({ token, userId }) {
+      const file: RelayCredentialsFile = { version: 1, token, userId };
+      if (!RelayCredentialsFile.safeParse(file).success) {
+        throw new KeyStoreError('relay credentials have an invalid format');
+      }
+      await writeSecret(relayPath, file);
+    },
     async publishHookEndpoint({ port, token }) {
       const previous = await readHookEndpoint();
       const generation = (previous?.generation ?? 0) + 1;

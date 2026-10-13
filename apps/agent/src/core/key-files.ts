@@ -55,3 +55,17 @@ export const AgentEndpointFile = z
   })
   .strict();
 export type AgentEndpointFile = z.infer<typeof AgentEndpointFile>;
+
+/**
+ * `relay.json` (0600, data dir): the agent's relay bearer token (from `remotectl login`)
+ * and the account it belongs to. The relay never tells a device its user id, but the
+ * Noise prologues bind it (D3, D6), so `login` records it next to the token.
+ */
+export const RelayCredentialsFile = z
+  .object({
+    version: z.literal(1),
+    token: z.string().min(1).max(512),
+    userId: DeviceId,
+  })
+  .strict();
+export type RelayCredentialsFile = z.infer<typeof RelayCredentialsFile>;

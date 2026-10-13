@@ -1,3 +1,4 @@
+import { hostname } from 'node:os';
 import { join, posix } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +15,10 @@ import {
 import { LOG_FILE, fileSize, newestLogFile, readRange } from './adapters/log-files.js';
 import { systemLaunchctl } from './adapters/launchd/launchctl.js';
 import { createNodeFileSystem, nodePaths } from './adapters/node-file-system.js';
-import { createNpmRegistry } from './adapters/npm-registry.js';
+import { createNpmRegistry, type FetchFn } from './adapters/npm-registry.js';
+import { nodeWebSocket } from './adapters/node-websocket.js';
+import { createReadlinePrompt } from './adapters/readline-prompt.js';
+import { createRelayHttp } from './adapters/relay-http.js';
 import { systemClock } from './adapters/system-clock.js';
 import { systemRandom } from './adapters/system-random.js';
 import { systemTimer } from './adapters/system-timer.js';
@@ -27,13 +31,16 @@ import type { KeyStore } from './ports/key-store.js';
 import type { LogReader } from './ports/log-reader.js';
 import type { Output } from './ports/output.js';
 import type { PathPort } from './ports/path-port.js';
+import type { Prompt } from './ports/prompt.js';
 import type { Random } from './ports/random.js';
 import type { Launchctl } from './ports/launchctl.js';
 import type { Registry } from './ports/registry.js';
+import type { RelayApi } from './ports/relay-api.js';
 import type { Schtasks } from './ports/schtasks.js';
 import type { ServiceHost } from './ports/service-host.js';
 import type { Systemctl } from './ports/systemctl.js';
 import type { Timer } from './ports/timer.js';
+import type { WebSocketFactory } from './ports/web-socket.js';
 import { AGENT_VERSION } from './version.js';
 
 /** The npm package and env-paths application name (D22). */
@@ -84,6 +91,14 @@ export interface Container {
    * `remotectl update` still asks the registry.
    */
   readonly updateCheckDisabled: boolean;
+  /** Outbound WebSocket to the relay (Node 22's global `WebSocket`, D13). */
+  readonly webSocket: WebSocketFactory;
+  /** The relay's agent HTTP API at `baseUrl`, authenticated with `token`. */
+  relayApi(baseUrl: string, token: string): RelayApi;
+  /** Terminal questions (the pairing fingerprint confirmation). */
+  readonly prompt: Prompt;
+  /** This machine's name (1..64 chars): the agent name a phone shows and the snapshot's. */
+  readonly hostname: string;
 }
 
 export interface ContainerOptions {
@@ -109,6 +124,14 @@ export interface ContainerOptions {
   /** Default: Node's file system and paths (tests of another platform inject fakes). */
   readonly fs?: FileSystem;
   readonly pathPort?: PathPort;
+  /** Default: `nodeWebSocket`. */
+  readonly webSocket?: WebSocketFactory;
+  /** `fetch` for the relay HTTP API; default: the global `fetch`. */
+  readonly fetch?: FetchFn;
+  /** Default: a readline prompt on stdin/stdout. */
+  readonly prompt?: Prompt;
+  /** Default: `os.hostname()`. */
+  readonly hostname?: string;
 }
 
 /** `USERDOMAIN\USERNAME` from the Windows environment, or the bare user name. */
@@ -185,5 +208,15 @@ export function createContainer(options: ContainerOptions): Container {
     schtasks: options.schtasks ?? systemSchtasks,
     registry: options.registry ?? createNpmRegistry(),
     updateCheckDisabled: options.env['REMOTECTL_NO_UPDATE_CHECK'] === '1',
+    webSocket: options.webSocket ?? nodeWebSocket,
+    relayApi: (baseUrl, token) =>
+      createRelayHttp({
+        baseUrl,
+        token,
+        fetch: options.fetch ?? ((url, init) => fetch(url, init)),
+      }),
+    prompt: options.prompt ?? createReadlinePrompt(),
+    // The protocol's machine and pairing names are 1..64 characters.
+    hostname: (options.hostname ?? hostname()).slice(0, 64) || APP_NAME,
   };
 }
