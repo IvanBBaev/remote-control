@@ -5,5 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 export const PACKAGE_JSON = new URL('../package.json', import.meta.url);
 export const DEFAULT_PUBLIC_DIR = fileURLToPath(new URL('../../web/dist', import.meta.url));
+/** The M0-03 device spike page, shipped next to dist/ in the image (`files`). */
+export const SPIKE_DIR = fileURLToPath(new URL('../spike', import.meta.url));
 /** Generated SQL migrations (`drizzle-kit generate`), shipped next to dist/ in the image. */
 export const MIGRATIONS_DIR = fileURLToPath(new URL('../drizzle', import.meta.url));

@@ -45,6 +45,8 @@ const EnvSchema = z
     RC_ADMIN_TOKEN: optional(
       z.string().regex(/^[\x21-\x7e]{32,256}$/, 'must be 32–256 printable ASCII characters'),
     ),
+    /** `1` serves the M0-03 device spike under `/spike/` (needs the VAPID keys). */
+    RC_SPIKE: optional(z.enum(['0', '1'])),
     /** Sentry project DSN (D16); unset disables error reporting. */
     RC_SENTRY_DSN: optional(
       z.string().refine((value) => parseSentryDsn(value) !== null, 'must be an https Sentry DSN'),
@@ -100,6 +102,13 @@ const EnvSchema = z
         message: 'is required when RC_ORIGIN is not https',
       });
     }
+    if (env.RC_SPIKE === '1' && env.RC_VAPID_PUBLIC === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['RC_SPIKE'],
+        message: 'needs RC_VAPID_PUBLIC and RC_VAPID_PRIVATE',
+      });
+    }
     if ((env.RC_TLS_CERT_FILE === undefined) !== (env.RC_TLS_KEY_FILE === undefined)) {
       ctx.addIssue({
         code: 'custom',
@@ -135,6 +144,8 @@ export interface Config {
   readonly push:
     | { readonly publicKey: string; readonly privateKey: string; readonly subject: string }
     | undefined;
+  /** Serve the M0-03 device spike (`RC_SPIKE=1`); implies `push`. */
+  readonly spike: boolean;
   /** Owner token for the admin counters (M1-13); `undefined` disables them. */
   readonly adminToken: string | undefined;
   /** Error reporting (D16); `undefined` disables it. */
@@ -178,6 +189,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
             subject: e.RC_VAPID_SUBJECT ?? new URL(e.RC_ORIGIN!).origin,
           }
         : undefined,
+    spike: e.RC_SPIKE === '1',
     adminToken: e.RC_ADMIN_TOKEN,
     sentry:
       e.RC_SENTRY_DSN === undefined ? undefined : (parseSentryDsn(e.RC_SENTRY_DSN) ?? undefined),

@@ -11,7 +11,8 @@
   },
   "files": [
     "dist",
-    "drizzle"
+    "drizzle",
+    "spike"
   ],
   "scripts": {
     "dev": "tsx watch src/server.ts",

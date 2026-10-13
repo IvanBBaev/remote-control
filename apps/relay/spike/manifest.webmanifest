@@ -1,0 +1,11 @@
+{
+  "id": "/spike/",
+  "name": "remotectl device spike",
+  "short_name": "rc spike",
+  "start_url": "/spike/",
+  "scope": "/spike/",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#111827",
+  "icons": [{ "src": "/spike/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

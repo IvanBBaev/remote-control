@@ -18,6 +18,7 @@ describe('loadConfig', () => {
       trustProxyHops: 0,
       push: undefined,
       sentry: undefined,
+      spike: false,
     });
   });
 
@@ -119,6 +120,19 @@ describe('loadConfig', () => {
     expect(() => loadConfig(keys)).toThrow(/RC_VAPID_SUBJECT/);
     expect(() => loadConfig({ RC_VAPID_PUBLIC: keys.RC_VAPID_PUBLIC })).toThrow(/set together/);
     expect(() => loadConfig({ RC_VAPID_PRIVATE: keys.RC_VAPID_PRIVATE })).toThrow(/set together/);
+  });
+
+  it('enables the device spike only with RC_SPIKE=1 and the VAPID keys (M0-03)', () => {
+    const keys = {
+      RC_VAPID_PUBLIC: `B${'A'.repeat(86)}`,
+      RC_VAPID_PRIVATE: 'a'.repeat(43),
+      RC_VAPID_SUBJECT: 'mailto:ops@example.com',
+    };
+    expect(loadConfig({}).spike).toBe(false);
+    expect(loadConfig({ ...keys, RC_SPIKE: '0' }).spike).toBe(false);
+    expect(loadConfig({ ...keys, RC_SPIKE: '1' }).spike).toBe(true);
+    expect(() => loadConfig({ RC_SPIKE: '1' })).toThrow(/RC_SPIKE/);
+    expect(() => loadConfig({ RC_SPIKE: 'yes' })).toThrow(/RC_SPIKE/);
   });
 
   it('reads the optional admin token (M1-13)', () => {

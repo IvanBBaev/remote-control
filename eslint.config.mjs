@@ -37,6 +37,7 @@ export default tseslint.config(
             'apps/*/tsdown.config.ts',
             'apps/agent/scripts/*.mjs',
             'apps/*/drizzle.config.ts',
+            'apps/relay/spike/*.js',
           ],
         },
         tsconfigRootDir: import.meta.dirname,
@@ -63,6 +64,36 @@ export default tseslint.config(
     languageOptions: {
       globals: { process: 'readonly', Buffer: 'readonly', URL: 'readonly' },
     },
+  },
+  {
+    // M0-03 device spike: plain browser scripts served as-is, outside the ports (no build,
+    // removed after the verdict), so the clock/RNG rule does not apply.
+    files: ['apps/relay/spike/*.js'],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'module',
+      globals: Object.fromEntries(
+        [
+          'atob',
+          'btoa',
+          'console',
+          'crypto',
+          'document',
+          'fetch',
+          'indexedDB',
+          'location',
+          'matchMedia',
+          'navigator',
+          'Notification',
+          'performance',
+          'self',
+          'TextDecoder',
+          'TextEncoder',
+          'URL',
+        ].map((name) => [name, 'readonly']),
+      ),
+    },
+    rules: { 'no-restricted-properties': 'off' },
   },
   prettierConfig,
 );

@@ -84,6 +84,7 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
     relay: container.relay,
     push: container.push,
     admin: container.admin,
+    spike: container.spike,
     errors: container.errors,
   });
   app.addHook('onClose', async () => {

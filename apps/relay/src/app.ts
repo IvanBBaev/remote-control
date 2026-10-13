@@ -25,6 +25,7 @@ import {
 } from './http/pairing-routes.js';
 import { registerPushRoutes } from './http/push-routes.js';
 import { registerStateRoute } from './http/state-route.js';
+import { registerSpikeRoutes, type SpikeRouteDeps } from './http/spike-routes.js';
 import { registerStaticSite } from './http/static-site.js';
 import { registerVersionRoute } from './http/version-route.js';
 import type { RelayRouter } from './core/relay-router.js';
@@ -61,7 +62,11 @@ export interface AppDeps {
   readonly errors?: ErrorReporter | undefined;
   /** Owner counters (M1-13); needs `relay` (online counts come from the hub). */
   readonly admin?: AdminDeps | undefined;
+  /** The M0-03 device spike under `/spike/` (`RC_SPIKE=1`); independent of the database. */
+  readonly spike?: SpikeDeps | undefined;
 }
+
+export type SpikeDeps = Omit<SpikeRouteDeps, 'clock' | 'limiter'>;
 
 export interface AdminDeps {
   /** `RC_ADMIN_TOKEN`; only its SHA-256 is kept by the route. */
@@ -190,6 +195,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         });
       }
     }
+  }
+  if (deps.spike !== undefined) {
+    registerSpikeRoutes(app, {
+      ...deps.spike,
+      clock: deps.clock,
+      limiter: new FixedWindowRateLimiter(deps.clock),
+    });
   }
   await registerStaticSite(app, deps.publicDir);
 

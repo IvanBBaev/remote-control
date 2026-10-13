@@ -123,6 +123,14 @@ curl -s -H "Authorization: Bearer $RC_ADMIN_TOKEN" https://<relay>/api/admin/cou
 
 It is limited to 10 requests per minute per IP; a wrong token is a 401 and is never logged.
 
+## Device spike (M0-03, temporary)
+
+`RC_SPIKE=1` (needs the VAPID keys, not the database) serves the throwaway device
+feasibility page under `/spike/` and `POST /api/spike/push`, which sends the page a test
+push after up to 120 s. The procedure and the results live in
+[`docs/verification/device-spike.md`](../../docs/verification/device-spike.md). Unset
+`RC_SPIKE` after the run; the page and the route are deleted once the verdict is in.
+
 ## Error reporting (M0-26, D16)
 
 With `RC_SENTRY_DSN` set, every 5xx handler error (`event:http_error`) and every

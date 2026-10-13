@@ -26,7 +26,8 @@ import { LocalHub } from './core/local-hub.js';
 import { PairingService } from './core/pairing-service.js';
 import { PushNotifier } from './core/push-notifier.js';
 import { RelayRouter } from './core/relay-router.js';
-import { MIGRATIONS_DIR } from './package-paths.js';
+import { MIGRATIONS_DIR, SPIKE_DIR } from './package-paths.js';
+import type { SpikeDeps } from './app.js';
 import type { AdminStatsStore } from './ports/audit-log.js';
 import type { DatabaseHealth } from './ports/database-health.js';
 import type { Db } from './ports/db.js';
@@ -70,6 +71,8 @@ export interface Container {
   readonly audit: AuditRecorder | undefined;
   /** `GET /api/admin/counters` (M1-13); `undefined` without a database or `RC_ADMIN_TOKEN`. */
   readonly admin: { readonly token: string; readonly stats: AdminStatsStore } | undefined;
+  /** The M0-03 device spike; `undefined` unless `RC_SPIKE=1` (needs no database). */
+  readonly spike: SpikeDeps | undefined;
 }
 
 /** The relying party name shown by the passkey manager. */
@@ -177,6 +180,16 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
     admin:
       auditLog && config.adminToken !== undefined
         ? { token: config.adminToken, stats: auditLog }
+        : undefined,
+    spike:
+      config.spike && config.push
+        ? {
+            dir: SPIKE_DIR,
+            push: createWebPushSender(config.push),
+            publicKey: config.push.publicKey,
+            origin: config.origin,
+            timer: systemTimer,
+          }
         : undefined,
   };
 }
