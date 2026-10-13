@@ -131,6 +131,14 @@ interface Peer {
   transport?: TransportSession;
 }
 
+/** The outcome an accepted decision of this kind ends its request with. */
+const ACCEPTED_OUTCOME: Partial<Record<CanonicalDecision['kind'], 'allow' | 'deny' | 'answer'>> = {
+  allow: 'allow',
+  always: 'allow',
+  deny: 'deny',
+  answer: 'answer',
+};
+
 interface Outgoing {
   readonly machineId: string;
   readonly message: QueuedMessage;
@@ -159,6 +167,8 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
   const isVisible = options.isVisible ?? (() => true);
   const peers = new Map<string, Peer>();
   const outbox = new Map<string, Outgoing>();
+  /** What this phone decided, by request id, until the agent answers it (an ack empties the outbox). */
+  const decided = new Map<string, CanonicalDecision['kind']>();
   let pairing: Pairing | undefined;
   let seq = 0;
   let chain: Promise<void> = Promise.resolve();
@@ -493,18 +503,29 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
         updateMachine(machineId, { history: message.projects });
         return;
       case 'resolved':
+        decided.delete(message.requestId);
         outbox.delete(message.requestId);
         updateRequest(message.requestId, { status: 'resolved', outcome: message.outcome });
         return;
       case 'expired':
+        decided.delete(message.requestId);
         outbox.delete(message.requestId);
         updateRequest(message.requestId, { status: 'expired' });
         return;
-      case 'decision_result':
+      case 'decision_result': {
+        const kind = decided.get(message.requestId);
+        decided.delete(message.requestId);
         outbox.delete(message.requestId);
-        updateRequest(message.requestId, { result: message });
+        // `resolved` goes to the other phones only (03 §6): the winner learns its own
+        // outcome from the acceptance. "Reply in terminal" keeps its own released state.
+        const outcome = message.result === 'accepted' ? kind && ACCEPTED_OUTCOME[kind] : undefined;
+        updateRequest(message.requestId, {
+          result: message,
+          ...(outcome === undefined ? {} : { status: 'resolved', outcome }),
+        });
         updateCommand(message.requestId, { result: message });
         return;
+      }
       case 'diff': {
         const key = diffKey(machineId, message.sessionId, message.file);
         updateDiff(
@@ -557,6 +578,7 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
   }
 
   function queue(machineId: string, message: QueuedMessage, decisionHash?: string): void {
+    decided.set(message.decision.request_id, message.decision.kind);
     outbox.set(message.decision.request_id, {
       machineId,
       message,

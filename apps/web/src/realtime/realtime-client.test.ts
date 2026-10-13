@@ -437,6 +437,51 @@ describe('realtime client', () => {
       expect(next.of('data').filter((frame) => frame.cls === 'command')).toEqual([]);
     });
 
+    it.each([
+      ['allow', 'allow'],
+      ['always', 'allow'],
+      ['deny', 'deny'],
+    ] as const)('resolves its own accepted %s as %s', async (kind, outcome) => {
+      const t = await setup();
+      await t.client.start();
+      const socket = await t.connect();
+      await t.agent.send(socket, { t: 'request', request: approval(RID), ttlMs: 60_000 });
+      await settle();
+
+      // `resolved` goes to the other phones only: the acceptance ends it here.
+      t.client.decide(AGENT, decision(t.timer.now(), kind), HASH);
+      await settle();
+      // The relay's ack comes first and empties the outbox.
+      const [command] = socket.of('data').filter((frame) => frame.cls === 'command');
+      socket.receive({ v: 1, kind: 'ack', ids: [command!.id] });
+      await t.agent.send(socket, { t: 'decision_result', requestId: RID, result: 'accepted' });
+      await settle();
+      expect(t.store.getState().requests[RID]).toMatchObject({ status: 'resolved', outcome });
+    });
+
+    it('leaves a request pending when its decision is rejected or released', async () => {
+      const t = await setup();
+      await t.client.start();
+      const socket = await t.connect();
+      await t.agent.send(socket, { t: 'request', request: approval(RID), ttlMs: 60_000 });
+      await t.agent.send(socket, { t: 'request', request: approval(RID2), ttlMs: 60_000 });
+      await settle();
+
+      t.client.decide(AGENT, decision(t.timer.now()), HASH);
+      await settle();
+      await t.agent.send(socket, {
+        t: 'decision_result',
+        requestId: RID,
+        result: 'rejected',
+        reason: 'already_resolved',
+      });
+      // Not this phone's decision (sent before a reload): nothing to infer.
+      await t.agent.send(socket, { t: 'decision_result', requestId: RID2, result: 'accepted' });
+      await settle();
+      expect(t.store.getState().requests[RID]?.status).toBe('pending');
+      expect(t.store.getState().requests[RID2]?.status).toBe('pending');
+    });
+
     it('drops a decision when the agent resolves or expires its request', async () => {
       const t = await setup();
       await t.client.start();
