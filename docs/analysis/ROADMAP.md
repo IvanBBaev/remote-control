@@ -677,7 +677,7 @@ AC: a smoke scenario pairs a headless phone with the in-process agent and exchan
 encrypted frame in < 5 s.
 
 #### M0-18 — PWA scaffold, capability probe, onboarding gate, theming
-Size M · Deps M0-03, M0-05, M0-06 · Status todo · Sources 05 W2–W3, 05 W13, 05 Rec-3, 01 W3
+Size M · Deps M0-03, M0-05, M0-06 · Status done bcd9940 (ahead of M0-03 per ADR 0004; Lighthouse on the deployed build pending M0-02) · Sources 05 W2–W3, 05 W13, 05 Rec-3, 01 W3
 Scope: Vite 8 + React 19 + `vite-plugin-pwa` (injectManifest, `src/sw.ts`), manifest
 (name, icons, `display: standalone`, theme), routes per 01 W3 / 05 Rec-7 (`/login`,
 `/onboarding/*`, `/machines`, `/sessions`, `/sessions/:id`, `/requests/:id`, `/new`),
