@@ -28,5 +28,7 @@ export const Session = z.strictObject({
   name: z.string().min(1).max(64).nullable().optional(),
   /** Whether the session takes a follow-up instruction from the phone (M1-04). */
   followUp: z.boolean().optional(),
+  /** The last live feed event the content includes (M1-05); later events carry more. */
+  feedSeq: z.int().nonnegative().optional(),
 });
 export type Session = z.infer<typeof Session>;

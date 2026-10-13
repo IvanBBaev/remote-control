@@ -8,6 +8,8 @@ import {
 } from '@remote-control/crypto';
 import {
   decisionHash,
+  EMPTY_CONTENT,
+  fitSnapshot,
   HANDSHAKE_TAG,
   parseAnswerPayload,
   PhoneMessage,
@@ -18,6 +20,7 @@ import {
   type CanonicalDecision,
   type Capabilities,
   type Envelope,
+  type FeedEvent,
   type Machine,
   type PresenceEntry,
   type Presence,
@@ -37,6 +40,7 @@ import type { PendingEvent, PendingRequest, PendingStore } from './pending-store
 import { createPushSealer, pushSummaryText } from './push-summary.js';
 import type { LaunchResult, SessionLauncher } from './launcher.js';
 import { questionAnswers, questionView } from './question-view.js';
+import type { FeedEntry } from './session-feed.js';
 import { alwaysDestination, alwaysRules } from './session-rules.js';
 import { uuidV7 } from './uuid.js';
 
@@ -78,6 +82,8 @@ export interface SessionHubOptions {
    * `unsupported`. The snapshot also lists its repositories and sessions.
    */
   readonly launcher?: SessionLauncher;
+  /** A session's live feed content (M1-05), merged into the snapshot. */
+  readonly feed?: (sessionId: string) => FeedEntry | undefined;
   readonly log?: HubLog;
 }
 
@@ -101,6 +107,8 @@ export interface SessionHub {
   historyChanged(): void;
   /** The sessions changed (registry): every open session gets a new snapshot. */
   sessionsChanged(): void;
+  /** A session's live feed event (M1-05): every open session gets it. */
+  feedEvent(sessionId: string, seq: number, event: FeedEvent): void;
   /** Resolves when all queued work (handshakes, decisions, sends) has run. */
   idle(): Promise<void>;
   /** Phones with an established session (tests, status). */
@@ -342,17 +350,17 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     const known = launcher === undefined ? [] : await launcher.sessions();
     const waiting = new Set(views.map((view) => view.request.sessionId));
     const sessions = new Map<string, Session>();
-    const base = {
-      machineId,
-      agent: 'claude-code',
-      lastPrompt: null,
-      lastAnswer: null,
-      steps: [],
-      changedFiles: [],
+    const base = { machineId, agent: 'claude-code', ...EMPTY_CONTENT };
+    // The feed content and the last event it includes, so a phone skips an event the
+    // snapshot already shows.
+    const content = (id: string) => {
+      const entry = options.feed?.(id);
+      return entry === undefined ? {} : { ...entry.content, feedSeq: entry.seq };
     };
     for (const id of waiting) {
       sessions.set(id, {
         ...base,
+        ...content(id),
         id,
         repositoryId: null,
         state: 'waiting',
@@ -363,6 +371,7 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
       const shown = waiting.has(view.id);
       sessions.set(view.id, {
         ...base,
+        ...content(view.id),
         ...view,
         state: shown ? 'waiting' : view.state,
         statusText: shown ? 'Waiting for approval' : view.statusText,
@@ -372,13 +381,14 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
       launcher === undefined
         ? undefined
         : (await launcher.repositories()).slice(0, 100).map((entry) => ({ ...entry, machineId }));
-    return {
+    // Content is thinned until the snapshot fits in one frame (M1-05 size cap).
+    return fitSnapshot({
       t: 'snapshot',
       machine: { id: machineId, ...options.machine, agents: [...options.capabilities] },
       sessions: [...sessions.values()].slice(0, 100),
       pending: views.slice(0, 100).map((view) => view.request.id),
       ...(repositories === undefined ? {} : { repositories }),
-    };
+    });
   }
 
   /** The pending requests the phones can show right now. */
@@ -782,6 +792,14 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
       const sessions = [...live.values()];
       enqueue(async () => {
         const message = await snapshot(await shownViews());
+        for (const session of sessions) await sendSealed(session, message, 'event', null);
+      });
+    },
+    feedEvent(sessionId, seq, event) {
+      if (agentId === undefined || live.size === 0) return;
+      const sessions = [...live.values()];
+      const message: AgentMessage = { t: 'event', sessionId, seq, event };
+      enqueue(async () => {
         for (const session of sessions) await sendSealed(session, message, 'event', null);
       });
     },

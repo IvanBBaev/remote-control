@@ -28,6 +28,7 @@ import { noticeKind, noticeSummaryText } from '../core/push-summary.js';
 import { createRelayLink, type RelayLink } from '../core/relay-link.js';
 import { relayEndpoints } from '../core/relay-url.js';
 import { resolveRepository } from '../core/resolve-repository.js';
+import { createSessionFeed } from '../core/session-feed.js';
 import { createSessionRegistry } from '../core/session-registry.js';
 import {
   createActivityTracker,
@@ -265,6 +266,8 @@ async function runCommand(
     cli: c.claude,
     onChange: () => link?.hub.sessionsChanged(),
   });
+  // The live feed (M1-05): per-session content from hook events, kept in memory only.
+  const feed = createSessionFeed();
   const handler = createHookDispatcher({
     store,
     paused,
@@ -274,6 +277,8 @@ async function runCommand(
       if (typeof cwd === 'string') {
         sessions.observe(input.session_id, cwd, input.hook_event_name === 'SessionEnd');
       }
+      const update = feed.observe(input);
+      if (update !== undefined) link?.hub.feedEvent(input.session_id, update.seq, update.event);
       const delta = activity.observe(input, c.clock.now());
       if (delta !== undefined) count(cwd, delta);
       const notice = noticeKind(input, config.notifications);
@@ -323,6 +328,7 @@ async function runCommand(
       },
       capabilities: [{ ...CLAUDE_CODE_CAPABILITIES, startSession: true, instructions: followUps }],
       launcher,
+      feed: (sessionId) => feed.get(sessionId),
       alwaysDestinations: config.always.destinations,
       history: async () => statsHistory(await stats.read()),
       url: endpoints.ws,

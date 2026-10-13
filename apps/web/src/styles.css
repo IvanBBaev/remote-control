@@ -368,6 +368,73 @@ label.confirm input {
   overflow-wrap: anywhere;
 }
 
+.session-group h2,
+.session-part h2 {
+  font-size: 0.9rem;
+  margin: var(--space) 0 8px;
+  color: var(--color-muted);
+}
+
+.session-list,
+.changed-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.session-list a {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 12px var(--space);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: inherit;
+  text-decoration: none;
+}
+
+.session-list .session-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.session-list .meta {
+  flex-basis: 100%;
+}
+
+.badge {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--color-bg);
+}
+
+.badge.state-waiting {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.session-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+
+.session-steps {
+  margin: 0;
+  padding-left: 1.5em;
+  overflow-wrap: anywhere;
+}
+
+/* A path only on a tap (D21): it wraps inside the row. */
+.changed-files code.details {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
 button.link {
   border: 0;
   background: none;

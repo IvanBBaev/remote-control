@@ -92,6 +92,7 @@ export {
   DecisionMessage,
   DecisionRejection,
   DecisionResultMessage,
+  EventMessage,
   ExpiredMessage,
   HANDSHAKE_TAG,
   HistoryMessage,
@@ -106,3 +107,19 @@ export {
   SnapshotMessage,
   StartMessage,
 } from './messages.js';
+export {
+  applyFeedEvent,
+  clip,
+  EMPTY_CONTENT,
+  FeedEvent,
+  fitSnapshot,
+  MAX_CHANGED_FILES,
+  MAX_FEED_TEXT_LENGTH,
+  MAX_MESSAGE_BYTES,
+  MAX_SESSION_STEPS,
+  MAX_STEP_LENGTH,
+  MAX_TOOL_DETAIL_LENGTH,
+  messageBytes,
+  toolStep,
+} from './session-feed.js';
+export type { SessionContent } from './session-feed.js';

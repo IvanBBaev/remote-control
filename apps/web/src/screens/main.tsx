@@ -1,3 +1,5 @@
+import type { ChangedFile, Session } from '@remote-control/protocol';
+import { useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { useStore } from 'zustand';
 
@@ -70,11 +72,51 @@ export function MachinesScreen() {
   );
 }
 
-/** Running and recent agent sessions across all computers. */
+/** A session's name as the lists show it. */
+const sessionName = (session: Session) => session.name ?? 'Session';
+
+/** The badge of a session's state: "needs you" for a session waiting on the phone. */
+const STATE_LABEL: Record<Session['state'], string> = {
+  starting: 'Starting',
+  working: 'Working',
+  waiting: 'Needs you',
+  idle: 'Idle',
+  ended: 'Ended',
+};
+
+/**
+ * Running and recent agent sessions, per computer (M1-05): the state badge and what the
+ * session waits for.
+ */
 export function SessionsScreen() {
+  const { phone } = useAppState();
+  const machines = Object.values(useStore(phone.realtime, (state) => state.machines))
+    .filter((machine) => machine.sessions.length > 0)
+    .sort((a, b) => a.name.localeCompare(b.name));
   return (
     <Screen title="Sessions">
-      <Notice>No sessions yet. Start one here or run an agent on a paired computer.</Notice>
+      {machines.length === 0 ? (
+        <Notice>No sessions yet. Start one here or run an agent on a paired computer.</Notice>
+      ) : (
+        machines.map((machine) => (
+          <section key={machine.deviceId} className="session-group">
+            <h2>{machine.name}</h2>
+            <ul className="session-list">
+              {machine.sessions.map((session) => (
+                <li key={session.id}>
+                  <Link to={`/sessions/${encodeURIComponent(session.id)}`}>
+                    <span className="session-name">{sessionName(session)}</span>
+                    <span className={`badge state-${session.state}`}>
+                      {STATE_LABEL[session.state]}
+                    </span>
+                    <span className="meta">{session.statusText}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))
+      )}
       <div className="actions">
         <Link className="button primary" to="/new">
           New session
@@ -93,9 +135,26 @@ const findSession = (machines: RealtimeState['machines'], id: string) => {
   return undefined;
 };
 
+/** The file name of a path (D21: the full path only on a tap). */
+export const baseName = (path: string): string => path.split(/[\\/]/).at(-1) || path;
+
+/** A changed file: its name and `+N −M`; a tap shows the full path. No diff (D21). */
+function ChangedFileItem({ file }: { readonly file: ChangedFile }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <li>
+      <button type="button" className="link" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {baseName(file.name)}
+      </button>{' '}
+      <span className="added">+{file.added}</span> <span className="removed">−{file.removed}</span>
+      {open && <code className="details">{file.name}</code>}
+    </li>
+  );
+}
+
 /**
- * One session: its state and the follow-up compose box (M1-04). The transcript and the
- * live feed land with M1-05.
+ * One session (M1-05, D21): its state, the last prompt, the steps of this turn, the files
+ * changed and the last answer, plus the follow-up compose box (M1-04). No diff bodies.
  */
 export function SessionScreen() {
   const { id = '' } = useParams();
@@ -113,11 +172,49 @@ export function SessionScreen() {
     );
   }
   const { machineId, session } = found;
+  const empty =
+    session.lastPrompt === null &&
+    session.lastAnswer === null &&
+    session.steps.length === 0 &&
+    session.changedFiles.length === 0;
   return (
-    <Screen title={session.name ?? 'Session'} back="/sessions">
+    <Screen title={sessionName(session)} back="/sessions">
       <p className="meta">
         {session.state} · {session.statusText}
       </p>
+      {empty && <Notice>Nothing has happened in this session yet.</Notice>}
+      {session.lastPrompt !== null && (
+        <div className="session-part">
+          <h2>Prompt</h2>
+          <p className="session-text">{session.lastPrompt}</p>
+        </div>
+      )}
+      {session.steps.length > 0 && (
+        <div className="session-part">
+          <h2>Steps</h2>
+          <ol className="session-steps">
+            {session.steps.map((step, index) => (
+              <li key={index}>{step}</li>
+            ))}
+          </ol>
+        </div>
+      )}
+      {session.changedFiles.length > 0 && (
+        <div className="session-part">
+          <h2>Changed files</h2>
+          <ul className="changed-files">
+            {session.changedFiles.map((file) => (
+              <ChangedFileItem key={file.name} file={file} />
+            ))}
+          </ul>
+        </div>
+      )}
+      {session.lastAnswer !== null && (
+        <div className="session-part">
+          <h2>Answer</h2>
+          <p className="session-text">{session.lastAnswer}</p>
+        </div>
+      )}
       <ComposeBox key={session.id} machineId={machineId} session={session} />
     </Screen>
   );

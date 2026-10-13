@@ -199,11 +199,30 @@ screens through their accessible names, which are part of the screen contract:
   delivered before its expiry "Not delivered in time. Nothing was sent."; a relay
   refusal "The relay refused it. Try again."
 - Session (`/sessions/:id`) shows the CLI's session name (else "Session"), the state and
-  status line, and the compose box. The box is enabled only when the agent marks the
+  status line, the live feed (below), and the compose box. The box is enabled only when the agent marks the
   session `followUp` (a background session) and the computer is online; otherwise it is
   disabled with "This session runs in a terminal. Continue it there.", "This session has
   ended." or "Offline.". Unknown id: "This session no longer exists." ("Connecting…"
   before the first connection).
+
+### Sessions and the live feed (M1-05, D21)
+
+- Sessions (`/sessions`) groups the sessions of the latest snapshots by computer (sorted
+  by name; computers without sessions are left out). Each row links to the session and
+  shows its name (else "Session"), a state badge (Starting, Working, Needs you, Idle,
+  Ended) and the status line (what it waits for, e.g. "Waiting for approval").
+- Session (`/sessions/:id`) adds the thin view under the state line: the last prompt,
+  the steps of the current turn (at most 20), the changed files and the last answer.
+  A changed file shows its file name and `+N −M`; a tap shows the full path. There are
+  no diff bodies anywhere (D21). With none of these: "Nothing has happened in this
+  session yet."
+- The agent builds the content from `UserPromptSubmit`, `PostToolUse`, `Stop`,
+  `SubagentStop`, `PreCompact` and `Notification` hooks and sends each as a sealed
+  `event` message with a per-session `seq`. A snapshot carries the content with
+  `feedSeq` (the last event it includes); the phone applies only events with a larger
+  `seq`. Every message fits in one frame (`MAX_MESSAGE_BYTES`): events are capped per
+  field, and a snapshot too large drops the largest sessions' content first (they stay
+  listed), then trailing sessions.
 
 ## Planned (no route yet)
 

@@ -1,12 +1,15 @@
 import {
   deriveNotificationKey,
   generateX25519KeyPair,
+  MAX_PLAINTEXT_BYTES,
   openPushSummary,
 } from '@remote-control/crypto';
 import { seededRandom } from '@remote-control/fake-claude-code';
 import {
   decodePushSummary,
   encodeAnswerPayload,
+  MAX_MESSAGE_BYTES,
+  messageBytes,
   type AlwaysDestination,
   type ApprovalRequest,
   type Envelope,
@@ -25,6 +28,7 @@ import type { LaunchResult, SessionLauncher, SessionView } from './launcher.js';
 import { createPendingStore, type RegisterInput } from './pending-store.js';
 import { noticeSummaryText } from './push-summary.js';
 import { createRelayLink, type RelayLink, type RelayLinkOptions } from './relay-link.js';
+import { createSessionFeed } from './session-feed.js';
 import { NOTICE_TTL_MS } from './session-hub.js';
 
 const HOOK_TIMEOUT_MS = 600_000;
@@ -1108,6 +1112,105 @@ describe('relay link (fake relay, fake phones)', () => {
       t.link.hub.sessionsChanged();
       await waitFor(() => t.phone.of('snapshot').length === 2);
       expect(t.phone.of('snapshot')[1]!.sessions.map((session) => session.id)).toEqual([SESSION]);
+    });
+
+    describe('live feed (M1-05)', () => {
+      const hook = (event: string, fields: Record<string, unknown> = {}, sessionId = SESSION) => ({
+        session_id: sessionId,
+        cwd: REPO.path,
+        hook_event_name: event,
+        ...fields,
+      });
+
+      async function feeding(sessions: SessionView[] = [LIVE]) {
+        const feed = createSessionFeed();
+        const fake = fakeLauncher(sessions);
+        const t = await setup(['Pixel'], 11, undefined, undefined, {
+          launcher: fake.launcher,
+          feed: (id) => feed.get(id),
+        });
+        const [phone] = t.phones as [FakePhone];
+        /** What `main.ts` does with a hook event. */
+        const observe = (input: ReturnType<typeof hook>) => {
+          const update = feed.observe(input);
+          if (update !== undefined)
+            t.link.hub.feedEvent(input.session_id, update.seq, update.event);
+        };
+        return { ...t, ...fake, phone, observe };
+      }
+
+      it('AC: the snapshot carries the content and its seq; later events go out live', async () => {
+        const t = await feeding();
+        // Before a phone session: kept for the snapshot, sent to no one.
+        t.observe(hook('UserPromptSubmit', { prompt: 'Fix the secret-build' }));
+        await t.link.hub.idle();
+        await t.open(t.phone);
+        expect(t.phone.of('snapshot')[0]!.sessions[0]).toMatchObject({
+          id: SESSION,
+          lastPrompt: 'Fix the secret-build',
+          feedSeq: 1,
+        });
+        t.observe(
+          hook('PostToolUse', {
+            tool_name: 'Edit',
+            tool_input: { file_path: `${REPO.path}/a.ts`, old_string: 'a', new_string: 'b\nc' },
+          }),
+        );
+        t.observe(hook('SessionStart'));
+        t.observe(hook('Stop', { last_assistant_message: 'Done' }));
+        await t.link.hub.idle();
+        await waitFor(() => t.phone.of('event').length === 2);
+        expect(t.phone.of('event')).toEqual([
+          {
+            t: 'event',
+            sessionId: SESSION,
+            seq: 2,
+            event: expect.objectContaining({
+              kind: 'tool',
+              input: 'a.ts',
+              file: { name: `${REPO.path}/a.ts`, added: 2, removed: 1 },
+            }) as unknown,
+          },
+          { t: 'event', sessionId: SESSION, seq: 3, event: { kind: 'stop', text: 'Done' } },
+        ]);
+        // A session waiting for approval keeps its content too.
+        t.store.register(permission('npm test', { sessionId: SESSION }));
+        t.link.hub.sessionsChanged();
+        await waitFor(() => t.phone.of('snapshot').length === 2);
+        expect(t.phone.of('snapshot')[1]!.sessions[0]).toMatchObject({
+          state: 'waiting',
+          lastAnswer: 'Done',
+          steps: ['Edit a file: a.ts'],
+          feedSeq: 3,
+        });
+        expect(JSON.stringify(t.logs)).not.toContain('secret-build');
+        expect(plaintextLeaks(t.relay.routed, 'secret-build')).toBe(false);
+      });
+
+      it('AC: a snapshot of sessions full of content still fits in one frame', async () => {
+        const ids = Array.from({ length: 3 }, (_, i) => `${SESSION.slice(0, -1)}${i}`);
+        const t = await feeding(ids.map((id) => ({ ...LIVE, id })));
+        for (const id of ids) {
+          t.observe(hook('UserPromptSubmit', { prompt: 'p'.repeat(5000) }, id));
+          for (let i = 0; i < 60; i += 1) {
+            const file_path = `/${i}${'\u0001'.repeat(100)}`;
+            t.observe(
+              hook(
+                'PostToolUse',
+                { tool_name: 'Write', tool_input: { file_path, content: 'x' } },
+                id,
+              ),
+            );
+          }
+        }
+        await t.open(t.phone);
+        const [snapshot] = t.phone.of('snapshot');
+        expect(messageBytes(snapshot)).toBeLessThanOrEqual(MAX_MESSAGE_BYTES);
+        expect(MAX_MESSAGE_BYTES).toBe(MAX_PLAINTEXT_BYTES);
+        expect(snapshot!.sessions.map((session) => session.id)).toEqual(ids);
+        expect(snapshot!.sessions.some((session) => session.changedFiles.length > 0)).toBe(true);
+        expect(snapshot!.sessions.some((session) => session.lastPrompt === null)).toBe(true);
+      });
     });
   });
 });

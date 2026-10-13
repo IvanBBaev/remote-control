@@ -6,6 +6,7 @@ import type {
   CanonicalDecision,
   Machine,
   Question,
+  Session,
 } from '@remote-control/protocol';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -578,6 +579,72 @@ describe('realtime client', () => {
       const socket = await t.connect();
       expect(socket.of('data').filter((frame) => frame.cls === 'command')).toEqual([]);
       expect(t.store.getState().commands[RID]?.relayError).toBe('expired');
+    });
+  });
+
+  describe('live feed (M1-05)', () => {
+    const session = (id: string, feedSeq?: number): Session => ({
+      id,
+      machineId: AGENT,
+      repositoryId: null,
+      agent: 'claude-code',
+      state: 'working',
+      statusText: 'Working',
+      lastPrompt: 'Go',
+      lastAnswer: null,
+      steps: ['Run a command: ls'],
+      changedFiles: [],
+      ...(feedSeq === undefined ? {} : { feedSeq }),
+    });
+
+    it('applies events newer than the snapshot, once, and ignores unknown sessions', async () => {
+      const t = await setup();
+      await t.client.start();
+      const socket = await t.connect();
+      await t.agent.send(socket, {
+        t: 'snapshot',
+        machine: MACHINE,
+        sessions: [session('s1', 2), session('s2')],
+        pending: [],
+      });
+      const sessions = () => t.store.getState().machines[AGENT]!.sessions;
+      // Seq 2 is already in the snapshot.
+      await t.agent.send(socket, {
+        t: 'event',
+        sessionId: 's1',
+        seq: 2,
+        event: { kind: 'compact' },
+      });
+      await t.agent.send(socket, {
+        t: 'event',
+        sessionId: 's1',
+        seq: 3,
+        event: { kind: 'stop', text: 'Done' },
+      });
+      await t.agent.send(socket, {
+        t: 'event',
+        sessionId: 's2',
+        seq: 1,
+        event: { kind: 'compact' },
+      });
+      await t.agent.send(socket, {
+        t: 'event',
+        sessionId: 'gone',
+        seq: 9,
+        event: { kind: 'compact' },
+      });
+      await settle();
+      expect(sessions()[0]).toMatchObject({
+        steps: ['Run a command: ls'],
+        lastAnswer: 'Done',
+        feedSeq: 3,
+      });
+      expect(sessions()[1]).toMatchObject({
+        steps: ['Run a command: ls', 'Context compacted'],
+        feedSeq: 1,
+      });
+      expect(sessions()).toHaveLength(2);
+      expect(t.errors).toEqual([]);
     });
   });
 

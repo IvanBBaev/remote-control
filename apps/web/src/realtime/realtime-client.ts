@@ -7,7 +7,13 @@ import {
   XXPSK0,
 } from '@remote-control/crypto';
 import type { X25519KeyPair } from '@remote-control/crypto';
-import { AgentMessage, HANDSHAKE_TAG, PairingHello, VERSION_TABLE } from '@remote-control/protocol';
+import {
+  AgentMessage,
+  applyFeedEvent,
+  HANDSHAKE_TAG,
+  PairingHello,
+  VERSION_TABLE,
+} from '@remote-control/protocol';
 import type {
   CanonicalDecision,
   Envelope,
@@ -441,6 +447,24 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
         }));
         return;
       }
+      case 'event':
+        update((state) => {
+          const machine = state.machines[machineId];
+          const session = machine?.sessions.find((s) => s.id === message.sessionId);
+          // A snapshot built after this event already holds it (M1-05).
+          if (session === undefined || message.seq <= (session.feedSeq ?? 0)) return {};
+          const next = { ...applyFeedEvent(session, message.event), feedSeq: message.seq };
+          return {
+            machines: {
+              ...state.machines,
+              [machineId]: {
+                ...machine!,
+                sessions: machine!.sessions.map((s) => (s === session ? next : s)),
+              },
+            },
+          };
+        });
+        return;
       case 'history':
         updateMachine(machineId, { history: message.projects });
         return;

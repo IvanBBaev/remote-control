@@ -9,6 +9,7 @@ import { Repository } from './domain/repository.js';
 import { Session } from './domain/session.js';
 import { StartSession } from './domain/start-session.js';
 import { RequestId, SessionId } from './ids.js';
+import { FeedEvent } from './session-feed.js';
 
 // End-to-end messages (M0-16): the plaintext inside an envelope's `payload`, after the
 // Noise transport session decrypts it. The relay never sees any of this (I3).
@@ -143,6 +144,20 @@ export const HistoryMessage = z.strictObject({
 });
 export type HistoryMessage = z.infer<typeof HistoryMessage>;
 
+/**
+ * One live feed event for a session (M1-05, `cls: event`). `seq` counts the session's
+ * events: the phone applies it with `applyFeedEvent` only when `seq` is past the
+ * snapshot's `feedSeq` (a snapshot built after the event already includes it). An event
+ * for a session the phone does not know waits for the next snapshot.
+ */
+export const EventMessage = z.strictObject({
+  t: z.literal('event'),
+  sessionId: SessionId,
+  seq: z.int().positive(),
+  event: FeedEvent,
+});
+export type EventMessage = z.infer<typeof EventMessage>;
+
 /** Everything the agent sends to a phone inside a session. */
 export const AgentMessage = z.union([
   RequestMessage,
@@ -152,6 +167,7 @@ export const AgentMessage = z.union([
   ExpiredMessage,
   DecisionResultMessage,
   HistoryMessage,
+  EventMessage,
 ]);
 export type AgentMessage = z.infer<typeof AgentMessage>;
 
