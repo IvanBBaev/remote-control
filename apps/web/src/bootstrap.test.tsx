@@ -92,7 +92,10 @@ describe('bootstrap', () => {
 
   async function boot(
     path: string,
-    options: Pick<BootstrapOptions, 'relay' | 'hint' | 'serviceWorker' | 'badge'> &
+    options: Pick<
+      BootstrapOptions,
+      'relay' | 'hint' | 'serviceWorker' | 'badge' | 'installChoice'
+    > &
       Partial<Pick<BootstrapOptions, 'phone' | 'env'>>,
   ) {
     const container = document.createElement('div');
@@ -143,6 +146,30 @@ describe('bootstrap', () => {
     });
     expect(window.location.pathname).toBe('/onboarding/install');
     app.unmount();
+  });
+
+  it('remembers "Continue in the browser" across starts', async () => {
+    let skipped = false;
+    const installChoice = {
+      read: () => skipped,
+      skip: () => {
+        skipped = true;
+      },
+    };
+    const relay = fakeRelay({ session: () => Promise.resolve({ userId: 'user-1' }) });
+    const first = await boot('/sessions', { relay, installChoice });
+    expect(window.location.pathname).toBe('/onboarding/install');
+    const skip = [...document.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Continue in the browser',
+    );
+    act(() => {
+      skip?.click();
+    });
+    expect(skipped).toBe(true);
+    first.unmount();
+    const second = await boot('/sessions', { relay, installChoice });
+    expect(window.location.pathname).not.toBe('/onboarding/install');
+    second.unmount();
   });
 
   const installed = {

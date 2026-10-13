@@ -23,6 +23,8 @@ export interface PlatformActions {
   readonly serviceWorker?: NavigationSource;
   /** Reads the pairing QR with the camera (M2-04); missing without a camera API. */
   readonly qrScanner?: QrScanner;
+  /** Remembers "Continue in the browser" across reloads. */
+  readonly rememberInstallSkip?: () => void;
 }
 
 export interface AppStateValue {
@@ -86,8 +88,9 @@ export function AppStateProvider({
     [device, signedIn, machines],
   );
   const skipInstall = useCallback(() => {
+    platform.rememberInstallSkip?.();
     setState((s) => ({ ...s, installSkipped: true }));
-  }, []);
+  }, [platform]);
   const requestNotifications = useCallback(async () => {
     const notificationPermission = await platform.requestNotificationPermission();
     setState((s) => ({ ...s, notificationPermission }));

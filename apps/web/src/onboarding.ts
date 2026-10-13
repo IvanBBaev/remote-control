@@ -53,3 +53,34 @@ export function onboardingRedirect(state: OnboardingState): string | undefined {
   const step = nextOnboardingStep(state);
   return step === 'done' ? undefined : ONBOARDING_ROUTES[step];
 }
+
+/**
+ * Remembers "Continue in the browser" (05 Rec-3), so a reload or a notification tap does
+ * not send a user who chose the browser back to the install step.
+ */
+export interface InstallChoice {
+  read(): boolean;
+  skip(): void;
+}
+
+const INSTALL_SKIPPED_KEY = 'rc.install.skipped';
+
+/** `localStorage` can be missing or throw (private mode, blocked site data). */
+export function storageInstallChoice(storage: () => Storage | undefined): InstallChoice {
+  return {
+    read() {
+      try {
+        return storage()?.getItem(INSTALL_SKIPPED_KEY) === '1';
+      } catch {
+        return false;
+      }
+    },
+    skip() {
+      try {
+        storage()?.setItem(INSTALL_SKIPPED_KEY, '1');
+      } catch {
+        // Not remembered: the install step comes back once, and one tap skips it again.
+      }
+    },
+  };
+}

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { evaluateCapabilities } from './capabilities.js';
 import type { CapabilityFacts } from './capabilities.js';
-import { nextOnboardingStep, onboardingRedirect } from './onboarding.js';
+import { nextOnboardingStep, onboardingRedirect, storageInstallChoice } from './onboarding.js';
 import type { OnboardingState, OnboardingStep } from './onboarding.js';
 import { fixtures } from './test-fixtures.js';
 
@@ -90,5 +90,32 @@ describe('onboardingRedirect', () => {
 
   it('returns undefined once onboarding is complete', () => {
     expect(onboardingRedirect(fixtures.onboarded)).toBeUndefined();
+  });
+});
+
+describe('storageInstallChoice', () => {
+  it('remembers that the install step was skipped', () => {
+    window.localStorage.clear();
+    const choice = storageInstallChoice(() => window.localStorage);
+    expect(choice.read()).toBe(false);
+    choice.skip();
+    expect(storageInstallChoice(() => window.localStorage).read()).toBe(true);
+    window.localStorage.clear();
+  });
+
+  it('is a no-op without storage', () => {
+    const choice = storageInstallChoice(() => undefined);
+    choice.skip();
+    expect(choice.read()).toBe(false);
+  });
+
+  it('swallows storage that throws', () => {
+    const choice = storageInstallChoice(() => {
+      throw new DOMException('blocked', 'SecurityError');
+    });
+    expect(() => {
+      choice.skip();
+    }).not.toThrow();
+    expect(choice.read()).toBe(false);
   });
 });

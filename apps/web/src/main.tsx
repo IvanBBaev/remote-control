@@ -8,6 +8,7 @@ import { storageSessionHint } from './auth/auth-store.js';
 import { createRelayApi } from './auth/relay-api.js';
 import { bootstrap } from './bootstrap.js';
 import { readBrowserEnvironment } from './capabilities.js';
+import { storageInstallChoice } from './onboarding.js';
 import { createIndexedDbKeyStore } from './pairing/key-store.js';
 import { cameraQrScanner } from './pairing/qr-scanner.js';
 import { createPhoneService, phoneNameFrom, relaySocketUrl } from './realtime/phone.js';
@@ -47,4 +48,5 @@ void bootstrap({
   relay,
   phone,
   hint: storageSessionHint(() => window.localStorage),
+  installChoice: storageInstallChoice(() => window.localStorage),
 });

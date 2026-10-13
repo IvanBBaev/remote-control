@@ -10,7 +10,7 @@ import type { RelayApi } from './auth/relay-api.js';
 import type { PlatformActions } from './app-state.js';
 import { probeCapabilities } from './capabilities.js';
 import type { BrowserEnvironment, WebCryptoCheck } from './capabilities.js';
-import type { NotificationPermissionState } from './onboarding.js';
+import type { InstallChoice, NotificationPermissionState } from './onboarding.js';
 import type { QrScanner } from './pairing/qr-scanner.js';
 import type { NavigationSource } from './push/navigation.js';
 import { registerPush } from './push/push-subscription.js';
@@ -46,14 +46,16 @@ export interface PlatformApis {
   readonly serviceWorker?: ServiceWorkerApi;
   readonly badge?: BadgeApi;
   readonly qrScanner?: QrScanner;
+  readonly installChoice?: InstallChoice;
 }
 
 export function createPlatformActions(
   api: NotificationApi | undefined,
-  { relay, serviceWorker, badge, qrScanner }: PlatformApis,
+  { relay, serviceWorker, badge, qrScanner, installChoice }: PlatformApis,
 ): PlatformActions {
   return {
     ...(qrScanner && { qrScanner }),
+    ...(installChoice && { rememberInstallSkip: () => installChoice.skip() }),
     requestNotificationPermission: async () => {
       if (api === undefined) return 'unsupported';
       return api.requestPermission();
@@ -81,6 +83,7 @@ export interface BootstrapOptions {
   readonly phone: PhoneService;
   readonly hint?: SessionHint;
   readonly checkWebCrypto?: WebCryptoCheck;
+  readonly installChoice?: InstallChoice;
 }
 
 /** Probes the platform and the session, then mounts the app. */
@@ -96,7 +99,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<Root> {
   ]);
   const initialState = {
     capabilities,
-    installSkipped: false,
+    installSkipped: options.installChoice?.read() ?? false,
     notificationPermission: readNotificationPermission(options.notifications),
     paired: pairedCount > 0,
   };
@@ -111,6 +114,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<Root> {
             ...(options.serviceWorker && { serviceWorker: options.serviceWorker }),
             ...(options.badge && { badge: options.badge }),
             ...(options.qrScanner && { qrScanner: options.qrScanner }),
+            ...(options.installChoice && { installChoice: options.installChoice }),
           })}
           auth={auth}
           relay={relay}
