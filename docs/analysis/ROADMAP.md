@@ -76,7 +76,8 @@ named, so nobody re-derives it.
 | M1-12 | Playwright P1–P9 + WebKit smoke — deps M1-05 | §4 M1-12 | `done 5286172 — first CI run pending the next push` | 3 |
 | M1-13 | Audit log and admin counters | §4 M1-13 | `done` | 1 |
 | M1-14 | README final, screens doc, second-user run — deps M1-09, Q13 | §4 M1-14, §6 Q13 | `blocked-owner` | 1.5 |
-| M1-15 | Soak (24 h) and load smoke — deps M1-12 | §4 M1-15 | `blocked-owner` | 1.5 |
+| M1-15a | Soak harness, `pnpm soak` and CI load smoke (code part) | §4 M1-15 | `done 287eb9c` | 1 |
+| M1-15b | 24 h soak run logged in `docs/verification/soak.md` | §4 M1-15 | `blocked-owner` | 0.5 |
 | M1-EXIT | M1 exit record: two weeks, ≥ 20 approvals from outside home | §4 M1 exit record, §3 M1 (4) | `blocked-owner` | 1 |
 
 ### History
@@ -992,7 +993,7 @@ AC: `docs/verification/second-user.md` ≤ 10 min without help, or a list of fix
 turned into WPs.
 
 #### M1-15 — Soak and load smoke
-Size S · Deps M1-12 · Status todo · Sources 03 W14, 07 W15
+Size S · Deps M1-12 · Status doing — code done 287eb9c (soak harness, `pnpm soak`, CI smoke per OS); 24 h run pending owner · Sources 03 W14, 07 W15
 Scope: 24 h soak of the real agent + relay with fake-claude firing every minute (memory,
 reconnects, no duplicate decisions); CI `continue-on-error` service load smoke per OS.
 AC: soak log in `docs/verification/soak.md` with RSS flat and zero duplicate decisions.
