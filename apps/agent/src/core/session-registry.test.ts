@@ -55,6 +55,15 @@ describe('createSessionRegistry', () => {
     expect(onChange).toHaveBeenCalledTimes(3);
   });
 
+  it('records a Codex session without marking its folder as Claude-trusted (M2-01)', () => {
+    const { registry } = harness();
+    registry.observe('codex-1', '/codex-repo', false, 'codex');
+    expect(registry.get('codex-1')).toMatchObject({ agent: 'codex', state: 'working' });
+    expect(registry.seenCwd('/codex-repo')).toBe(false);
+    registry.observe(A, '/repo', false);
+    expect(registry.get(A)?.agent).toBe('claude-code');
+  });
+
   it('keeps a known state on a later hook', async () => {
     const { registry, cli } = harness([row({ status: 'waiting' })]);
     await registry.refresh();

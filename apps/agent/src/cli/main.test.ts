@@ -27,7 +27,7 @@ import type { ClaudeCli } from '../ports/claude-cli.js';
 import type { ProcessResult } from '../ports/process-result.js';
 import type { Systemctl } from '../ports/systemctl.js';
 import { AGENT_VERSION } from '../version.js';
-import { EXIT_ERROR, EXIT_OK, EXIT_USAGE, HELP_TEXT, runCli } from './main.js';
+import { CODEX_TRUST_HINT, EXIT_ERROR, EXIT_OK, EXIT_USAGE, HELP_TEXT, runCli } from './main.js';
 
 const posixOnly = process.platform === 'win32' ? it.skip : it;
 
@@ -428,6 +428,38 @@ describe('runCli', () => {
       expect(await readFile(settingsPath(), 'utf8')).toBe(original);
       expect(await h.run(['hooks', 'remove'])).toBe(EXIT_OK);
       expect(h.out()).toContain('No remotectl hooks in');
+    });
+
+    it('installs the Codex hooks into ~/.codex/hooks.json with --agent codex (M2-01)', async () => {
+      const codexHooks = join(base, 'home', '.codex', 'hooks.json');
+      expect(await h.run(['hooks', 'status', '--agent', 'codex'])).toBe(EXIT_OK);
+      expect(h.out()).toContain('Run `remotectl hooks install --agent codex`');
+
+      expect(await h.run(['hooks', 'install', '--agent', 'codex'])).toBe(EXIT_OK);
+      expect(h.out()).toContain(`Installed the hooks in ${codexHooks}.`);
+      expect(h.out()).toContain(CODEX_TRUST_HINT);
+      const installed = JSON.parse(await readFile(codexHooks, 'utf8')) as {
+        hooks: Record<string, { hooks: { command: string; timeout: number }[] }[]>;
+      };
+      const script = join(h.c.paths.data, 'hook.cjs');
+      expect(installed.hooks['PermissionRequest']?.[0]?.hooks[0]?.command).toBe(
+        `"/usr/local/bin/node" "${script}" 1800 --adapter codex`,
+      );
+      expect(installed.hooks['SessionEnd']?.[0]?.hooks[0]?.timeout).toBe(3);
+      expect(installed.hooks['Notification']).toBeUndefined();
+      // The Claude Code settings stay untouched.
+      await expect(readFile(settingsPath(), 'utf8')).rejects.toThrow();
+
+      expect(await h.run(['status'])).toBe(EXIT_OK);
+      expect(h.out()).toContain('codex hooks:     installed; no Codex hook yet');
+
+      expect(await h.run(['hooks', 'remove', '--agent', 'codex'])).toBe(EXIT_OK);
+      expect(h.out()).toContain(`Removed the hooks in ${codexHooks}.`);
+    });
+
+    it('refuses an unknown --agent', async () => {
+      expect(await h.run(['hooks', 'install', '--agent', 'bogus'])).toBe(EXIT_USAGE);
+      expect(h.err()).toContain('--agent must be claude-code or codex');
     });
 
     it('uses holdSeconds from the config', async () => {

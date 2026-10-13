@@ -16,7 +16,10 @@ export const MAX_RESPONSE_BYTES = 1024 * 1024;
 const MAX_HOOK_TIMEOUT_SECONDS = 86_400;
 
 export interface HookDeps {
-  /** Arguments after the script: `[T]`, the installed timeout in seconds. */
+  /**
+   * Arguments after the script: `[T]`, the installed timeout in seconds, optionally
+   * followed by `--adapter <id>` for an agent other than Claude Code (M2-01).
+   */
   readonly argv: readonly string[];
   /** The hook input (Claude Code writes it to stdin). */
   readStdin(): Promise<string>;
@@ -39,6 +42,13 @@ export function hookTimeoutSeconds(argv: readonly string[]): number {
   return seconds > 0 && seconds <= MAX_HOOK_TIMEOUT_SECONDS
     ? seconds
     : DEFAULT_HOOK_TIMEOUT_SECONDS;
+}
+
+/** `--adapter <id>` from argv, or `undefined` (Claude Code); a malformed id is ignored. */
+export function hookAdapter(argv: readonly string[]): string | undefined {
+  const index = argv.indexOf('--adapter');
+  const id = index === -1 ? undefined : argv[index + 1];
+  return id !== undefined && /^[a-z][a-z0-9-]{0,31}$/.test(id) ? id : undefined;
 }
 
 /** The hook's own budget: `T − 5 s`, or half of `T` for very short timeouts. */
@@ -72,6 +82,7 @@ function post(
   endpoint: Endpoint,
   body: string,
   seconds: number,
+  adapter: string | undefined,
   signal: AbortSignal,
 ): Promise<string | undefined> {
   return new Promise((resolve) => {
@@ -87,6 +98,7 @@ function post(
           'content-type': 'application/json',
           'content-length': Buffer.byteLength(body),
           'x-remotectl-hook-timeout': String(seconds),
+          ...(adapter === undefined ? {} : { 'x-remotectl-agent': adapter }),
         },
       },
       (res) => {
@@ -120,7 +132,7 @@ async function exchange(
   const input = await deps.readStdin();
   const endpoint = parseEndpoint(await deps.readEndpoint());
   if (endpoint === undefined || signal.aborted) return undefined;
-  const answer = await post(endpoint, input, seconds, signal);
+  const answer = await post(endpoint, input, seconds, hookAdapter(deps.argv), signal);
   return answer !== undefined && isJsonObject(answer) ? answer : undefined;
 }
 

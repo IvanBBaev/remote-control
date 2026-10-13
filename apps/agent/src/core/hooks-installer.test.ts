@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createNodeFileSystem, nodePaths } from '../adapters/node-file-system.js';
 import { systemRandom } from '../adapters/system-random.js';
 import {
+  CODEX_FEED_EVENTS,
   FEED_EVENTS,
   HOOK_SCRIPT_FILE,
   HooksSettingsError,
@@ -147,6 +148,52 @@ describe('hooks installer', () => {
     expect((await stat(settingsPath)).mode & 0o777).toBe(0o600);
     expect((await stat(backupPath!)).mode & 0o777).toBe(0o600);
     expect((await stat(join(dataDir, HOOK_SCRIPT_FILE))).mode & 0o777).toBe(0o600);
+  });
+
+  it('installs the Codex set into hooks.json with --adapter codex (04 §5.9)', async () => {
+    const codexDir = join(base, 'codex');
+    const codex = createHooksInstaller({
+      fs: createNodeFileSystem(systemRandom),
+      paths: nodePaths,
+      clock: { now: () => NOW },
+      settingsDir: codexDir,
+      dataDir,
+      hookSource,
+      execPath: EXEC,
+      holdSeconds: 1800,
+      agent: 'codex',
+    });
+    const hooksPath = join(codexDir, 'hooks.json');
+    expect(codex.settingsPath).toBe(hooksPath);
+    expect(await codex.install()).toMatchObject({ changed: true });
+    const script = join(dataDir, HOOK_SCRIPT_FILE);
+    const parsed = JSON.parse(await readFile(hooksPath, 'utf8')) as {
+      hooks: Record<string, unknown[]>;
+    };
+    expect(Object.keys(parsed.hooks)).toEqual(['PermissionRequest', ...CODEX_FEED_EVENTS]);
+    expect(parsed.hooks['PermissionRequest']).toEqual([
+      {
+        hooks: [
+          {
+            type: 'command',
+            command: `"${EXEC}" "${script}" 1800 --adapter codex`,
+            timeout: 1800,
+          },
+        ],
+      },
+    ]);
+    // No matcher: PreToolUse only feeds for Codex; SessionEnd is capped at 3 s.
+    expect(parsed.hooks['PreToolUse']).toEqual([
+      { hooks: [{ type: 'command', command: hookCommand(EXEC, script, 5, 'codex'), timeout: 5 }] },
+    ]);
+    expect(parsed.hooks['SessionEnd']).toEqual([
+      { hooks: [{ type: 'command', command: hookCommand(EXEC, script, 3, 'codex'), timeout: 3 }] },
+    ]);
+    expect((await codex.status()).hooks.every((hook) => hook.state === 'installed')).toBe(true);
+    // The Claude Code settings are untouched.
+    await expect(stat(settingsPath)).rejects.toThrow();
+    await codex.remove();
+    expect(await readFile(hooksPath, 'utf8')).toBe('{}\n');
   });
 
   it('creates a missing settings file without a backup', async () => {

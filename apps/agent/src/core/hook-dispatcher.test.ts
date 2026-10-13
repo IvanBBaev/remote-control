@@ -46,6 +46,34 @@ describe('hook dispatcher', () => {
     expect(blockingKind({ hook_event_name: 'Stop', session_id: 's' })).toBe(undefined);
   });
 
+  it('blocks only on PermissionRequest for Codex (04 §2.11)', () => {
+    expect(blockingKind(permission, 'codex')).toBe('permission');
+    expect(
+      blockingKind(
+        { hook_event_name: 'PreToolUse', session_id: 's', tool_name: 'AskUserQuestion' },
+        'codex',
+      ),
+    ).toBe(undefined);
+  });
+
+  it('records the agent on a held Codex request and in onEvent', () => {
+    const store = createPendingStore({
+      clock: { now: () => 1_000 },
+      timer: idleTimer,
+      random: seededRandom(3),
+    });
+    const agents: string[] = [];
+    const handler = createHookDispatcher({ store, onEvent: (_input, agent) => agents.push(agent) });
+    const signal = new AbortController().signal;
+    void handler(permission, { hookTimeoutMs: 1_800_000, signal, agent: 'codex' });
+    void handler({ ...permission, session_id: 's2' }, { hookTimeoutMs: 1_800_000, signal });
+    const [codex, claude] = store.list();
+    expect(codex?.agent).toBe('codex');
+    expect(claude && 'agent' in claude).toBe(false);
+    expect(agents).toEqual(['codex', 'claude-code']);
+    store.releaseAll('shutdown');
+  });
+
   it('fingerprints tool name and input', () => {
     expect(fingerprint(permission)).toBe('Bash\0{"command":"ls"}');
     expect(fingerprint({ hook_event_name: 'PermissionRequest', session_id: 's' })).toBe('\0null');

@@ -1,3 +1,4 @@
+import type { AgentAdapterId } from '../ports/agent-adapter.js';
 import type { Clock } from '../ports/clock.js';
 import type { Random } from '../ports/random.js';
 import type { Timer, TimerHandle } from '../ports/timer.js';
@@ -49,6 +50,8 @@ export interface PendingRequest {
   readonly createdAt: number;
   /** Unix epoch milliseconds: `createdAt + T − 10 s`. */
   readonly deadline: number;
+  /** The agent whose hook is held; absent means `claude-code` (M2-01). */
+  readonly agent?: AgentAdapterId;
 }
 
 export interface RegisterInput {
@@ -58,6 +61,8 @@ export interface RegisterInput {
   readonly payload: Readonly<Record<string, unknown>>;
   /** The hook's own timeout `T` in milliseconds. */
   readonly hookTimeoutMs: number;
+  /** The agent whose hook is held; absent means `claude-code`. */
+  readonly agent?: AgentAdapterId;
 }
 
 export interface Registration {
@@ -176,6 +181,7 @@ export function createPendingStore(options: PendingStoreOptions): PendingStore {
         payload: input.payload,
         createdAt: now,
         deadline: now + holdMs,
+        ...(input.agent === undefined ? {} : { agent: input.agent }),
       };
       let settle!: (outcome: PendingOutcome) => void;
       let done = false;

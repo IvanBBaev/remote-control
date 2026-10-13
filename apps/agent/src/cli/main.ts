@@ -11,7 +11,8 @@ import {
 
 import { CLAUDE_CODE_CAPABILITIES, claudeCodeAdapter } from '../adapters/claude-code/adapter.js';
 import { NO_DECISION_MESSAGE } from '../adapters/claude-code/decide.js';
-import { createFileHookSeenStore } from '../adapters/file-hook-seen-store.js';
+import { CODEX_CAPABILITIES, codexAdapter } from '../adapters/codex/adapter.js';
+import { CODEX_HOOK_SEEN_FILE, createFileHookSeenStore } from '../adapters/file-hook-seen-store.js';
 import { AGENT_ENDPOINT_FILE, KeyStoreError } from '../adapters/file-key-store.js';
 import { createFilePauseStore, type PauseStore } from '../adapters/file-pause-store.js';
 import { createFileStatsStore, type StatsStore } from '../adapters/file-stats-store.js';
@@ -26,6 +27,7 @@ import {
   HooksSettingsError,
   createHooksInstaller,
   type HookStateEntry,
+  type HooksAgent,
 } from '../core/hooks-installer.js';
 import { loadConfig, type LoadConfigResult } from '../core/load-config.js';
 import { createPairingLock, PAIRING_LOCK_FILE } from '../core/pairing-lock.js';
@@ -50,6 +52,7 @@ import {
 import type { Container } from '../container.js';
 import { runHook } from '../hook/run-hook.js';
 import { installService, serviceStatusLine, uninstallService } from './service.js';
+import type { AgentAdapter, AgentAdapterId } from '../ports/agent-adapter.js';
 import { startUpdateChecks, updateCommand, updateStatusLine } from './update.js';
 
 export const EXIT_OK = 0;
@@ -291,19 +294,29 @@ async function runCommand(
   });
   // Diffs of changed files (M2-02): memory only, sent when a phone asks for one.
   const diffs = createDiffStore();
+  // The Codex `/hooks` trust canary (M2-01): the first Codex hook of each kind is recorded.
+  const codexSeen = openCodexHookSeen(c);
   const handler = createHookDispatcher({
     store,
     paused,
-    onEvent: (input) => {
-      log.logger.debug({ event: 'hook', hook: input.hook_event_name });
+    onEvent: (input, agent) => {
+      log.logger.debug({ event: 'hook', hook: input.hook_event_name, agent });
       // `remotectl status --self-test` is a request, not a session: nothing else to track.
       if (input.session_id === SELF_TEST_SESSION_ID) return;
       const cwd = input['cwd'];
-      if (typeof cwd === 'string') {
-        sessions.observe(input.session_id, cwd, input.hook_event_name === 'SessionEnd');
-        hookSeen.observe(cwd).catch((error: unknown) => {
+      if (agent === 'codex') {
+        codexSeen.record(input.hook_event_name, c.clock.now()).catch((error: unknown) => {
           log.logger.warn({ event: 'hook_seen_write_failed' }, (error as Error).message);
         });
+      }
+      if (typeof cwd === 'string') {
+        sessions.observe(input.session_id, cwd, input.hook_event_name === 'SessionEnd', agent);
+        // Claude Code trust is per folder (04 §2.6); Codex trust is per hook (`/hooks`).
+        if (agent === 'claude-code') {
+          hookSeen.observe(cwd).catch((error: unknown) => {
+            log.logger.warn({ event: 'hook_seen_write_failed' }, (error as Error).message);
+          });
+        }
       }
       const update = feed.observe(input);
       if (update !== undefined) link?.hub.feedEvent(input.session_id, update.seq, update.event);
@@ -316,7 +329,10 @@ async function runCommand(
     ...(config.agent.onExpire === 'deny'
       ? {
           onDeadline: (request) =>
-            claudeCodeAdapter.decide(request, { behavior: 'deny', message: NO_DECISION_MESSAGE }),
+            adapterFor(request.agent).decide(request, {
+              behavior: 'deny',
+              message: NO_DECISION_MESSAGE,
+            }),
         }
       : {}),
   });
@@ -348,14 +364,20 @@ async function runCommand(
       decide: (request, decision) => {
         const field = decisionStat(decision.behavior);
         if (field !== undefined) count(request.payload['cwd'], { [field]: 1 });
-        return claudeCodeAdapter.decide(request, decision);
+        return adapterFor(request.agent).decide(request, decision);
       },
       machine: {
         name: c.hostname,
         platform: snapshotPlatform(c.platform),
         agentVersion: c.version,
       },
-      capabilities: [{ ...CLAUDE_CODE_CAPABILITIES, startSession: true, instructions: followUps }],
+      capabilities: [
+        { ...CLAUDE_CODE_CAPABILITIES, startSession: true, instructions: followUps },
+        // Codex approvals only, offered once its hooks are installed (M2-01).
+        ...((await hooksComplete(c, config.hooks.holdSeconds, 'codex')) === true
+          ? [CODEX_CAPABILITIES]
+          : []),
+      ],
       launcher,
       feed: (sessionId) => feed.get(sessionId),
       diff: (sessionId, file) => diffs.get(sessionId, file),
@@ -461,6 +483,7 @@ async function statusCommand(args: readonly string[], c: Container): Promise<num
   );
   out(`paired devices:  ${(await c.keyStore.listPeers()).length}`);
   out(`pause:           ${pauseStatusText(await openPause(c).read(), c.clock.now())}`);
+  out(`codex hooks:     ${await codexStatusText(c, loaded)}`);
   const [statsHead, ...statsProjects] = formatStats(await openStats(c, () => undefined).read());
   out(`local counters:  ${statsHead!}`);
   for (const line of statsProjects) out(line);
@@ -580,6 +603,34 @@ function selfTestAnswer(stdout: string, config: AgentConfig | undefined): string
 /** `hooks-seen.json`: the repositories a hook came from (M1-07). */
 function openHookSeen(c: Container) {
   return createFileHookSeenStore({ dir: c.paths.data, fs: c.fs, paths: c.pathPort });
+}
+
+function openCodexHookSeen(c: Container) {
+  return createFileHookSeenStore({
+    dir: c.paths.data,
+    fs: c.fs,
+    paths: c.pathPort,
+    file: CODEX_HOOK_SEEN_FILE,
+  });
+}
+
+/** `remotectl status`: whether the Codex hooks are installed and trusted (M2-01). */
+async function codexStatusText(c: Container, loaded: LoadConfigResult): Promise<string> {
+  const holdSeconds =
+    loaded.status === 'ok' ? loaded.config.hooks.holdSeconds : DEFAULT_HOLD_SECONDS;
+  const installed = await hooksComplete(c, holdSeconds, 'codex');
+  if (installed === undefined) return 'hooks.json unreadable';
+  if (!installed) return 'not installed (`remotectl hooks install --agent codex`)';
+  const seen = await openCodexHookSeen(c).read();
+  // A hook arrived, so the user trusted the entries in Codex's `/hooks` (04 risk 9).
+  return Object.keys(seen).length > 0
+    ? 'installed; a Codex hook arrived'
+    : 'installed; no Codex hook yet (trust them in `/hooks`)';
+}
+
+/** The adapter that decodes and answers a held request; absent means Claude Code. */
+function adapterFor(agent: AgentAdapterId | undefined): AgentAdapter {
+  return agent === 'codex' ? codexAdapter : claudeCodeAdapter;
 }
 
 /** The local usage counters (M1-11): this computer only, never sent to the relay (I1/I3). */
@@ -775,21 +826,27 @@ export const TRUST_HINT =
   'with `claude` and accept the trust prompt. Sessions started before an install pick\n' +
   'up the hooks after a restart (or a review in `/hooks`).\n';
 
+/** Codex runs user hooks only after they are trusted in its `/hooks` view (04 §2.11). */
+export const CODEX_TRUST_HINT =
+  'Codex runs these hooks only after you trust them: start `codex`, open `/hooks` and\n' +
+  'trust the remotectl entries. `remotectl status` shows whether a Codex hook arrived.\n';
+
 function describeHook(entry: HookStateEntry): string {
   const name = entry.matcher === undefined ? entry.event : `${entry.event} (${entry.matcher})`;
   return `  ${name.padEnd(34)}${entry.state}`;
 }
 
-function hooksInstaller(c: Container, holdSeconds: number) {
+function hooksInstaller(c: Container, holdSeconds: number, agent: HooksAgent = 'claude-code') {
   return createHooksInstaller({
     fs: c.fs,
     paths: c.pathPort,
     clock: c.clock,
-    settingsDir: c.claudeConfigDir,
+    settingsDir: agent === 'codex' ? c.codexConfigDir : c.claudeConfigDir,
     dataDir: c.paths.data,
     hookSource: c.hookSource,
     execPath: c.execPath,
     holdSeconds,
+    agent,
   });
 }
 
@@ -798,9 +855,13 @@ function installComplete(status: Awaited<ReturnType<ReturnType<typeof hooksInsta
 }
 
 /** Whether the current hooks are installed; `undefined` when the settings cannot be read. */
-async function hooksComplete(c: Container, holdSeconds: number): Promise<boolean | undefined> {
+async function hooksComplete(
+  c: Container,
+  holdSeconds: number,
+  agent: HooksAgent = 'claude-code',
+): Promise<boolean | undefined> {
   try {
-    return installComplete(await hooksInstaller(c, holdSeconds).status());
+    return installComplete(await hooksInstaller(c, holdSeconds, agent).status());
   } catch {
     return undefined;
   }
@@ -811,7 +872,13 @@ async function hooksCommand(args: readonly string[], c: Container): Promise<numb
   if (action === undefined || !HOOK_ACTIONS.has(action)) {
     throw new UsageError('expected one of: install, remove, status');
   }
-  noArguments(rest);
+  const { values } = parse(rest, { options: { agent: { type: 'string' } } });
+  const agent = values['agent'] ?? 'claude-code';
+  if (agent !== 'claude-code' && agent !== 'codex') {
+    throw new UsageError('--agent must be claude-code or codex');
+  }
+  const trustHint = agent === 'codex' ? CODEX_TRUST_HINT : TRUST_HINT;
+  const agentFlag = agent === 'codex' ? ' --agent codex' : '';
   const loaded = await loadConfig(c.paths.config, c.fs, c.pathPort);
   if (loaded.status === 'invalid') {
     reportInvalidConfig(c, loaded);
@@ -820,6 +887,7 @@ async function hooksCommand(args: readonly string[], c: Container): Promise<numb
   const installer = hooksInstaller(
     c,
     loaded.status === 'ok' ? loaded.config.hooks.holdSeconds : DEFAULT_HOLD_SECONDS,
+    agent,
   );
   const out = (line: string): void => c.output.stdout(`${line}\n`);
   try {
@@ -831,9 +899,9 @@ async function hooksCommand(args: readonly string[], c: Container): Promise<numb
       out(
         installComplete(status)
           ? 'Hooks are installed.'
-          : 'Run `remotectl hooks install` to install or update them.',
+          : `Run \`remotectl hooks install${agentFlag}\` to install or update them.`,
       );
-      c.output.stdout(`\n${TRUST_HINT}`);
+      c.output.stdout(`\n${trustHint}`);
       return EXIT_OK;
     }
     const change = action === 'install' ? await installer.install() : await installer.remove();
@@ -847,7 +915,7 @@ async function hooksCommand(args: readonly string[], c: Container): Promise<numb
       out(`${action === 'install' ? 'Installed' : 'Removed'} the hooks in ${change.settingsPath}.`);
       if (change.backupPath !== undefined) out(`Backup: ${change.backupPath}`);
     }
-    if (action === 'install') c.output.stdout(`\n${TRUST_HINT}`);
+    if (action === 'install') c.output.stdout(`\n${trustHint}`);
     return EXIT_OK;
   } catch (error) {
     if (!(error instanceof HooksSettingsError)) throw error;

@@ -365,7 +365,10 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     const machineId = agentId!;
     const launcher = options.launcher;
     const known = launcher === undefined ? [] : await launcher.sessions();
-    const waiting = new Set(views.map((view) => view.request.sessionId));
+    // Session id → the agent whose request waits (M2-01; absent = Claude Code).
+    const waiting = new Map(
+      views.map((view) => [view.request.sessionId, view.request.agent ?? 'claude-code']),
+    );
     const sessions = new Map<string, Session>();
     const base = { machineId, agent: 'claude-code', ...EMPTY_CONTENT };
     // The feed content and the last event it includes, so a phone skips an event the
@@ -374,11 +377,12 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
       const entry = options.feed?.(id);
       return entry === undefined ? {} : { ...entry.content, feedSeq: entry.seq };
     };
-    for (const id of waiting) {
+    for (const [id, agent] of waiting) {
       sessions.set(id, {
         ...base,
         ...content(id),
         id,
+        agent,
         repositoryId: null,
         state: 'waiting',
         statusText: 'Waiting for approval',

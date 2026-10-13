@@ -1,5 +1,6 @@
 import type { Session } from '@remote-control/protocol';
 
+import type { AgentAdapterId } from '../ports/agent-adapter.js';
 import type { Clock } from '../ports/clock.js';
 import type { ClaudeCli, RosterEntry } from '../ports/claude-cli.js';
 import type { Timer, TimerHandle } from '../ports/timer.js';
@@ -13,6 +14,8 @@ export const SESSION_STALE_MS = 24 * 60 * 60_000;
 export interface RegistrySession {
   readonly id: string;
   readonly cwd: string;
+  /** The agent whose hooks name the session (M2-01). */
+  readonly agent: AgentAdapterId;
   readonly name: string | undefined;
   /** `undefined` until the roster has reported the session. */
   readonly kind: RosterEntry['kind'] | undefined;
@@ -38,8 +41,11 @@ export interface SessionRegistryOptions {
  * for 24 h is dropped.
  */
 export interface SessionRegistry {
-  /** A hook from `sessionId` in `cwd`; `ended` for `SessionEnd`. */
-  observe(sessionId: string, cwd: string, ended: boolean): void;
+  /**
+   * A hook from `sessionId` in `cwd`; `ended` for `SessionEnd`. `agent` defaults to
+   * `claude-code`; only Claude Code hooks mark `cwd` as seen (`seenCwd`).
+   */
+  observe(sessionId: string, cwd: string, ended: boolean, agent?: AgentAdapterId): void;
   /** Re-reads the roster now; `undefined` when the CLI could not be read. */
   refresh(): Promise<readonly RosterEntry[] | undefined>;
   list(): readonly RegistrySession[];
@@ -88,6 +94,7 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
       previous.state !== next.state ||
       previous.name !== next.name ||
       previous.kind !== next.kind ||
+      previous.agent !== next.agent ||
       previous.cwd !== next.cwd
     );
   }
@@ -113,6 +120,7 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
         put({
           id: entry.sessionId,
           cwd: entry.cwd,
+          agent: known?.agent ?? 'claude-code',
           name: entry.name ?? known?.name,
           kind: entry.kind,
           state,
@@ -123,12 +131,13 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
   }
 
   const registry: SessionRegistry = {
-    observe(sessionId, cwd, ended) {
-      cwds.add(cwd);
+    observe(sessionId, cwd, ended, agent = 'claude-code') {
+      if (agent === 'claude-code') cwds.add(cwd);
       const known = sessions.get(sessionId);
       const changed = put({
         id: sessionId,
         cwd,
+        agent,
         name: known?.name,
         kind: known?.kind,
         state: ended

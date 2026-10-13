@@ -6,6 +6,7 @@ import {
   type Session,
 } from '@remote-control/protocol';
 
+import type { AgentAdapterId } from '../ports/agent-adapter.js';
 import type { ClaudeCli } from '../ports/claude-cli.js';
 import type { PathPort } from '../ports/path-port.js';
 import type { Random } from '../ports/random.js';
@@ -24,8 +25,10 @@ export type RepositoryView = Omit<Repository, 'machineId'> & {
   readonly maxPermissionMode: PermissionMode;
 };
 
-/** A session as the phone sees it, before the hub adds the machine and agent. */
+/** A session as the phone sees it, before the hub adds the machine. */
 export type SessionView = Pick<Session, 'id' | 'repositoryId' | 'state' | 'statusText'> & {
+  /** The agent running the session; absent means `claude-code` (M2-01). */
+  readonly agent?: AgentAdapterId;
   readonly name: string | null;
   readonly followUp: boolean;
 };
@@ -139,7 +142,13 @@ export function createLauncher(options: LauncherOptions): SessionLauncher {
   /** The session's folder when it is still on the allow-list. */
   async function followUpTarget(sessionId: string) {
     const session = registry.get(sessionId);
-    if (!options.followUps || session === undefined || session.kind !== 'background') {
+    // Only Claude Code background sessions take a follow-up; Codex has none (M2-01).
+    if (
+      !options.followUps ||
+      session === undefined ||
+      session.agent !== 'claude-code' ||
+      session.kind !== 'background'
+    ) {
       return undefined;
     }
     if (!SESSION_UUID.test(sessionId)) return undefined;
@@ -154,6 +163,7 @@ export function createLauncher(options: LauncherOptions): SessionLauncher {
       for (const session of registry.list()) {
         views.push({
           id: session.id,
+          agent: session.agent,
           repositoryId: await repositoryOf(session.cwd),
           state: session.state,
           statusText: STATUS_TEXT[session.state],

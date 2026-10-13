@@ -32,6 +32,22 @@ export const FEED_EVENTS = [
 ] as const;
 /** Timeout of a feed hook in seconds (D11). */
 export const FEED_TIMEOUT_SECONDS = 5;
+/**
+ * Codex feed events (04 §5.9): no `Notification`, and `PreToolUse` only feeds — Codex
+ * has no question tool. `PermissionRequest` is the one blocking hook.
+ */
+export const CODEX_FEED_EVENTS = [
+  'PreToolUse',
+  'PostToolUse',
+  'UserPromptSubmit',
+  'Stop',
+  'SessionStart',
+  'SessionEnd',
+] as const;
+/** Codex caps `SessionEnd` hooks at 3 s (04 §2.11). */
+export const CODEX_SESSION_END_TIMEOUT_SECONDS = 3;
+/** `~/.codex/hooks.json` (04 §2.11). */
+export const CODEX_HOOKS_FILE = 'hooks.json';
 /** Our hook script, copied into the data directory next to `agent.json`. */
 export const HOOK_SCRIPT_FILE = 'hook.cjs';
 export const SETTINGS_FILE = 'settings.json';
@@ -53,6 +69,20 @@ export function hookSpecs(holdSeconds: number): readonly HookSpec[] {
   ];
 }
 
+/** The Codex hook set: `PermissionRequest` with `holdSeconds`, six feed hooks (04 §5.9). */
+export function codexHookSpecs(holdSeconds: number): readonly HookSpec[] {
+  return [
+    { event: 'PermissionRequest', timeout: holdSeconds },
+    ...CODEX_FEED_EVENTS.map((event) => ({
+      event,
+      timeout: event === 'SessionEnd' ? CODEX_SESSION_END_TIMEOUT_SECONDS : FEED_TIMEOUT_SECONDS,
+    })),
+  ];
+}
+
+/** The agents whose hooks `remotectl hooks` manages. */
+export type HooksAgent = 'claude-code' | 'codex';
+
 /**
  * Our entries are recognised by the script path in the command: `remotectl/hook.cjs`
  * (env-paths data dir; `remotectl\Data\hook.cjs` on Windows) or 04's earlier
@@ -67,9 +97,18 @@ export function isOwnCommand(command: string): boolean {
   return OWN_COMMAND.some((pattern) => pattern.test(command));
 }
 
-/** `"<node>" "<data>/hook.cjs" <T>`: absolute paths, so Claude Code's PATH does not matter. */
-export function hookCommand(execPath: string, scriptPath: string, timeout: number): string {
-  return `"${execPath}" "${scriptPath}" ${timeout}`;
+/**
+ * `"<node>" "<data>/hook.cjs" <T>`: absolute paths, so the agent's PATH does not matter.
+ * Codex hooks add `--adapter codex` so the receiver knows whose hook it holds (M2-01).
+ */
+export function hookCommand(
+  execPath: string,
+  scriptPath: string,
+  timeout: number,
+  agent: HooksAgent = 'claude-code',
+): string {
+  const adapter = agent === 'claude-code' ? '' : ` --adapter ${agent}`;
+  return `"${execPath}" "${scriptPath}" ${timeout}${adapter}`;
 }
 
 /** The settings file cannot be edited safely; nothing was changed. */
@@ -252,8 +291,10 @@ export interface HooksInstallerOptions {
   readonly fs: FileSystem;
   readonly paths: PathPort;
   readonly clock: Clock;
-  /** `$CLAUDE_CONFIG_DIR`, else `~/.claude`. */
+  /** `$CLAUDE_CONFIG_DIR`, else `~/.claude`; for Codex `$CODEX_HOME`, else `~/.codex`. */
   readonly settingsDir: string;
+  /** Whose hooks: `settings.json` for Claude Code (default), `hooks.json` for Codex. */
+  readonly agent?: HooksAgent;
   /** The agent's data dir: `hook.cjs` goes next to `agent.json`. */
   readonly dataDir: string;
   /** The bundled `hook.cjs` shipped with the package. */
@@ -280,14 +321,22 @@ export interface HooksStatus {
   readonly hooks: readonly HookStateEntry[];
 }
 
-/** `settings.json` install, remove and status (D11, 04 §5.6). */
+/**
+ * `settings.json` install, remove and status (D11, 04 §5.6); with `agent: 'codex'` the
+ * same for `~/.codex/hooks.json` (04 §5.9, M2-01).
+ */
 export function createHooksInstaller(options: HooksInstallerOptions) {
   const { fs, paths } = options;
-  const settingsPath = paths.join(options.settingsDir, SETTINGS_FILE);
+  const agent = options.agent ?? 'claude-code';
+  const settingsPath = paths.join(
+    options.settingsDir,
+    agent === 'codex' ? CODEX_HOOKS_FILE : SETTINGS_FILE,
+  );
   const scriptPath = paths.join(options.dataDir, HOOK_SCRIPT_FILE);
-  const specs = hookSpecs(options.holdSeconds);
+  const specs =
+    agent === 'codex' ? codexHookSpecs(options.holdSeconds) : hookSpecs(options.holdSeconds);
   const commandFor = (spec: HookSpec): string =>
-    hookCommand(options.execPath, scriptPath, spec.timeout);
+    hookCommand(options.execPath, scriptPath, spec.timeout, agent);
 
   /** Writes through a symlinked `settings.json` to its target, keeping its mode. */
   async function writeSettings(

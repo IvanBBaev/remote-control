@@ -6,6 +6,8 @@ import type { PathPort } from '../ports/path-port.js';
 import { SECRET_DIR_MODE, SECRET_FILE_MODE } from './file-key-store.js';
 
 export const HOOK_SEEN_FILE = 'hooks-seen.json';
+/** The Codex canary (M2-01): keyed by hook event, a `SessionStart` proves `/hooks` trust. */
+export const CODEX_HOOK_SEEN_FILE = 'codex-hooks-seen.json';
 
 const HookSeenFile = z.object({
   version: z.literal(1),
@@ -17,12 +19,17 @@ export interface FileHookSeenStoreOptions {
   readonly dir: string;
   readonly fs: FileSystem;
   readonly paths: PathPort;
+  /** The file name in `dir`; default `hooks-seen.json`. */
+  readonly file?: string;
 }
 
-/** `hooks-seen.json` in the data directory: 0600 in a 0700 directory, written atomically. */
+/**
+ * `hooks-seen.json` (or `options.file`) in the data directory: 0600 in a 0700 directory,
+ * written atomically.
+ */
 export function createFileHookSeenStore(options: FileHookSeenStoreOptions): HookSeenStore {
   const { dir, fs } = options;
-  const path = options.paths.join(dir, HOOK_SEEN_FILE);
+  const path = options.paths.join(dir, options.file ?? HOOK_SEEN_FILE);
   let writes = Promise.resolve();
 
   async function read(): Promise<Record<string, number>> {

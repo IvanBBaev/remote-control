@@ -60,6 +60,29 @@ export function permissionRequestPayload(
   };
 }
 
+/**
+ * Codex CLI `PermissionRequest` (04 §2.11, M2-01): the common fields plus `model` and
+ * `turn_id`, and unlike Claude Code a `tool_use_id`. Assumption until the real-CLI check:
+ * `permission_mode` is present.
+ */
+export function codexPermissionRequestPayload(
+  ctx: PayloadContext & { readonly model: string; readonly turnId: string },
+  tool: { toolName: string; toolInput: Record<string, unknown>; toolUseId: string },
+): Payload {
+  return {
+    session_id: ctx.sessionId,
+    turn_id: ctx.turnId,
+    transcript_path: ctx.transcriptPath,
+    cwd: ctx.cwd,
+    model: ctx.model,
+    permission_mode: ctx.permissionMode,
+    hook_event_name: 'PermissionRequest',
+    tool_name: tool.toolName,
+    tool_use_id: tool.toolUseId,
+    tool_input: tool.toolInput,
+  };
+}
+
 /** 04 §2.4 / 07 §2.1: `tool_input`, `tool_response`, `tool_use_id`, `duration_ms`. */
 export function postToolUsePayload(
   ctx: PayloadContext,

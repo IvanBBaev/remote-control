@@ -1,3 +1,4 @@
+import type { AgentAdapterId } from '../ports/agent-adapter.js';
 import type { PendingKind, PendingRequest, PendingStore } from './pending-store.js';
 
 /** A hook event as posted by `hook.js`: the Claude Code stdin JSON, unchanged. */
@@ -19,6 +20,8 @@ export interface HookContext {
   readonly hookTimeoutMs: number;
   /** Aborted when the hook process disconnects. */
   readonly signal: AbortSignal;
+  /** The agent that ran the hook (`hook.js --adapter`); absent means `claude-code`. */
+  readonly agent?: AgentAdapterId;
 }
 
 export type HookHandler = (input: HookInput, context: HookContext) => Promise<HookReply>;
@@ -26,9 +29,16 @@ export type HookHandler = (input: HookInput, context: HookContext) => Promise<Ho
 /** The question tool whose answer goes through `PreToolUse` (D11). */
 export const ASK_USER_QUESTION = 'AskUserQuestion';
 
-/** The blocking kind of a hook event, or `undefined` for a feed-only event (D11). */
-export function blockingKind(input: HookInput): PendingKind | undefined {
+/**
+ * The blocking kind of a hook event, or `undefined` for a feed-only event (D11). Codex has
+ * no question tool, so only its `PermissionRequest` blocks (04 §2.11).
+ */
+export function blockingKind(
+  input: HookInput,
+  agent: AgentAdapterId = 'claude-code',
+): PendingKind | undefined {
   if (input.hook_event_name === 'PermissionRequest') return 'permission';
+  if (agent !== 'claude-code') return undefined;
   if (input.hook_event_name === 'PreToolUse' && input['tool_name'] === ASK_USER_QUESTION) {
     return 'question';
   }
@@ -47,7 +57,7 @@ const HANDOFF: HookReply = { status: 200, body: {} };
 export interface HookDispatcherOptions {
   readonly store: PendingStore;
   /** Every event that reached the agent, blocking or not (registry, logs). */
-  readonly onEvent?: (input: HookInput) => void;
+  readonly onEvent?: (input: HookInput, agent: AgentAdapterId) => void;
   /**
    * The hook output when a request reaches its deadline (`agent.onExpire: "deny"`, D10);
    * absent = handoff. Every other handoff (replaced, released, disconnected, shutdown)
@@ -79,8 +89,9 @@ async function isPaused(check: () => Promise<boolean>): Promise<boolean> {
 export function createHookDispatcher(options: HookDispatcherOptions): HookHandler {
   const { store } = options;
   return async (input, context) => {
-    options.onEvent?.(input);
-    const kind = blockingKind(input);
+    const agent = context.agent ?? 'claude-code';
+    options.onEvent?.(input, agent);
+    const kind = blockingKind(input, agent);
     if (kind === undefined) return { status: 204 };
     // Awaited only when a pause check is wired: without one a hook registers synchronously.
     if (options.paused !== undefined && (await isPaused(options.paused))) return HANDOFF;
@@ -90,6 +101,7 @@ export function createHookDispatcher(options: HookDispatcherOptions): HookHandle
       fingerprint: fingerprint(input),
       payload: input,
       hookTimeoutMs: context.hookTimeoutMs,
+      ...(agent === 'claude-code' ? {} : { agent }),
     });
     const onAbort = (): void => registration.cancel('disconnected');
     if (context.signal.aborted) onAbort();

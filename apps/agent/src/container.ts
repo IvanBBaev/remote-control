@@ -72,6 +72,8 @@ export interface Container {
   readonly logReader: LogReader;
   /** Claude Code's config dir: `$CLAUDE_CONFIG_DIR`, else `~/.claude` (D11). */
   readonly claudeConfigDir: string;
+  /** `$CODEX_HOME`, else `~/.codex`: where Codex reads `hooks.json` (M2-01). */
+  readonly codexConfigDir: string;
   /** The bundled `hook.cjs` that `hooks install` copies into the data dir. */
   readonly hookSource: string;
   /** Absolute path of the Node binary that runs `hook.cjs`. */
@@ -181,6 +183,7 @@ export function createContainer(options: ContainerOptions): Container {
     timer: options.timer ?? systemTimer,
     output,
     claudeConfigDir: options.env['CLAUDE_CONFIG_DIR'] || pathPort.join(options.homedir, '.claude'),
+    codexConfigDir: options.env['CODEX_HOME'] || pathPort.join(options.homedir, '.codex'),
     hookSource: options.hookSource ?? fileURLToPath(new URL('./hook.cjs', import.meta.url)),
     execPath: options.execPath ?? process.execPath,
     startHookReceiver,

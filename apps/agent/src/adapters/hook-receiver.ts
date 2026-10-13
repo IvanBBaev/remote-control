@@ -4,11 +4,16 @@ import { bytesEqual } from '@remote-control/crypto';
 import fastify from 'fastify';
 
 import type { HookHandler, HookInput } from '../core/hook-dispatcher.js';
+import type { AgentAdapterId } from '../ports/agent-adapter.js';
 
 /** The receiver binds to IPv4 loopback only (D11, §1). */
 export const HOOK_HOST = '127.0.0.1';
 /** Header `hook.js` sends with its own timeout `T` in seconds. */
 export const HOOK_TIMEOUT_HEADER = 'x-remotectl-hook-timeout';
+/** Header `hook.js` sends with `--adapter <id>`; absent means `claude-code` (M2-01). */
+export const HOOK_AGENT_HEADER = 'x-remotectl-agent';
+/** The agents whose hooks the receiver accepts. */
+const HOOK_AGENTS: readonly AgentAdapterId[] = ['claude-code', 'codex'];
 /** Largest hook body accepted (tool inputs can carry whole files). */
 export const HOOK_BODY_LIMIT = 8 * 1024 * 1024;
 const MAX_HOOK_TIMEOUT_SECONDS = 86_400;
@@ -51,6 +56,12 @@ function hookTimeoutMs(header: string | string[] | undefined, fallback: number):
   const seconds = Number(header);
   if (!(seconds > 0) || seconds > MAX_HOOK_TIMEOUT_SECONDS) return fallback;
   return Math.round(seconds * 1000);
+}
+
+/** The agent named by the header, `claude-code` when absent, `undefined` when unknown. */
+function hookAgent(header: string | string[] | undefined): AgentAdapterId | undefined {
+  if (header === undefined) return 'claude-code';
+  return HOOK_AGENTS.find((agent) => agent === header);
 }
 
 const encoder = new TextEncoder();
@@ -96,6 +107,8 @@ export async function startHookReceiver(options: HookReceiverOptions): Promise<H
     if (!isHookInput(request.body)) {
       return reply.code(400).send({ error: 'invalid_hook_input' });
     }
+    const agent = hookAgent(request.headers[HOOK_AGENT_HEADER]);
+    if (agent === undefined) return reply.code(400).send({ error: 'unknown_agent' });
     const controller = new AbortController();
     const onClose = (): void => {
       if (!reply.raw.writableFinished) controller.abort();
@@ -107,6 +120,7 @@ export async function startHookReceiver(options: HookReceiverOptions): Promise<H
         options.defaultHookTimeoutMs,
       ),
       signal: controller.signal,
+      agent,
     });
     if (result.status === 204) return reply.code(204).send();
     return reply.code(200).type('application/json').send(JSON.stringify(result.body));

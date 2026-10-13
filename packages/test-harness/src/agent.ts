@@ -81,7 +81,12 @@ export interface HarnessAgent {
    * Claude Code's 600 s; the agent holds a blocking request until `T − 10 s` on the
    * fake clock.
    */
-  fire(input: Readonly<Record<string, unknown>>, timeoutSeconds?: number): Promise<HookResult>;
+  fire(
+    input: Readonly<Record<string, unknown>>,
+    timeoutSeconds?: number,
+    /** `codex`: runs the hook as the Codex hooks do, `hook.cjs T --adapter codex` (M2-01). */
+    adapter?: string,
+  ): Promise<HookResult>;
   /** Every `claude` the agent ran so far (`--version`, `agents`, `--bg`, `--resume`). */
   claudeRuns(): Promise<ClaudeRun[]>;
   /** Every agent log line (JSON), for canary scans and the decision log. */
@@ -202,10 +207,10 @@ export async function startAgent(options: StartAgentOptions): Promise<HarnessAge
     },
     stop,
     status: (args = []) => cli(['status', ...args]),
-    async fire(input, timeoutSeconds = DEFAULT_HOOK_TIMEOUT_SECONDS) {
+    async fire(input, timeoutSeconds = DEFAULT_HOOK_TIMEOUT_SECONDS, adapter) {
       let stdout = '';
       await runHook({
-        argv: [String(timeoutSeconds)],
+        argv: [String(timeoutSeconds), ...(adapter === undefined ? [] : ['--adapter', adapter])],
         readStdin: () => Promise.resolve(JSON.stringify(input)),
         readEndpoint: () => readFile(join(container.paths.data, AGENT_ENDPOINT_FILE), 'utf8'),
         write: (text) => {

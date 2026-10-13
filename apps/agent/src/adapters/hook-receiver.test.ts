@@ -10,6 +10,7 @@ import { createPendingStore, type PendingStore } from '../core/pending-store.js'
 import { systemClock } from './system-clock.js';
 import { systemTimer } from './system-timer.js';
 import {
+  HOOK_AGENT_HEADER,
   HOOK_TIMEOUT_HEADER,
   HookReceiverBindError,
   startHookReceiver,
@@ -182,6 +183,19 @@ describe('HookReceiver', () => {
     expect(await post(port, '', {}, get)).toEqual({ status: 204, body: '' });
     expect((await post(port, '', { authorization: 'Bearer nope' }, get)).status).toBe(401);
     expect((await post(port, '', { origin: 'http://127.0.0.1' }, get)).status).toBe(403);
+  });
+
+  it('passes the agent header to the handler, claude-code when absent (M2-01)', async () => {
+    const agents: (string | undefined)[] = [];
+    const { port } = await start((_input, context) => {
+      agents.push(context.agent);
+      return Promise.resolve({ status: 204 });
+    });
+    const stop = JSON.stringify({ hook_event_name: 'Stop', session_id: 's' });
+    expect((await post(port, stop, { [HOOK_AGENT_HEADER]: 'codex' })).status).toBe(204);
+    expect((await post(port, stop)).status).toBe(204);
+    expect((await post(port, stop, { [HOOK_AGENT_HEADER]: 'cursor' })).status).toBe(400);
+    expect(agents).toEqual(['codex', 'claude-code']);
   });
 
   it('rejects malformed input with 400 and has no other route', async () => {

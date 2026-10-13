@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   DEFAULT_HOOK_TIMEOUT_SECONDS,
   MAX_RESPONSE_BYTES,
+  hookAdapter,
   hookBudgetMs,
   hookTimeoutSeconds,
   runHook,
@@ -63,6 +64,14 @@ describe('hookTimeoutSeconds / hookBudgetMs', () => {
     }
   });
 
+  it('reads T and --adapter together, ignoring a malformed id', () => {
+    expect(hookTimeoutSeconds(['1800', '--adapter', 'codex'])).toBe(1800);
+    expect(hookAdapter(['1800', '--adapter', 'codex'])).toBe('codex');
+    expect(hookAdapter(['1800'])).toBeUndefined();
+    expect(hookAdapter(['1800', '--adapter'])).toBeUndefined();
+    expect(hookAdapter(['1800', '--adapter', 'Bad Id'])).toBeUndefined();
+  });
+
   it('gives up 5 s before T, or at half of a short T', () => {
     expect(hookBudgetMs(1800)).toBe(1_795_000);
     expect(hookBudgetMs(5)).toBe(2_500);
@@ -96,6 +105,16 @@ describe('runHook', () => {
         host: `127.0.0.1:${fake.port}`,
       },
     });
+  });
+
+  it('names the agent in a header only for a non-default adapter', async () => {
+    const fake = await fakeReceiver((_req, res) => res.writeHead(204).end());
+    server = fake.server;
+    await runHook(deps(endpointFor(fake.port), ['1800', '--adapter', 'codex']).deps);
+    await runHook(deps(endpointFor(fake.port), ['1800']).deps);
+    expect(fake.seen[0]?.headers['x-remotectl-agent']).toBe('codex');
+    expect(fake.seen[0]?.headers['x-remotectl-hook-timeout']).toBe('1800');
+    expect(fake.seen[1]?.headers['x-remotectl-agent']).toBeUndefined();
   });
 
   it('prints nothing when the agent is down', async () => {

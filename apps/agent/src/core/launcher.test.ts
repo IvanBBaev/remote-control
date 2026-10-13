@@ -323,10 +323,12 @@ describe('createLauncher', () => {
     await launcher.start(await repositoryId('/work/app'), 'go');
     registry.observe('interactive-1', '/work/app/sub', false);
     registry.observe('outside-1', '/elsewhere', false);
+    registry.observe('codex-1', '/work/app', false, 'codex');
     const app = await repositoryId('/work/app');
     expect(await launcher.sessions()).toEqual([
       {
         id: SESSION,
+        agent: 'claude-code',
         repositoryId: app,
         state: 'working',
         statusText: 'Working',
@@ -335,6 +337,7 @@ describe('createLauncher', () => {
       },
       {
         id: 'interactive-1',
+        agent: 'claude-code',
         repositoryId: app,
         state: 'working',
         statusText: 'Working',
@@ -343,7 +346,17 @@ describe('createLauncher', () => {
       },
       {
         id: 'outside-1',
+        agent: 'claude-code',
         repositoryId: null,
+        state: 'working',
+        statusText: 'Working',
+        name: null,
+        followUp: false,
+      },
+      {
+        id: 'codex-1',
+        agent: 'codex',
+        repositoryId: app,
         state: 'working',
         statusText: 'Working',
         name: null,
