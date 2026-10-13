@@ -121,6 +121,7 @@ describe('pair screen', () => {
             session: 'handshaking',
             machine: null,
             sessions: [],
+            history: null,
           },
         },
       });

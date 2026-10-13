@@ -417,6 +417,9 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
         }));
         return;
       }
+      case 'history':
+        updateMachine(machineId, { history: message.projects });
+        return;
       case 'resolved':
         outbox.delete(message.requestId);
         updateRequest(message.requestId, { status: 'resolved', outcome: message.outcome });
@@ -531,6 +534,7 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
             session: 'none',
             machine: null,
             sessions: [],
+            history: null,
           },
         ]),
       ),

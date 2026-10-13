@@ -1,6 +1,9 @@
 import { createStore } from 'zustand/vanilla';
 import type { StoreApi } from 'zustand/vanilla';
 
+import type { ProjectHistory } from '@remote-control/protocol';
+
+import { ago } from './realtime-store.js';
 import type { RealtimeStore, RequestView } from './realtime-store.js';
 
 /**
@@ -209,4 +212,34 @@ export function machineUsage(state: UsageStatsState, machineId: string): UsageCo
 export function usageSummary(counts: UsageCounts): string {
   const sessions = `${String(counts.sessions)} ${counts.sessions === 1 ? 'session' : 'sessions'}`;
   return `${String(counts.approvals)} approved, ${String(counts.denials)} denied, ${sessions}`;
+}
+
+const plural = (count: number, one: string, many: string): string =>
+  `${String(count)} ${count === 1 ? one : many}`;
+
+/** `2 h 5 min`, `12 min`, `under a minute`. */
+export function activeTimeText(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 1) return 'under a minute';
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours === 0) return `${String(rest)} min`;
+  return rest === 0 ? `${String(hours)} h` : `${String(hours)} h ${String(rest)} min`;
+}
+
+/**
+ * One project of a computer's own history (M2-06): `2 sessions, 40 tool calls, 1 h 5 min
+ * active, 3 approved, 1 denied · last active 5 minutes ago`. `relayNow` is relay time,
+ * the closest the phone has to the computer's clock.
+ */
+export function historySummary(entry: ProjectHistory, relayNow: number): string {
+  const counts = [
+    plural(entry.sessions, 'session', 'sessions'),
+    plural(entry.toolCalls, 'tool call', 'tool calls'),
+    `${activeTimeText(entry.activeMs)} active`,
+    `${String(entry.approvals)} approved`,
+    `${String(entry.denials)} denied`,
+  ].join(', ');
+  if (entry.lastActiveAt === null) return counts;
+  return `${counts} · last active ${ago(Math.max(0, relayNow - entry.lastActiveAt))} ago`;
 }

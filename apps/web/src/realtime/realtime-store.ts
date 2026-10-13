@@ -2,6 +2,7 @@ import type {
   ApprovalRequest,
   DecisionResultMessage,
   Machine,
+  ProjectHistory,
   Question,
   RelayErrorCode,
   Session,
@@ -29,6 +30,8 @@ export interface MachineView {
   /** From the latest snapshot. */
   readonly machine: Machine | null;
   readonly sessions: readonly Session[];
+  /** The computer's per-project counters (M2-06), from its latest history message. */
+  readonly history: readonly ProjectHistory[] | null;
 }
 
 export type RequestStatus = 'pending' | 'resolved' | 'expired';
@@ -93,7 +96,8 @@ export function pendingRequests(state: RealtimeState): RequestView[] {
     .sort((a, b) => a.deadline - b.deadline);
 }
 
-function ago(ms: number): string {
+/** `5 minutes`, `1 hour`, `2 days`. */
+export function ago(ms: number): string {
   const minutes = Math.floor(ms / 60_000);
   if (minutes < 1) return 'less than a minute';
   if (minutes < 60) return minutes === 1 ? '1 minute' : `${String(minutes)} minutes`;

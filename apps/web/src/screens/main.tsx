@@ -3,18 +3,20 @@ import { useStore } from 'zustand';
 
 import { useAppState } from '../app-state.js';
 import { presenceLabel } from '../realtime/realtime-store.js';
-import { machineUsage, usageSummary } from '../realtime/usage-stats.js';
+import { historySummary, machineUsage, usageSummary } from '../realtime/usage-stats.js';
 import { Notice, Screen } from './layout.js';
 
 /**
  * Paired computers and their online state, from relay timestamps (M0-20), with this
- * phone's local counters per computer and project (M1-11).
+ * computer's own history per repository (M2-06) and this phone's local counters per
+ * computer and project (M1-11).
  */
 export function MachinesScreen() {
   const { phone } = useAppState();
   const realtime = useStore(phone.realtime);
   const usage = useStore(phone.usage);
   const machines = Object.values(realtime.machines).sort((a, b) => a.name.localeCompare(b.name));
+  const relayNow = phone.now() + realtime.relayOffset;
   return (
     <Screen title="Computers">
       {machines.length === 0 ? (
@@ -31,6 +33,17 @@ export function MachinesScreen() {
               <li key={machine.deviceId} className={presence.online ? 'online' : 'offline'}>
                 <span className="machine-name">{machine.name}</span>
                 <span className="meta">{presence.text}</span>
+                {machine.history !== null && machine.history.length > 0 && (
+                  <div className="machine-usage machine-history">
+                    <p className="meta">On this computer:</p>
+                    {machine.history.map((entry) => (
+                      <p key={entry.project} className="meta project-usage">
+                        <span className="project-name">{entry.project}</span>{' '}
+                        {historySummary(entry, relayNow)}
+                      </p>
+                    ))}
+                  </div>
+                )}
                 {totals !== undefined && (
                   <div className="machine-usage">
                     <p className="meta">From this phone: {usageSummary(totals)}</p>

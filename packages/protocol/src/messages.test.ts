@@ -5,6 +5,7 @@ import {
   AgentMessage,
   DecisionRejection,
   HANDSHAKE_TAG,
+  MAX_HISTORY_PROJECTS,
   PairingHello,
   PhoneMessage,
 } from './messages.js';
@@ -61,6 +62,16 @@ const session = {
   changedFiles: [],
 };
 
+const project = {
+  project: 'api',
+  sessions: 2,
+  toolCalls: 40,
+  approvals: 3,
+  denials: 1,
+  activeMs: 3_600_000,
+  lastActiveAt: 1_791_764_990_000,
+};
+
 describe('AgentMessage', () => {
   it.each([
     { t: 'request', request, ttlMs: 0 },
@@ -71,6 +82,7 @@ describe('AgentMessage', () => {
     { t: 'expired', requestId: REQUEST_ID },
     { t: 'decision_result', requestId: REQUEST_ID, result: 'accepted' },
     { t: 'decision_result', requestId: REQUEST_ID, result: 'rejected', reason: 'too_late' },
+    { t: 'history', projects: [project, { ...project, project: 'web', lastActiveAt: null }] },
   ])('accepts $t', (message) => {
     expect(AgentMessage.parse(message)).toEqual(message);
   });
@@ -90,6 +102,12 @@ describe('AgentMessage', () => {
     ],
     ['an unknown type', { t: 'hello' }],
     ['an extra field', { t: 'expired', requestId: REQUEST_ID, extra: 1 }],
+    ['a negative history count', { t: 'history', projects: [{ ...project, toolCalls: -1 }] }],
+    ['a history project without a name', { t: 'history', projects: [{ ...project, project: '' }] }],
+    [
+      'too many history projects',
+      { t: 'history', projects: Array.from({ length: MAX_HISTORY_PROJECTS + 1 }, () => project) },
+    ],
   ])('refuses %s', (_name, message) => {
     expect(AgentMessage.safeParse(message).success).toBe(false);
   });

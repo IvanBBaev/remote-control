@@ -1,20 +1,21 @@
-import { emptyStats, parseStats, recordStat } from '../core/usage-stats.js';
-import type { StatField, StatsFile } from '../core/usage-stats.js';
+import { emptyStats, parseStats, recordStats } from '../core/usage-stats.js';
+import type { StatDelta, StatsFile } from '../core/usage-stats.js';
+import type { Clock } from '../ports/clock.js';
 import type { FileSystem } from '../ports/file-system.js';
 import type { PathPort } from '../ports/path-port.js';
 import { SECRET_DIR_MODE, SECRET_FILE_MODE } from './file-key-store.js';
 
 export const STATS_FILE = 'stats.json';
 
-/** The local usage counters (M1-11). */
+/** The local usage counters (M1-11, M2-06). */
 export interface StatsStore {
   /** The counters; an unreadable or missing file reads as empty. */
   read(): Promise<StatsFile>;
   /**
-   * Counts one `field` for `project`. Never rejects: a counter that cannot be written is
-   * reported through `onWarning` and must not disturb a hook (I2).
+   * Adds `delta` to `project`, active now. Never rejects: a counter that cannot be written
+   * is reported through `onWarning` and must not disturb a hook (I2).
    */
-  record(project: string | undefined, field: StatField): Promise<void>;
+  record(project: string | undefined, delta: StatDelta): Promise<void>;
 }
 
 export interface FileStatsStoreOptions {
@@ -22,6 +23,7 @@ export interface FileStatsStoreOptions {
   readonly dir: string;
   readonly fs: FileSystem;
   readonly paths: PathPort;
+  readonly clock: Clock;
   readonly onWarning?: (message: string) => void;
 }
 
@@ -39,16 +41,16 @@ export function createFileStatsStore(options: FileStatsStoreOptions): StatsStore
     return (text === undefined ? undefined : parseStats(text)) ?? emptyStats();
   }
 
-  async function write(project: string | undefined, field: StatField): Promise<void> {
-    const next = recordStat(await read(), project, field);
+  async function write(project: string | undefined, delta: StatDelta): Promise<void> {
+    const next = recordStats(await read(), project, delta, options.clock.now());
     await fs.ensureDir(dir, SECRET_DIR_MODE);
     await fs.writeTextAtomic(path, `${JSON.stringify(next, null, 2)}\n`, SECRET_FILE_MODE);
   }
 
   return {
     read,
-    record(project, field) {
-      const run = queue.then(() => write(project, field));
+    record(project, delta) {
+      const run = queue.then(() => write(project, delta));
       queue = run.catch((error: unknown) => {
         options.onWarning?.(
           `could not update ${path}: ${error instanceof Error ? error.message : String(error)}`,

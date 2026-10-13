@@ -95,6 +95,37 @@ export const DecisionResultMessage = z.union([
 ]);
 export type DecisionResultMessage = z.infer<typeof DecisionResultMessage>;
 
+const Count = z.int().nonnegative();
+
+/**
+ * One project's lifetime counters on the agent's computer (M2-06), keyed by the folder
+ * name. `activeMs` adds up turns, from the prompt to the agent's stop; `lastActiveAt`
+ * is the agent's epoch ms of the latest counted activity, `null` before any.
+ */
+export const ProjectHistory = z.strictObject({
+  project: z.string().min(1).max(128),
+  sessions: Count,
+  toolCalls: Count,
+  approvals: Count,
+  denials: Count,
+  activeMs: Count,
+  lastActiveAt: Count.nullable(),
+});
+export type ProjectHistory = z.infer<typeof ProjectHistory>;
+
+/** How many projects one `history` message lists; the most recently active first. */
+export const MAX_HISTORY_PROJECTS = 200;
+
+/**
+ * The agent's per-project history (M2-06): sent after every snapshot and again when a
+ * turn ends. It replaces whatever the phone showed for this computer.
+ */
+export const HistoryMessage = z.strictObject({
+  t: z.literal('history'),
+  projects: z.array(ProjectHistory).max(MAX_HISTORY_PROJECTS),
+});
+export type HistoryMessage = z.infer<typeof HistoryMessage>;
+
 /** Everything the agent sends to a phone inside a session. */
 export const AgentMessage = z.union([
   RequestMessage,
@@ -103,6 +134,7 @@ export const AgentMessage = z.union([
   ResolvedMessage,
   ExpiredMessage,
   DecisionResultMessage,
+  HistoryMessage,
 ]);
 export type AgentMessage = z.infer<typeof AgentMessage>;
 

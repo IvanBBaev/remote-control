@@ -58,7 +58,7 @@ screens through their accessible names, which are part of the screen contract:
 | Approval request     | `/requests/:id`                                | Request (plain tool label, content hidden behind "Show command" / "Show file" / … until tapped), local deadline from `ttlMs`, machine name and project folder name (see "Approval card rules")                 | Unknown id (a push carries the doorbell id, D5): goes to the most urgent pending request; none: "Nothing is waiting for you." ("Connecting…" while the socket is down) | Deny/Allow answer "You are offline. Nothing was sent."; a sent decision waits in the outbox for the session     | Countdown hits zero or the agent expires it: "Expired. The terminal is asking again."; decided elsewhere: the outcome; refused by the computer or the relay: the reason; truncated content: Allow disabled |
 | Question             | `/requests/:id` (same route, `kind: question`) | `Question` (1–4 questions, each with 2–4 options, optional header and option descriptions, multi-select flag), local deadline from `ttlMs`, machine name and project folder name (see "Question screen rules") | As Approval request                                                                                                                                                    | Send answer/Deny answer "You are offline. Nothing was sent."; a sent answer waits in the outbox for the session | As Approval request; an answer the computer cannot use: "Your computer could not use that answer. Answer it in the terminal."                                                                              |
 | New session          | `/new`                                         | Paired machines (online), repositories per machine, prompt                                                                                                                                                     | No computer: "Pair a computer first" + link to pairing                                                                                                                 | Start disabled: "Offline"                                                                                       | Machine refused or went offline: "The computer did not start the session" + Try again                                                                                                                      |
-| Computers (machines) | `/machines`                                    | Paired machines sorted by name: online state or "last seen"; this phone's counters per computer and project; Add a computer                                                                                    | "No computers yet" + Add your first computer                                                                                                                           | Last known list, marked offline                                                                                 | "Could not load computers" + Try again                                                                                                                                                                     |
+| Computers (machines) | `/machines`                                    | Paired machines sorted by name: online state or "last seen"; the computer's history per repository (M2-06); this phone's counters per computer and project; Add a computer                                     | "No computers yet" + Add your first computer                                                                                                                           | Last known list, marked offline                                                                                 | "Could not load computers" + Try again                                                                                                                                                                     |
 | Page not found       | any other path                                 | —                                                                                                                                                                                                              | —                                                                                                                                                                      | Works offline                                                                                                   | —                                                                                                                                                                                                          |
 
 ### Notifications and launch (M0-21)
@@ -122,18 +122,28 @@ screens through their accessible names, which are part of the screen contract:
 - Answers are not counted as approvals or denials in the local counters; the asking
   session is.
 
-### Local counters (M1-11, 01 W13)
+### Local counters (M1-11, M2-06, 01 W13)
 
 - Counted per computer and per project folder name, kept on the device that counted them
-  and never sent to the relay or to any analytics service (I1/I3).
+  and never sent to the relay or to any analytics service (I1/I3). The agent's counters
+  reach a phone only inside its end-to-end session.
 - Phone (`localStorage`, shown on Computers as "From this phone: N approved, N denied,
   N sessions" plus one line per project): approvals and denials this phone sent and the
   computer accepted, and distinct agent sessions that asked this phone. A request the
   agent sends again is not counted twice.
-- Agent (`stats.json` in the data directory, 0600 in a 0700 directory, written
-  atomically): approvals and denials applied from a phone, and new Claude Code sessions
-  (`SessionStart` with source `startup`). `remotectl status` prints them as
-  `local counters:` with one line per project.
+- Agent (`stats.json` version 2 in the data directory, 0600 in a 0700 directory, written
+  atomically; a version 1 file is upgraded in place): approvals and denials applied from
+  a phone, new Claude Code sessions (`SessionStart` with source `startup`), completed tool
+  calls (`PostToolUse`), active time (each turn from `UserPromptSubmit` to `Stop` or
+  `SessionEnd`; a turn in progress while the agent restarts adds no time) and the last
+  activity. `remotectl status` prints them as `local counters:` with one line per
+  project. Token and cost totals are not counted: Claude Code's `Stop` payload carries no
+  usage.
+- History on the phone (M2-06): the agent sends its counters as a `history` message
+  (at most 200 projects, most recently active first) after every snapshot and whenever a
+  turn ends or a decision is counted. Computers shows them under "On this computer:", one
+  line per repository — sessions, tool calls, active time, approved, denied and "last
+  active … ago" in relay time. The phone keeps them in memory only.
 
 ## Planned (no route yet)
 

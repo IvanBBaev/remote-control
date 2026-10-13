@@ -37,6 +37,7 @@ const machine: MachineView = {
   session: 'open',
   machine: null,
   sessions: [],
+  history: null,
 };
 
 let mounted: RenderedApp | undefined;

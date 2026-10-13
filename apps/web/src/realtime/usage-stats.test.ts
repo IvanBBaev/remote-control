@@ -6,10 +6,12 @@ import type { RequestView } from './realtime-store.js';
 import {
   MAX_COUNTED,
   NO_PROJECT,
+  activeTimeText,
   browserUsageStorage,
   countUsage,
   createUsageStatsStore,
   emptyUsageStats,
+  historySummary,
   machineUsage,
   memoryUsageStorage,
   parseUsageStats,
@@ -80,6 +82,36 @@ describe('usage counters', () => {
     );
     expect(usageSummary({ approvals: 0, denials: 0, sessions: 1 })).toBe(
       '0 approved, 0 denied, 1 session',
+    );
+  });
+});
+
+describe("a computer's history (M2-06)", () => {
+  it('writes active time in minutes and hours', () => {
+    expect(activeTimeText(59_999)).toBe('under a minute');
+    expect(activeTimeText(12 * 60_000)).toBe('12 min');
+    expect(activeTimeText(2 * 3_600_000)).toBe('2 h');
+    expect(activeTimeText(2 * 3_600_000 + 5 * 60_000)).toBe('2 h 5 min');
+  });
+
+  it('summarises one project with its last activity in relay time', () => {
+    const entry = {
+      project: 'api',
+      sessions: 2,
+      toolCalls: 40,
+      approvals: 3,
+      denials: 1,
+      activeMs: 3_900_000,
+      lastActiveAt: 1_000_000,
+    };
+    expect(historySummary(entry, 1_000_000 + 5 * 60_000)).toBe(
+      '2 sessions, 40 tool calls, 1 h 5 min active, 3 approved, 1 denied · last active 5 minutes ago',
+    );
+    expect(historySummary({ ...entry, lastActiveAt: 2_000_000 }, 1_000_000)).toContain(
+      'last active less than a minute ago',
+    );
+    expect(historySummary({ ...entry, sessions: 1, toolCalls: 1, lastActiveAt: null }, 0)).toBe(
+      '1 session, 1 tool call, 1 h 5 min active, 3 approved, 1 denied',
     );
   });
 });

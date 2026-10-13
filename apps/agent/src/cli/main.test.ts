@@ -286,12 +286,31 @@ describe('runCli', () => {
       expect(request).toMatchObject({ toolLabel: 'Run a command', project: 'remote-control' });
       await phone.decide('allow', request);
       expect((await answer).status).toBe(200);
+      expect((await postHook({ hook_event_name: 'PostToolUse', tool_name: 'Bash' })).ok).toBe(true);
+      expect((await postHook({ hook_event_name: 'UserPromptSubmit', prompt: 'go' })).ok).toBe(true);
+      expect((await postHook({ hook_event_name: 'Stop' })).ok).toBe(true);
       await vi.waitFor(async () => {
         expect(JSON.parse(await readFile(join(h.c.paths.data, 'stats.json'), 'utf8'))).toEqual({
-          version: 1,
-          projects: { 'remote-control': { approvals: 1, denials: 0, sessionsStarted: 1 } },
+          version: 2,
+          projects: {
+            'remote-control': {
+              approvals: 1,
+              denials: 0,
+              sessionsStarted: 1,
+              toolCalls: 1,
+              activeMs: expect.any(Number) as number,
+              lastActiveAt: expect.any(Number) as number,
+            },
+          },
         });
       });
+      // M2-06: the phone gets the history on the handshake and after each turn.
+      expect(phone.of('history')[0]!.projects).toEqual([]);
+      await waitFor(() =>
+        phone
+          .of('history')
+          .some((m) => m.projects.some((p) => p.project === 'remote-control' && p.toolCalls === 1)),
+      );
       controller.abort();
       expect(await running).toBe(EXIT_OK);
       expect(r.relay.online(r.relay.agent.id)).toBe(false);
@@ -611,9 +630,9 @@ describe('runCli', () => {
       );
       expect(await h.run(['status'])).toBe(EXIT_OK);
       expect(h.out()).toContain(
-        'local counters:  3 approved, 1 denied, 1 session\n' +
-          '  api  2 approved, 1 denied, 0 sessions\n' +
-          '  web  1 approved, 0 denied, 1 session\n',
+        'local counters:  3 approved, 1 denied, 1 session, 0 tool calls, under a minute active\n' +
+          '  api  2 approved, 1 denied, 0 sessions, 0 tool calls, under a minute active\n' +
+          '  web  1 approved, 0 denied, 1 session, 0 tool calls, under a minute active\n',
       );
     });
 

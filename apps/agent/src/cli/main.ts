@@ -24,7 +24,13 @@ import { noticeKind, noticeSummaryText } from '../core/push-summary.js';
 import { createRelayLink, type RelayLink } from '../core/relay-link.js';
 import { relayEndpoints } from '../core/relay-url.js';
 import { resolveRepository } from '../core/resolve-repository.js';
-import { decisionStat, formatStats, isSessionStart } from '../core/usage-stats.js';
+import {
+  createActivityTracker,
+  decisionStat,
+  formatStats,
+  statsHistory,
+  type StatDelta,
+} from '../core/usage-stats.js';
 import type { Container } from '../container.js';
 import { installService, serviceStatusLine, uninstallService } from './service.js';
 import { startUpdateChecks, updateCommand, updateStatusLine } from './update.js';
@@ -203,7 +209,14 @@ async function runCommand(
   const stats = openStats(c, (message) =>
     log.logger.warn({ event: 'stats_write_failed' }, message),
   );
+  const activity = createActivityTracker();
   let link: RelayLink | undefined;
+  /** Counts `delta`; a phone hears of it unless only a tool call was added (M2-06). */
+  const count = (cwd: unknown, delta: StatDelta): void => {
+    void stats.record(projectName(cwd), delta).then(() => {
+      if (Object.keys(delta).some((field) => field !== 'toolCalls')) link?.hub.historyChanged();
+    });
+  };
   const store = createPendingStore({
     clock: c.clock,
     timer: c.timer,
@@ -230,7 +243,8 @@ async function runCommand(
     store,
     onEvent: (input) => {
       log.logger.debug({ event: 'hook', hook: input.hook_event_name });
-      if (isSessionStart(input)) void stats.record(projectName(input['cwd']), 'sessionsStarted');
+      const delta = activity.observe(input, c.clock.now());
+      if (delta !== undefined) count(input['cwd'], delta);
       const notice = noticeKind(input, config.notifications);
       if (notice !== undefined) link?.hub.notice(noticeSummaryText(input, notice));
     },
@@ -254,7 +268,7 @@ async function runCommand(
       listPeers: () => c.keyStore.listPeers(),
       decide: (request, decision) => {
         const field = decisionStat(decision.behavior);
-        if (field !== undefined) void stats.record(projectName(request.payload['cwd']), field);
+        if (field !== undefined) count(request.payload['cwd'], { [field]: 1 });
         return claudeCodeAdapter.decide(request, decision);
       },
       machine: {
@@ -263,6 +277,7 @@ async function runCommand(
         agentVersion: c.version,
       },
       capabilities: [CLAUDE_CODE_CAPABILITIES],
+      history: async () => statsHistory(await stats.read()),
       url: endpoints.ws,
       token: credentials.token,
       version: c.version,
@@ -363,7 +378,13 @@ async function statusCommand(args: readonly string[], c: Container): Promise<num
 
 /** The local usage counters (M1-11): this computer only, never sent to the relay (I1/I3). */
 function openStats(c: Container, onWarning: (message: string) => void): StatsStore {
-  return createFileStatsStore({ dir: c.paths.data, fs: c.fs, paths: c.pathPort, onWarning });
+  return createFileStatsStore({
+    dir: c.paths.data,
+    fs: c.fs,
+    paths: c.pathPort,
+    clock: c.clock,
+    onWarning,
+  });
 }
 
 /** The snapshot's platform (D-protocol `Machine.platform`); other Unixes report `linux`. */

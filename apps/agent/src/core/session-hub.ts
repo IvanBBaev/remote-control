@@ -18,6 +18,7 @@ import {
   type Machine,
   type PresenceEntry,
   type Presence,
+  type ProjectHistory,
   type Session,
 } from '@remote-control/protocol';
 
@@ -56,6 +57,11 @@ export interface SessionHubOptions {
   /** The machine as the snapshot shows it; `id` comes from the relay's `hello_ok`. */
   readonly machine: Omit<Machine, 'id' | 'agents'>;
   readonly capabilities: readonly Capabilities[];
+  /**
+   * The per-project history (M2-06), sent after every snapshot and on `historyChanged`;
+   * without it no history is sent. A failed read skips that one message.
+   */
+  readonly history?: () => Promise<readonly ProjectHistory[]>;
   readonly log?: HubLog;
 }
 
@@ -75,6 +81,8 @@ export interface SessionHub {
    * a session. The caller checks that the user turned the notice on.
    */
   notice(summary: string): void;
+  /** The history changed (a turn ended, a decision counted): every open session gets it. */
+  historyChanged(): void;
   /** Resolves when all queued work (handshakes, decisions, sends) has run. */
   idle(): Promise<void>;
   /** Phones with an established session (tests, status). */
@@ -273,6 +281,21 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     options.send({ ...head, payload: toBase64(ciphertext) });
   }
 
+  /** The current history to `sessions`, unless there is none to send. */
+  async function sendHistory(sessions: readonly PhoneSession[]): Promise<void> {
+    if (options.history === undefined || sessions.length === 0) return;
+    let projects: ProjectHistory[];
+    try {
+      projects = [...(await options.history())];
+    } catch {
+      log('history_unavailable', {});
+      return;
+    }
+    for (const session of sessions) {
+      await sendSealed(session, { t: 'history', projects }, 'event', null);
+    }
+  }
+
   function endSession(phoneId: string, reason: string): void {
     const session = live.get(phoneId);
     if (session === undefined) return;
@@ -384,6 +407,7 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
         await sendSealed(session, message, 'event', request.deadline);
       }
       await sendSealed(session, snapshot(views), 'event', null);
+      await sendHistory([session]);
     });
     live.set(phoneId, session);
     log('session_open', { phone_device_id: phoneId, pending: requests.length });
@@ -574,6 +598,10 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
         if (live.has(peer.deviceId)) continue;
         enqueue(() => sendNotice(peer.deviceId, summary, expiresAt));
       }
+    },
+    historyChanged() {
+      if (agentId === undefined || live.size === 0) return;
+      enqueue(() => sendHistory([...live.values()]));
     },
     async idle() {
       while (work.size > 0) await Promise.all([...work]);

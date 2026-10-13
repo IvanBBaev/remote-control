@@ -212,6 +212,22 @@ describe('realtime client', () => {
     await t.agent.send(socket, { t: 'snapshot', machine: MACHINE, sessions: [], pending: [RID2] });
     await settle();
     expect(Object.keys(t.store.getState().requests)).toEqual([RID2]);
+    expect(t.store.getState().machines[AGENT]?.history).toBeNull();
+
+    const history = [
+      {
+        project: 'api',
+        sessions: 1,
+        toolCalls: 2,
+        approvals: 1,
+        denials: 0,
+        activeMs: 60_000,
+        lastActiveAt: 5,
+      },
+    ];
+    await t.agent.send(socket, { t: 'history', projects: history });
+    await settle();
+    expect(t.store.getState().machines[AGENT]?.history).toEqual(history);
 
     await t.agent.send(socket, { t: 'decision_result', requestId: RID2, result: 'accepted' });
     await t.agent.send(socket, { t: 'resolved', requestId: RID2, outcome: 'allow' });

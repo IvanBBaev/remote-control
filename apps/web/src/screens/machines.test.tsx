@@ -19,7 +19,16 @@ function machine(
   online: boolean,
   lastSeen: number | null,
 ): MachineView {
-  return { deviceId, name, online, lastSeen, session: 'none', machine: null, sessions: [] };
+  return {
+    deviceId,
+    name,
+    online,
+    lastSeen,
+    session: 'none',
+    machine: null,
+    sessions: [],
+    history: null,
+  };
 }
 
 describe('machines screen', () => {
@@ -50,6 +59,42 @@ describe('machines screen', () => {
       ['offline', 'Work laptopMachine offline — last seen 5 minutes ago'],
     ]);
     expect(mounted.container.querySelector('a.button')?.textContent).toBe('Add a computer');
+  });
+
+  it("shows the computer's own history per repository (M2-06)", async () => {
+    const test = createTestPhone();
+    const now = test.timer.now();
+    mounted = await renderApp('/machines', fixtures.onboarded, { phone: test.phone });
+    const entry = {
+      sessions: 2,
+      toolCalls: 40,
+      approvals: 3,
+      denials: 1,
+      activeMs: 3_900_000,
+    };
+    act(() => {
+      test.phone.realtime.setState({
+        confirmedAt: now,
+        relayOffset: 0,
+        machines: {
+          a: {
+            ...machine('a', 'Studio Mac', true, null),
+            history: [
+              { project: 'api', ...entry, lastActiveAt: now - 5 * 60_000 },
+              { project: 'web', ...entry, lastActiveAt: null },
+            ],
+          },
+          b: { ...machine('b', 'Work laptop', true, null), history: [] },
+        },
+      });
+    });
+    const history = [...mounted.container.querySelectorAll('.machine-history p')];
+    expect(history.map((line) => line.textContent)).toEqual([
+      'On this computer:',
+      'api 2 sessions, 40 tool calls, 1 h 5 min active, 3 approved, 1 denied · last active 5 minutes ago',
+      'web 2 sessions, 40 tool calls, 1 h 5 min active, 3 approved, 1 denied',
+    ]);
+    expect(mounted.container.querySelectorAll('.machine-history')).toHaveLength(1);
   });
 
   it("shows this phone's counters per computer and project (M1-11)", async () => {

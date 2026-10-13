@@ -9,6 +9,7 @@ import {
   encodeAnswerPayload,
   type ApprovalRequest,
   type Envelope,
+  type ProjectHistory,
   type Question,
 } from '@remote-control/protocol';
 import { describe, expect, it } from 'vitest';
@@ -72,7 +73,11 @@ function askUserQuestion(): RegisterInput {
   };
 }
 
-async function setup(names: readonly string[] = ['Pixel'], seed = 11) {
+async function setup(
+  names: readonly string[] = ['Pixel'],
+  seed = 11,
+  history?: () => Promise<readonly ProjectHistory[]>,
+) {
   const time = manualTime();
   const random = seededRandom(seed);
   const relay = createFakeRelay(time.clock);
@@ -104,6 +109,7 @@ async function setup(names: readonly string[] = ['Pixel'], seed = 11) {
     version: '1.2.3',
     webSocket: relay.webSocket,
     log: (event, fields) => logs.push({ event, fields }),
+    ...(history === undefined ? {} : { history }),
   }));
   const started = link;
   started.start();
@@ -520,6 +526,56 @@ describe('relay link (fake relay, fake phones)', () => {
       await t.link.hub.idle();
       expect(t.relay.routed.length).toBe(before);
       expect(t.relay.undelivered).toEqual([]);
+    });
+  });
+
+  describe('history (M2-06)', () => {
+    const entry = (project: string, toolCalls: number): ProjectHistory => ({
+      project,
+      sessions: 1,
+      toolCalls,
+      approvals: 2,
+      denials: 0,
+      activeMs: 60_000,
+      lastActiveAt: 5,
+    });
+
+    it('AC: sends the history after the snapshot and again when it changes', async () => {
+      let current: ProjectHistory[] = [entry('secret-shop', 1)];
+      const t = await setup(['Pixel', 'iPhone'], 11, () => Promise.resolve(current));
+      const [first, second] = t.phones as [FakePhone, FakePhone];
+      t.link.hub.historyChanged();
+      await t.link.hub.idle();
+      await t.open(first);
+      await t.open(second);
+      await waitFor(() => second.of('history').length === 1);
+      expect(first.of('history')).toEqual([{ t: 'history', projects: current }]);
+      const order = first.messages.map((m) => m.message.t);
+      expect(order.indexOf('snapshot')).toBeLessThan(order.indexOf('history'));
+      current = [entry('secret-shop', 2)];
+      t.link.hub.historyChanged();
+      await t.link.hub.idle();
+      for (const phone of [first, second]) {
+        await waitFor(() => phone.of('history').length === 2);
+        expect(phone.of('history')[1]!.projects).toEqual(current);
+      }
+      expect(plaintextLeaks(t.relay.routed, 'secret-shop')).toBe(false);
+    });
+
+    it('skips a history it cannot read and sends nothing without the option', async () => {
+      const t = await setup(['Pixel'], 11, () => Promise.reject(new Error('disk')));
+      const [phone] = t.phones as [FakePhone];
+      await t.open(phone);
+      await waitFor(() => phone.of('snapshot').length === 1);
+      expect(t.logs).toContainEqual({ event: 'history_unavailable', fields: {} });
+      expect(phone.of('history')).toEqual([]);
+      const plain = await setup(['Pixel'], 12);
+      const [other] = plain.phones as [FakePhone];
+      await plain.open(other);
+      plain.link.hub.historyChanged();
+      await plain.link.hub.idle();
+      await waitFor(() => other.of('snapshot').length === 1);
+      expect(other.of('history')).toEqual([]);
     });
   });
 
