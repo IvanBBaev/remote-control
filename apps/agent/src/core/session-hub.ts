@@ -11,9 +11,11 @@ import {
   HANDSHAKE_TAG,
   parseAnswerPayload,
   PhoneMessage,
+  requestHash,
   VERSION_TABLE,
   type AgentMessage,
   type AlwaysDestination,
+  type CanonicalDecision,
   type Capabilities,
   type Envelope,
   type Machine,
@@ -28,10 +30,12 @@ import type { Clock } from '../ports/clock.js';
 import type { Peer } from '../ports/key-store.js';
 import type { Random } from '../ports/random.js';
 import { approvalView, pendingRequestHash } from './approval-view.js';
+import { checkCommand, type CommandTarget } from './command-check.js';
 import { checkDecision, DECISION_KINDS } from './decision-check.js';
 import { fromBase64Url } from './from-base64url.js';
 import type { PendingEvent, PendingRequest, PendingStore } from './pending-store.js';
 import { createPushSealer, pushSummaryText } from './push-summary.js';
+import type { LaunchResult, SessionLauncher } from './launcher.js';
 import { questionAnswers, questionView } from './question-view.js';
 import { alwaysDestination, alwaysRules } from './session-rules.js';
 import { uuidV7 } from './uuid.js';
@@ -69,6 +73,11 @@ export interface SessionHubOptions {
    * without it no history is sent. A failed read skips that one message.
    */
   readonly history?: () => Promise<readonly ProjectHistory[]>;
+  /**
+   * Starts sessions and sends follow-ups (M1-04); without it `start` and `instruct` are
+   * `unsupported`. The snapshot also lists its repositories and sessions.
+   */
+  readonly launcher?: SessionLauncher;
   readonly log?: HubLog;
 }
 
@@ -90,6 +99,8 @@ export interface SessionHub {
   notice(summary: string): void;
   /** The history changed (a turn ended, a decision counted): every open session gets it. */
   historyChanged(): void;
+  /** The sessions changed (registry): every open session gets a new snapshot. */
+  sessionsChanged(): void;
   /** Resolves when all queued work (handshakes, decisions, sends) has run. */
   idle(): Promise<void>;
   /** Phones with an established session (tests, status). */
@@ -157,6 +168,10 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
   const inbound = new Map<string, Promise<void>>();
   let outbound: Promise<void> = Promise.resolve();
   const work = new Set<Promise<void>>();
+  /** Accepted `start`/`instruct` request ids until their decision expires (decide-once). */
+  const used = new Map<string, number>();
+  const startSupported = options.capabilities.some((entry) => entry.startSession);
+  const instructSupported = options.capabilities.some((entry) => entry.instructions);
 
   function track(promise: Promise<void>): void {
     const tracked = promise.catch((error: unknown) => {
@@ -317,26 +332,62 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     return [...store.list()].sort((a, b) => a.createdAt - b.createdAt);
   }
 
-  function snapshot(views: readonly { request: PendingRequest }[]): AgentMessage {
-    const sessionIds = [...new Set(views.map((view) => view.request.sessionId))].slice(0, 100);
-    const sessions: Session[] = sessionIds.map((id) => ({
-      id,
-      machineId: agentId!,
-      repositoryId: null,
+  /**
+   * The snapshot: the launcher's repositories and sessions (M1-04), and every session
+   * with a pending request shown as waiting for approval.
+   */
+  async function snapshot(views: readonly { request: PendingRequest }[]): Promise<AgentMessage> {
+    const machineId = agentId!;
+    const launcher = options.launcher;
+    const known = launcher === undefined ? [] : await launcher.sessions();
+    const waiting = new Set(views.map((view) => view.request.sessionId));
+    const sessions = new Map<string, Session>();
+    const base = {
+      machineId,
       agent: 'claude-code',
-      state: 'waiting',
-      statusText: 'Waiting for approval',
       lastPrompt: null,
       lastAnswer: null,
       steps: [],
       changedFiles: [],
-    }));
+    };
+    for (const id of waiting) {
+      sessions.set(id, {
+        ...base,
+        id,
+        repositoryId: null,
+        state: 'waiting',
+        statusText: 'Waiting for approval',
+      });
+    }
+    for (const view of known) {
+      const shown = waiting.has(view.id);
+      sessions.set(view.id, {
+        ...base,
+        ...view,
+        state: shown ? 'waiting' : view.state,
+        statusText: shown ? 'Waiting for approval' : view.statusText,
+      });
+    }
+    const repositories =
+      launcher === undefined
+        ? undefined
+        : (await launcher.repositories()).slice(0, 100).map((entry) => ({ ...entry, machineId }));
     return {
       t: 'snapshot',
-      machine: { id: agentId!, ...options.machine, agents: [...options.capabilities] },
-      sessions,
+      machine: { id: machineId, ...options.machine, agents: [...options.capabilities] },
+      sessions: [...sessions.values()].slice(0, 100),
       pending: views.slice(0, 100).map((view) => view.request.id),
+      ...(repositories === undefined ? {} : { repositories }),
     };
+  }
+
+  /** The pending requests the phones can show right now. */
+  async function shownViews(): Promise<{ request: PendingRequest }[]> {
+    const views: { request: PendingRequest }[] = [];
+    for (const request of shownRequests()) {
+      if ((await requestMessage(request)) !== undefined) views.push({ request });
+    }
+    return views;
   }
 
   /** The request message for a pending request, or `undefined` when the phone cannot show it. */
@@ -414,7 +465,7 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
         views.push({ request });
         await sendSealed(session, message, 'event', request.deadline);
       }
-      await sendSealed(session, snapshot(views), 'event', null);
+      await sendSealed(session, await snapshot(views), 'event', null);
       await sendHistory([session]);
     });
     live.set(phoneId, session);
@@ -425,7 +476,7 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     session: PhoneSession,
     requestId: string,
     replyTo: string,
-    result: { result: 'accepted' } | { result: 'rejected'; reason: string },
+    result: { result: 'accepted'; sessionId?: string } | { result: 'rejected'; reason: string },
   ): void {
     enqueue(() =>
       sendSealed(
@@ -456,6 +507,10 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     }
     if (!parsed.success) {
       log('message_refused', { phone_device_id: session.phoneId, reason: 'bad_message' });
+      return;
+    }
+    if (parsed.data.t !== 'decision') {
+      await launch(session, envelope, parsed.data);
       return;
     }
     const { decision } = parsed.data;
@@ -524,6 +579,102 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
       kind: outcome,
     });
     reply(session, decision.request_id, envelope.id, { result: 'accepted' });
+  }
+
+  /**
+   * A `start` or `instruct` command (M1-04): the D7 checks, then the launch. The launch
+   * runs outside the phone's inbound queue, so the phone can still answer the new
+   * session's requests while `claude` runs; the reply follows when it returns.
+   */
+  async function launch(
+    session: PhoneSession,
+    envelope: Envelope,
+    message:
+      | {
+          t: 'start';
+          start: { machineId: string; repositoryId: string; prompt: string };
+          decision: CanonicalDecision;
+        }
+      | {
+          t: 'instruct';
+          instruction: { sessionId: string; text: string };
+          decision: CanonicalDecision;
+        },
+  ): Promise<void> {
+    const { decision } = message;
+    const launcher = options.launcher;
+    const now = clock.now();
+    for (const [id, expiresAt] of used) if (expiresAt <= now) used.delete(id);
+    let target: CommandTarget = { ok: false, reason: 'not_allowed' };
+    if (launcher !== undefined && message.t === 'start') {
+      const { repositoryId, prompt } = message.start;
+      const repository = (await launcher.repositories()).find((entry) => entry.id === repositoryId);
+      if (repository !== undefined) {
+        target = { ok: true, requestHash: await requestHash({ prompt, cwd: repository.path }) };
+      }
+    } else if (launcher !== undefined && message.t === 'instruct') {
+      const { sessionId, text } = message.instruction;
+      target = (await launcher.canFollowUp(sessionId))
+        ? { ok: true, requestHash: await requestHash({ prompt: text, sessionId }) }
+        : { ok: false, reason: 'follow_up_unsupported' };
+    }
+    const computed = await decisionHash(decision);
+    const result = checkCommand({
+      session: live.get(session.phoneId) === session,
+      message: message.t,
+      supported:
+        launcher !== undefined && (message.t === 'start' ? startSupported : instructSupported),
+      decision,
+      payloadMatches:
+        decision.payload ===
+        (message.t === 'start' ? message.start.repositoryId : message.instruction.text),
+      machineMatches: message.t !== 'start' || message.start.machineId === agentId,
+      used: used.has(decision.request_id),
+      from: envelope.from,
+      envelopeDecisionHash: envelope.decisionHash,
+      computedDecisionHash: computed,
+      agentDeviceId: agentId ?? '',
+      target,
+      now: clock.now(),
+    });
+    if (!result.ok) {
+      log('command_rejected', {
+        phone_device_id: session.phoneId,
+        request_id: decision.request_id,
+        kind: message.t,
+        reason: result.reason,
+      });
+      reply(session, decision.request_id, envelope.id, {
+        result: 'rejected',
+        reason: result.reason,
+      });
+      return;
+    }
+    used.set(decision.request_id, decision.expires_at * 1000);
+    log('command_accepted', {
+      phone_device_id: session.phoneId,
+      request_id: decision.request_id,
+      kind: message.t,
+    });
+    const run: Promise<LaunchResult> =
+      message.t === 'start'
+        ? launcher!.start(message.start.repositoryId, message.start.prompt)
+        : launcher!.instruct(message.instruction.sessionId, message.instruction.text);
+    track(
+      run.then((outcome) => {
+        reply(
+          session,
+          decision.request_id,
+          envelope.id,
+          outcome.ok
+            ? {
+                result: 'accepted',
+                ...(outcome.sessionId === undefined ? {} : { sessionId: outcome.sessionId }),
+              }
+            : { result: 'rejected', reason: outcome.reason },
+        );
+      }),
+    );
   }
 
   function added(request: PendingRequest, duplicate: boolean): void {
@@ -625,6 +776,14 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     historyChanged() {
       if (agentId === undefined || live.size === 0) return;
       enqueue(() => sendHistory([...live.values()]));
+    },
+    sessionsChanged() {
+      if (agentId === undefined || live.size === 0) return;
+      const sessions = [...live.values()];
+      enqueue(async () => {
+        const message = await snapshot(await shownViews());
+        for (const session of sessions) await sendSealed(session, message, 'event', null);
+      });
     },
     async idle() {
       while (work.size > 0) await Promise.all([...work]);

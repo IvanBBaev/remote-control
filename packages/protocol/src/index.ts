@@ -65,7 +65,7 @@ export { CanonicalDecision, DECISION_TTL_SECONDS, DecisionKind } from './canonic
 export { requiresAssertion } from './requires-assertion.js';
 export { decisionHash } from './decision-hash.js';
 export { decisionChallenge } from './decision-challenge.js';
-export { requestHash } from './request-hash.js';
+export { requestHash, requestHashSubject } from './request-hash.js';
 export type { RequestHashInput } from './request-hash.js';
 export {
   CLAUDE_CODE_TOOL_NAMES,
@@ -95,6 +95,7 @@ export {
   ExpiredMessage,
   HANDSHAKE_TAG,
   HistoryMessage,
+  InstructMessage,
   MAX_HISTORY_PROJECTS,
   PairingHello,
   PhoneMessage,
@@ -103,4 +104,5 @@ export {
   RequestMessage,
   ResolvedMessage,
   SnapshotMessage,
+  StartMessage,
 } from './messages.js';

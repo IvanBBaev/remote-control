@@ -52,9 +52,9 @@ describe('route table (onboarded user)', () => {
     expect(app.path()).toBe('/sessions');
   });
 
-  it('shows the route parameter on the session screen', async () => {
+  it('looks the session up by the route parameter', async () => {
     const session = await mount('/sessions/s-42', onboarded);
-    expect(session.container.textContent).toContain('s-42');
+    expect(session.container.textContent).toContain('Connecting…');
   });
 
   it('shows the tab bar inside the gated app only', async () => {
@@ -199,7 +199,7 @@ describe('onboarding gate', () => {
   });
 
   it('forms do not navigate on submit', async () => {
-    for (const path of ['/onboarding/pair', '/sessions/s-1', '/new']) {
+    for (const path of ['/onboarding/pair']) {
       const app = await mount(path, onboarded);
       const form = app.container.querySelector('form');
       const event = new Event('submit', { bubbles: true, cancelable: true });

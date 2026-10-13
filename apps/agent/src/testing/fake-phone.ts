@@ -16,6 +16,7 @@ import {
   HANDSHAKE_TAG,
   PairingHello,
   parseFrame,
+  requestHash,
   requiresAssertion,
   toBase64Url,
   VERSION_TABLE,
@@ -66,6 +67,17 @@ export interface FakePhone {
     request: Pick<ApprovalRequest, 'id' | 'requestHash'>,
     overrides?: DecideOverrides,
   ): Promise<string>;
+  /**
+   * Sends a `start` (M1-04) for `repositoryId` on `machineId`; `path` is the repository's
+   * configured root the request hash covers. Returns the command envelope id.
+   */
+  start(
+    start: { machineId: string; repositoryId: string; prompt: string },
+    path: string,
+    overrides?: DecideOverrides,
+  ): Promise<string>;
+  /** Sends an `instruct` (M1-04) to `sessionId`; returns the command envelope id. */
+  instruct(sessionId: string, text: string, overrides?: DecideOverrides): Promise<string>;
   /** Joins a pairing slot with the code and runs the XXpsk0 initiator (D6). */
   pair(code: string): Promise<{ agentDeviceId: string; agentPublicKey: Uint8Array; name: string }>;
   /** The phone as the agent's `peers.json` should list it. */
@@ -159,6 +171,41 @@ export async function createFakePhone(
     });
   }
 
+  /** Sends a D7 decision inside `body` (or a plain `decision` message). */
+  async function command(
+    kind: DecisionKind,
+    requestId: string,
+    hashOfRequest: string,
+    payload: string | null,
+    body: Readonly<Record<string, unknown>>,
+    overrides: DecideOverrides,
+  ): Promise<string> {
+    const issuedAt = Math.floor(clock.now() / 1000);
+    const decision: CanonicalDecision = {
+      v: VERSION_TABLE.v,
+      kind,
+      request_id: requestId,
+      request_hash: hashOfRequest,
+      payload,
+      issued_at: issuedAt,
+      expires_at: issuedAt + DECISION_TTL_SECONDS,
+      phone_device_id: device.id,
+      agent_device_id: agentId,
+      ...overrides.decision,
+    };
+    const hash = await decisionHash(decision);
+    if (requiresAssertion(kind)) relay.verified.add(hash);
+    const envelopeHash = overrides.envelopeHash ?? (requiresAssertion(kind) ? hash : undefined);
+    const head = {
+      ...envelope(agentId, 'command', new Uint8Array(0)),
+      ...(envelopeHash === undefined ? {} : { decisionHash: envelopeHash }),
+    };
+    const plaintext = encoder.encode(JSON.stringify({ t: 'decision', ...body, decision }));
+    const ciphertext = await transport!.encrypt(header(head), plaintext);
+    send({ ...head, payload: Buffer.from(ciphertext).toString('base64') });
+    return head.id;
+  }
+
   const phone: FakePhone = {
     device,
     keyPair,
@@ -217,31 +264,24 @@ export async function createFakePhone(
       control(agentDeviceId, HANDSHAKE_TAG.kk, await kk.writeMessage());
       await waitFor(() => messages.slice(before).some((r) => r.message.t === 'snapshot'));
     },
-    async decide(kind, request, overrides = {}) {
-      const issuedAt = Math.floor(clock.now() / 1000);
-      const decision: CanonicalDecision = {
-        v: VERSION_TABLE.v,
-        kind,
-        request_id: request.id,
-        request_hash: request.requestHash,
-        payload: null,
-        issued_at: issuedAt,
-        expires_at: issuedAt + DECISION_TTL_SECONDS,
-        phone_device_id: device.id,
-        agent_device_id: agentId,
-        ...overrides.decision,
-      };
-      const hash = await decisionHash(decision);
-      if (requiresAssertion(kind)) relay.verified.add(hash);
-      const envelopeHash = overrides.envelopeHash ?? (requiresAssertion(kind) ? hash : undefined);
-      const head = {
-        ...envelope(agentId, 'command', new Uint8Array(0)),
-        ...(envelopeHash === undefined ? {} : { decisionHash: envelopeHash }),
-      };
-      const plaintext = encoder.encode(JSON.stringify({ t: 'decision', decision }));
-      const ciphertext = await transport!.encrypt(header(head), plaintext);
-      send({ ...head, payload: Buffer.from(ciphertext).toString('base64') });
-      return head.id;
+    decide(kind, request, overrides = {}) {
+      return command(kind, request.id, request.requestHash, null, {}, overrides);
+    },
+    async start(start, path, overrides = {}) {
+      const hash = await requestHash({ prompt: start.prompt, cwd: path });
+      return command(
+        'start',
+        uuidV7(clock, random),
+        hash,
+        start.repositoryId,
+        { t: 'start', start },
+        overrides,
+      );
+    },
+    async instruct(sessionId, text, overrides = {}) {
+      const hash = await requestHash({ prompt: text, sessionId });
+      const body = { t: 'instruct', instruction: { sessionId, text } };
+      return command('instruct', uuidV7(clock, random), hash, text, body, overrides);
     },
     async pair(code) {
       const psk = await pairingPsk(normalizePairingCode(code)!);

@@ -1,6 +1,7 @@
 import { generateX25519KeyPair, webCryptoRandom } from '@remote-control/crypto';
 import { DECISION_TTL_SECONDS, VERSION_TABLE } from '@remote-control/protocol';
 import type {
+  AgentMessage,
   ApprovalRequest,
   CanonicalDecision,
   Machine,
@@ -461,6 +462,122 @@ describe('realtime client', () => {
       t.timer.advance(BACKOFF_MIN_MS);
       const next = await t.connect(t.sockets.last);
       expect(next.of('data').filter((frame) => frame.cls === 'command')).toEqual([]);
+    });
+  });
+
+  describe('commands (M1-04)', () => {
+    const REPO = { id: 'repo-api', machineId: AGENT, name: 'api', path: '/code/api' };
+
+    it('stores repositories from the snapshot and keeps the pending requests it lists', async () => {
+      const t = await setup();
+      await t.client.start();
+      const socket = await t.connect();
+      await t.agent.send(socket, { t: 'snapshot', machine: MACHINE, sessions: [], pending: [] });
+      await settle();
+      expect(t.store.getState().machines[AGENT]?.repositories).toEqual([]);
+
+      await t.agent.send(socket, { t: 'request', request: approval(RID), ttlMs: 60_000 });
+      await t.agent.send(socket, { t: 'request', request: approval(RID2), ttlMs: 60_000 });
+      const snapshot: AgentMessage = {
+        t: 'snapshot',
+        machine: MACHINE,
+        sessions: [],
+        pending: [RID, RID2],
+        repositories: [REPO],
+      };
+      await t.agent.send(socket, snapshot);
+      // A re-sent snapshot (reconnect, resync) drops nothing still pending.
+      await t.agent.send(socket, snapshot);
+      await settle();
+      expect(t.store.getState().machines[AGENT]?.repositories).toEqual([REPO]);
+      expect(Object.keys(t.store.getState().requests).sort()).toEqual([RID, RID2]);
+      expect(pendingRequests(t.store.getState())).toHaveLength(2);
+    });
+
+    it('sends a start, tracks it, and records the accepted session id', async () => {
+      const t = await setup();
+      await t.client.start();
+      const socket = await t.connect();
+      const message = {
+        t: 'start',
+        start: { machineId: AGENT, repositoryId: REPO.id, prompt: 'Fix it' },
+        decision: { ...decision(t.timer.now(), 'start'), payload: REPO.id },
+      } as const;
+      t.client.command(AGENT, message, HASH);
+      await settle();
+      expect(t.store.getState().commands[RID]).toEqual({
+        machineId: AGENT,
+        kind: 'start',
+        target: REPO.id,
+        text: 'Fix it',
+      });
+      const [sent] = socket.of('data').filter((frame) => frame.cls === 'command');
+      expect(sent).toMatchObject({ to: AGENT, decisionHash: HASH });
+      await expect(t.agent.read(sent!)).resolves.toEqual(message);
+
+      await t.agent.send(socket, {
+        t: 'decision_result',
+        requestId: RID,
+        result: 'accepted',
+        sessionId: 's-new',
+      });
+      await settle();
+      expect(t.store.getState().commands[RID]?.result).toEqual({
+        t: 'decision_result',
+        requestId: RID,
+        result: 'accepted',
+        sessionId: 's-new',
+      });
+    });
+
+    it('records an instruction rejection and a relay error', async () => {
+      const t = await setup();
+      await t.client.start();
+      const socket = await t.connect();
+      const instruct = (id: string) =>
+        ({
+          t: 'instruct',
+          instruction: { sessionId: 's-1', text: 'Next' },
+          decision: { ...decision(t.timer.now(), 'instruct'), request_id: id, payload: 'Next' },
+        }) as const;
+      t.client.command(AGENT, instruct(RID));
+      t.client.command(AGENT, instruct(RID2));
+      await settle();
+      expect(t.store.getState().commands[RID]).toMatchObject({ kind: 'instruct', target: 's-1' });
+      await t.agent.send(socket, {
+        t: 'decision_result',
+        requestId: RID,
+        result: 'rejected',
+        reason: 'follow_up_unsupported',
+      });
+      // Each flush re-sends the unacked outbox, so the last frame carries the second one.
+      const second = socket
+        .of('data')
+        .filter((frame) => frame.cls === 'command')
+        .at(-1)!;
+      socket.receive({ v: 1, kind: 'error', code: 'rate_limited', ref: second.id, message: 'no' });
+      await settle();
+      expect(t.store.getState().commands[RID]?.result).toMatchObject({
+        result: 'rejected',
+        reason: 'follow_up_unsupported',
+      });
+      expect(t.store.getState().commands[RID2]?.relayError).toBe('rate_limited');
+    });
+
+    it('marks a command that expired in the outbox instead of sending it', async () => {
+      const t = await setup();
+      await t.client.start();
+      t.client.command(AGENT, {
+        t: 'start',
+        start: { machineId: AGENT, repositoryId: REPO.id, prompt: 'Late' },
+        decision: {
+          ...decision(t.timer.now() - (DECISION_TTL_SECONDS + 1) * 1000, 'start'),
+          payload: REPO.id,
+        },
+      });
+      const socket = await t.connect();
+      expect(socket.of('data').filter((frame) => frame.cls === 'command')).toEqual([]);
+      expect(t.store.getState().commands[RID]?.relayError).toBe('expired');
     });
   });
 

@@ -38,6 +38,7 @@ const machine: MachineView = {
   machine: null,
   sessions: [],
   history: null,
+  repositories: [],
 };
 
 let mounted: RenderedApp | undefined;

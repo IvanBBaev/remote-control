@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createLogger, createRollingDestination } from '@remote-control/log';
 
+import { createClaudeCli } from './adapters/claude-code/claude-cli.js';
 import { envPaths } from './adapters/env-paths.js';
 import { createFileKeyStore } from './adapters/file-key-store.js';
 import {
@@ -25,6 +26,7 @@ import { systemTimer } from './adapters/system-timer.js';
 import { systemSystemctl } from './adapters/systemd/systemctl.js';
 import { systemSchtasks } from './adapters/windows/schtasks.js';
 import type { AgentPaths } from './ports/agent-paths.js';
+import type { ClaudeCli } from './ports/claude-cli.js';
 import type { Clock } from './ports/clock.js';
 import type { FileSystem } from './ports/file-system.js';
 import type { KeyStore } from './ports/key-store.js';
@@ -99,6 +101,8 @@ export interface Container {
   readonly prompt: Prompt;
   /** This machine's name (1..64 chars): the agent name a phone shows and the snapshot's. */
   readonly hostname: string;
+  /** The `claude` CLI that starts sessions and sends follow-ups (M1-04). */
+  readonly claude: ClaudeCli;
 }
 
 export interface ContainerOptions {
@@ -132,6 +136,8 @@ export interface ContainerOptions {
   readonly prompt?: Prompt;
   /** Default: `os.hostname()`. */
   readonly hostname?: string;
+  /** Default: `claude` from `PATH`, with this environment. */
+  readonly claude?: ClaudeCli;
 }
 
 /** `USERDOMAIN\USERNAME` from the Windows environment, or the bare user name. */
@@ -218,5 +224,11 @@ export function createContainer(options: ContainerOptions): Container {
     prompt: options.prompt ?? createReadlinePrompt(),
     // The protocol's machine and pairing names are 1..64 characters.
     hostname: (options.hostname ?? hostname()).slice(0, 64) || APP_NAME,
+    claude:
+      options.claude ??
+      createClaudeCli({
+        command: 'claude',
+        env: { ...options.env, HOME: options.env['HOME'] ?? options.homedir },
+      }),
   };
 }

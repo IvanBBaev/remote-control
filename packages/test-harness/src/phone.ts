@@ -20,6 +20,7 @@ import {
   HANDSHAKE_TAG,
   PairingHello,
   parseFrame,
+  requestHash,
   requiresAssertion,
   toBase64Url,
   toHex,
@@ -29,6 +30,7 @@ import {
   type DecisionKind,
   type Envelope,
   type Frame,
+  type StartSession,
 } from '@remote-control/protocol';
 import { SoftwareAuthenticator } from '@remote-control/relay/testing';
 import WebSocket from 'ws';
@@ -101,6 +103,17 @@ export interface HeadlessPhone {
     request: Pick<ApprovalRequest, 'id' | 'requestHash'>,
     payload?: string | null,
   ): Promise<string>;
+  /**
+   * Asks the agent to start a session (M1-04): a `start` decision over the repository id,
+   * its `request_hash` over the prompt and the repository's `path` as the snapshot showed
+   * it, with a fresh request id. Returns the request id the `decision_result` names.
+   */
+  start(start: StartSession, path: string): Promise<string>;
+  /**
+   * Sends a follow-up to a background session (M1-04): an `instruct` decision. Returns the
+   * request id.
+   */
+  instruct(sessionId: string, text: string): Promise<string>;
   /** Messages of type `t`. */
   of<T extends AgentMessage['t']>(t: T): Extract<AgentMessage, { t: T }>[];
 }
@@ -253,6 +266,50 @@ export async function createPhone(options: CreatePhoneOptions): Promise<Headless
     }
   }
 
+  /**
+   * Signs a decision, runs the passkey ceremony at the relay for the kinds that need one
+   * (D7) and sends it on the open session; `body` replaces the plain `decision` message
+   * (`start`, `instruct`). Returns the command envelope id.
+   */
+  async function command(
+    kind: DecisionKind,
+    requestId: string,
+    hashOfRequest: string,
+    payload: string | null,
+    body: Readonly<Record<string, unknown>>,
+  ): Promise<string> {
+    if (transport === undefined) throw new Error('phone: no session');
+    const issuedAt = Math.floor(clock.now() / 1000);
+    const decision: CanonicalDecision = {
+      v: VERSION_TABLE.v,
+      kind,
+      request_id: requestId,
+      request_hash: hashOfRequest,
+      payload,
+      issued_at: issuedAt,
+      expires_at: issuedAt + DECISION_TTL_SECONDS,
+      phone_device_id: deviceId,
+      agent_device_id: agentId,
+    };
+    const hash = await decisionHash(decision);
+    if (requiresAssertion(kind)) {
+      const challenge = await call<RequestOptions>('POST', '/api/decisions/challenge', {
+        decisionHash: hash,
+      });
+      await call('POST', '/api/decisions/verify', {
+        response: await authenticator.get(challenge),
+      });
+    }
+    const head = {
+      ...envelope(agentId, 'command', EMPTY),
+      ...(requiresAssertion(kind) ? { decisionHash: hash } : {}),
+    };
+    const plaintext = encoder.encode(JSON.stringify({ t: 'decision', ...body, decision }));
+    const ciphertext = await transport.encrypt(header(head), plaintext);
+    send({ ...head, payload: Buffer.from(ciphertext).toString('base64') });
+    return head.id;
+  }
+
   const phone: HeadlessPhone = {
     keyPair,
     authenticator,
@@ -368,36 +425,22 @@ export async function createPhone(options: CreatePhoneOptions): Promise<Headless
       );
     },
     async decide(kind, request, payload = null) {
-      if (transport === undefined) throw new Error('phone: no session');
-      const issuedAt = Math.floor(clock.now() / 1000);
-      const decision: CanonicalDecision = {
-        v: VERSION_TABLE.v,
-        kind,
-        request_id: request.id,
-        request_hash: request.requestHash,
-        payload,
-        issued_at: issuedAt,
-        expires_at: issuedAt + DECISION_TTL_SECONDS,
-        phone_device_id: deviceId,
-        agent_device_id: agentId,
-      };
-      const hash = await decisionHash(decision);
-      if (requiresAssertion(kind)) {
-        const challenge = await call<RequestOptions>('POST', '/api/decisions/challenge', {
-          decisionHash: hash,
-        });
-        await call('POST', '/api/decisions/verify', {
-          response: await authenticator.get(challenge),
-        });
-      }
-      const head = {
-        ...envelope(agentId, 'command', EMPTY),
-        ...(requiresAssertion(kind) ? { decisionHash: hash } : {}),
-      };
-      const plaintext = encoder.encode(JSON.stringify({ t: 'decision', decision }));
-      const ciphertext = await transport.encrypt(header(head), plaintext);
-      send({ ...head, payload: Buffer.from(ciphertext).toString('base64') });
-      return head.id;
+      return command(kind, request.id, request.requestHash, payload, {});
+    },
+    async start(start, path) {
+      const requestId = uuidV7(clock);
+      const hash = await requestHash({ prompt: start.prompt, cwd: path });
+      await command('start', requestId, hash, start.repositoryId, { t: 'start', start });
+      return requestId;
+    },
+    async instruct(sessionId, text) {
+      const requestId = uuidV7(clock);
+      const hash = await requestHash({ prompt: text, sessionId });
+      await command('instruct', requestId, hash, text, {
+        t: 'instruct',
+        instruction: { sessionId, text },
+      });
+      return requestId;
     },
     of: <T extends AgentMessage['t']>(t: T) =>
       messages

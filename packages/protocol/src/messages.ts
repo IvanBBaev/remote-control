@@ -3,9 +3,12 @@ import { z } from 'zod';
 import { CanonicalDecision } from './canonical-decision.js';
 import { ApprovalRequest } from './domain/approval-request.js';
 import { Machine } from './domain/machine.js';
+import { Instruction } from './domain/instruction.js';
 import { Question } from './domain/question.js';
+import { Repository } from './domain/repository.js';
 import { Session } from './domain/session.js';
-import { RequestId } from './ids.js';
+import { StartSession } from './domain/start-session.js';
+import { RequestId, SessionId } from './ids.js';
 
 // End-to-end messages (M0-16): the plaintext inside an envelope's `payload`, after the
 // Noise transport session decrypts it. The relay never sees any of this (I3).
@@ -30,14 +33,17 @@ export const QuestionMessage = z.strictObject({
 export type QuestionMessage = z.infer<typeof QuestionMessage>;
 
 /**
- * Sent after every handshake (D4): the machine, its sessions, and the ids of every
- * request still pending, so the phone can drop any request it shows that is gone.
+ * Sent after every handshake (D4) and whenever the agent's session list changes: the
+ * machine, its sessions, and the ids of every request still pending, so the phone can
+ * drop any request it shows that is gone. `repositories` is the allow-list a new
+ * session can start in (M1-04); older agents leave it out.
  */
 export const SnapshotMessage = z.strictObject({
   t: z.literal('snapshot'),
   machine: Machine,
   sessions: z.array(Session).max(100),
   pending: z.array(RequestId).max(100),
+  repositories: z.array(Repository).max(100).optional(),
 });
 export type SnapshotMessage = z.infer<typeof SnapshotMessage>;
 
@@ -63,6 +69,9 @@ export type ExpiredMessage = z.infer<typeof ExpiredMessage>;
  * Why the agent refused a decision; the D7 checks in order. `wrong_kind`: the kind does
  * not fit the request (an `answer` for a permission, an `allow` for a question);
  * `invalid_answer`: the answer payload does not fit the pending questions (M1-01).
+ * M1-04: `not_allowed` (the repository is not on the allow-list), `start_failed` (the
+ * agent CLI refused to start, for example an untrusted folder), `follow_up_unsupported`
+ * (the session cannot take a follow-up: interactive, unknown or an old CLI).
  */
 export const DecisionRejection = z.enum([
   'no_session',
@@ -76,15 +85,23 @@ export const DecisionRejection = z.enum([
   'wrong_peer',
   'unverified',
   'invalid_answer',
+  'not_allowed',
+  'start_failed',
+  'follow_up_unsupported',
 ]);
 export type DecisionRejection = z.infer<typeof DecisionRejection>;
 
-/** The agent's answer to one `decision` message (`cls: reply`, `replyTo` = its envelope). */
+/**
+ * The agent's answer to one `decision`, `start` or `instruct` message (`cls: reply`,
+ * `replyTo` = its envelope). An accepted `start` names the new session when the agent
+ * learned its id.
+ */
 export const DecisionResultMessage = z.union([
   z.strictObject({
     t: z.literal('decision_result'),
     requestId: RequestId,
     result: z.literal('accepted'),
+    sessionId: SessionId.optional(),
   }),
   z.strictObject({
     t: z.literal('decision_result'),
@@ -148,8 +165,32 @@ export const DecisionMessage = z.strictObject({
 });
 export type DecisionMessage = z.infer<typeof DecisionMessage>;
 
+/**
+ * Start a session (M1-04, `cls: command`). `decision.kind` is `start`, its `payload` the
+ * repository id and its `request_hash` the `requestHash({ prompt, cwd })` of the prompt
+ * and the repository's path; the phone picks a fresh `request_id`.
+ */
+export const StartMessage = z.strictObject({
+  t: z.literal('start'),
+  start: StartSession,
+  decision: CanonicalDecision,
+});
+export type StartMessage = z.infer<typeof StartMessage>;
+
+/**
+ * A follow-up prompt for a running session (M1-04, `cls: command`). `decision.kind` is
+ * `instruct`, its `payload` the text and its `request_hash` the
+ * `requestHash({ prompt, sessionId })`; the phone picks a fresh `request_id`.
+ */
+export const InstructMessage = z.strictObject({
+  t: z.literal('instruct'),
+  instruction: Instruction,
+  decision: CanonicalDecision,
+});
+export type InstructMessage = z.infer<typeof InstructMessage>;
+
 /** Everything a phone sends to the agent inside a session. */
-export const PhoneMessage = DecisionMessage;
+export const PhoneMessage = z.union([DecisionMessage, StartMessage, InstructMessage]);
 export type PhoneMessage = z.infer<typeof PhoneMessage>;
 
 /** The device name each side tells the other inside the XXpsk0 pairing handshake (D6). */

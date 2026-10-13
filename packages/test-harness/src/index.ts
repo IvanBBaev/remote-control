@@ -1,7 +1,13 @@
 export const packageName = '@remote-control/test-harness';
 
 export { startAgent } from './agent.js';
-export type { HarnessAgent, HookResult, PairingRun, StartAgentOptions } from './agent.js';
+export type {
+  ClaudeRun,
+  HarnessAgent,
+  HookResult,
+  PairingRun,
+  StartAgentOptions,
+} from './agent.js';
 export { createCanaries } from './canaries.js';
 export type { Canaries } from './canaries.js';
 export { eventually } from './eventually.js';

@@ -13,8 +13,11 @@ import type {
   Envelope,
   Frame,
   HelloOk,
+  InstructMessage,
+  PhoneMessage,
   PresenceEntry,
   Random,
+  StartMessage,
 } from '@remote-control/protocol';
 
 import type { RelayApi } from '../auth/relay-api.js';
@@ -23,7 +26,13 @@ import type { Timer, TimerHandle } from '../ports/timer.js';
 import { fromBase64, header, toBase64, uuidV7 } from './envelope.js';
 import { createRelaySocket } from './relay-socket.js';
 import type { SocketFactory } from './relay-socket.js';
-import type { MachineView, RealtimeState, RealtimeStore, RequestUpdate } from './realtime-store.js';
+import type {
+  CommandView,
+  MachineView,
+  RealtimeState,
+  RealtimeStore,
+  RequestUpdate,
+} from './realtime-store.js';
 
 /** Rec-5: after this many failed socket attempts, `/api/state` polling takes over. */
 export const POLL_AFTER_FAILURES = 2;
@@ -90,6 +99,11 @@ export interface RealtimeClient {
    * every new session until the agent receives it, answers it, or it expires.
    */
   decide(machineId: string, decision: CanonicalDecision, decisionHash?: string): void;
+  /**
+   * Queues a session start or follow-up instruction (M1-04) like a decision, and tracks
+   * it in the store's `commands` under its `request_id` until the agent answers.
+   */
+  command(machineId: string, message: StartMessage | InstructMessage, decisionHash?: string): void;
 }
 
 interface Peer {
@@ -100,7 +114,7 @@ interface Peer {
 
 interface Outgoing {
   readonly machineId: string;
-  readonly decision: CanonicalDecision;
+  readonly message: PhoneMessage;
   readonly decisionHash?: string;
   /** The envelope it went out in last; a re-send uses a new one. */
   envelopeId?: string;
@@ -149,6 +163,14 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
       const current = state.requests[requestId];
       if (current === undefined) return {};
       return { requests: { ...state.requests, [requestId]: { ...current, ...change } } };
+    });
+  };
+
+  const updateCommand = (requestId: string, change: Partial<CommandView>): void => {
+    update((state) => {
+      const current = state.commands[requestId];
+      if (current === undefined) return {};
+      return { commands: { ...state.commands, [requestId]: { ...current, ...change } } };
     });
   };
 
@@ -294,6 +316,7 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
           if (outgoing.envelopeId === frame.ref) {
             outbox.delete(requestId);
             updateRequest(requestId, { relayError: frame.code });
+            updateCommand(requestId, { relayError: frame.code });
           }
         }
         return;
@@ -405,6 +428,7 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
               name: message.machine.name,
               machine: message.machine,
               sessions: message.sessions,
+              repositories: message.repositories ?? [],
             },
           },
           // Anything this machine no longer has pending is gone from the agent (D4).
@@ -431,6 +455,7 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
       case 'decision_result':
         outbox.delete(message.requestId);
         updateRequest(message.requestId, { result: message });
+        updateCommand(message.requestId, { result: message });
         return;
     }
   }
@@ -442,20 +467,28 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
     const now = timer.now();
     for (const [requestId, outgoing] of outbox) {
       if (outgoing.machineId !== machineId) continue;
-      if (outgoing.decision.expires_at * 1000 <= now) {
+      if (outgoing.message.decision.expires_at * 1000 <= now) {
         outbox.delete(requestId);
+        updateCommand(requestId, { relayError: 'expired' });
         continue;
       }
       const head = {
         ...envelope(machineId, 'command', EMPTY),
         ...(outgoing.decisionHash === undefined ? {} : { decisionHash: outgoing.decisionHash }),
       };
-      const plaintext = encoder.encode(
-        JSON.stringify({ t: 'decision', decision: outgoing.decision }),
-      );
+      const plaintext = encoder.encode(JSON.stringify(outgoing.message));
       const ciphertext = await peer.transport.encrypt(header(head), plaintext);
       if (socket.send({ ...head, payload: toBase64(ciphertext) })) outgoing.envelopeId = head.id;
     }
+  }
+
+  function queue(machineId: string, message: PhoneMessage, decisionHash?: string): void {
+    outbox.set(message.decision.request_id, {
+      machineId,
+      message,
+      ...(decisionHash === undefined ? {} : { decisionHash }),
+    });
+    enqueue(() => flush(machineId));
   }
 
   async function poll(): Promise<void> {
@@ -535,6 +568,7 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
             machine: null,
             sessions: [],
             history: null,
+            repositories: [],
           },
         ]),
       ),
@@ -602,12 +636,27 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
       return result;
     },
     decide(machineId, decision, decisionHash) {
-      outbox.set(decision.request_id, {
-        machineId,
-        decision,
-        ...(decisionHash === undefined ? {} : { decisionHash }),
-      });
-      enqueue(() => flush(machineId));
+      queue(machineId, { t: 'decision', decision }, decisionHash);
+    },
+    command(machineId, message, decisionHash) {
+      const view: CommandView =
+        message.t === 'start'
+          ? {
+              machineId,
+              kind: 'start',
+              target: message.start.repositoryId,
+              text: message.start.prompt,
+            }
+          : {
+              machineId,
+              kind: 'instruct',
+              target: message.instruction.sessionId,
+              text: message.instruction.text,
+            };
+      update((state) => ({
+        commands: { ...state.commands, [message.decision.request_id]: view },
+      }));
+      queue(machineId, message, decisionHash);
     },
   };
 }

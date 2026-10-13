@@ -1,5 +1,10 @@
 import { pairingFingerprint } from '@remote-control/crypto';
-import { DECISION_TTL_SECONDS, VERSION_TABLE, encodeAnswerPayload } from '@remote-control/protocol';
+import {
+  DECISION_TTL_SECONDS,
+  VERSION_TABLE,
+  encodeAnswerPayload,
+  requestHash,
+} from '@remote-control/protocol';
 import type {
   AlwaysDestination,
   AnswerPayload,
@@ -8,6 +13,7 @@ import type {
   DecisionKind,
   Question,
   Random,
+  Repository,
 } from '@remote-control/protocol';
 
 import { assertDecision } from '../auth/assert-decision.js';
@@ -20,6 +26,7 @@ import { normalizePairingCode, pairingSecrets, pskSecrets } from '../pairing/pai
 import type { PairingSecrets } from '../pairing/pairing-code.js';
 import { parsePairingQr } from '../pairing/qr-text.js';
 import type { Timer, TimerHandle } from '../ports/timer.js';
+import { uuidV7 } from './envelope.js';
 import { createRealtimeClient, PairingTimeoutError } from './realtime-client.js';
 import type { RealtimeClient } from './realtime-client.js';
 import type { SocketFactory } from './relay-socket.js';
@@ -63,6 +70,9 @@ export interface PhoneServiceOptions {
   /** Where the local usage counters persist (M1-11); default: memory only. */
   readonly usageStorage?: UsageStatsStorage;
 }
+
+/** A sent start or instruction: its `request_id` keys `realtime.commands` (M1-04). */
+export type CommandResult = AssertDecisionResult & { readonly requestId: string };
 
 /** The phone's device-side services, behind the screens. */
 export interface PhoneService {
@@ -117,6 +127,15 @@ export interface PhoneService {
    * neither an approval nor a denial (M1-11).
    */
   release(machineId: string, request: ApprovalRequest | Question): Promise<AssertDecisionResult>;
+  /**
+   * Starts a session in one of the computer's allow-listed repositories (M1-04). Only the
+   * repository id travels; the signed hash covers the prompt and the repository's path,
+   * so the passkey assertion (D7) approves exactly this prompt in exactly that folder.
+   * Call it from the tap handler, like `decide`.
+   */
+  start(machineId: string, repository: Repository, prompt: string): Promise<CommandResult>;
+  /** Sends a follow-up prompt to a running session (M1-04), with a passkey assertion. */
+  instruct(machineId: string, sessionId: string, text: string): Promise<CommandResult>;
 }
 
 /** What the relay's pairing answers mean to the user (D6, M0-10). */
@@ -218,6 +237,13 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
     target: Pick<ApprovalRequest, 'id' | 'requestHash'>,
     kind: DecisionKind,
     payload: string | null,
+    deliver: (live: RealtimeClient, decision: CanonicalDecision, decisionHash?: string) => void = (
+      live,
+      decision,
+      decisionHash,
+    ) => {
+      live.decide(machineId, decision, decisionHash);
+    },
   ): Promise<AssertDecisionResult> {
     const live = client;
     if (live === undefined || phoneDeviceId === undefined) return { ok: false, failure: 'offline' };
@@ -236,10 +262,13 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
       agent_device_id: machineId,
     };
     const result = await assertDecision(decision, relay);
-    if (result.ok) {
-      live.decide(machineId, decision, result.asserted ? result.decisionHash : undefined);
-    }
+    if (result.ok) deliver(live, decision, result.asserted ? result.decisionHash : undefined);
     return result;
+  }
+
+  /** A new phone-originated request id: start and instruct have no agent request. */
+  function newRequestId(): string {
+    return uuidV7(options.timer.now() + realtime.getState().relayOffset, options.random);
   }
 
   function connect(forUser: string): Promise<void> {
@@ -339,6 +368,36 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
     answer: (machineId, question, answer) =>
       send(machineId, question, 'answer', encodeAnswerPayload(answer)),
     release: (machineId, request) => send(machineId, request, 'terminal', null),
+    async start(machineId, repository, prompt) {
+      const id = newRequestId();
+      const hash = await requestHash({ prompt, cwd: repository.path });
+      const result = await send(
+        machineId,
+        { id, requestHash: hash },
+        'start',
+        repository.id,
+        (live, decision, decisionHash) => {
+          const start = { machineId, repositoryId: repository.id, prompt };
+          live.command(machineId, { t: 'start', start, decision }, decisionHash);
+        },
+      );
+      return { ...result, requestId: id };
+    },
+    async instruct(machineId, sessionId, text) {
+      const id = newRequestId();
+      const hash = await requestHash({ prompt: text, sessionId });
+      const result = await send(
+        machineId,
+        { id, requestHash: hash },
+        'instruct',
+        text,
+        (live, decision, decisionHash) => {
+          const instruction = { sessionId, text };
+          live.command(machineId, { t: 'instruct', instruction, decision }, decisionHash);
+        },
+      );
+      return { ...result, requestId: id };
+    },
     async pair(code) {
       const normalized = normalizePairingCode(code);
       if (normalized === undefined) throw new PairingError('Enter all 12 characters of the code.');

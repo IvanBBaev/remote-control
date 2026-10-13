@@ -109,3 +109,19 @@ export function userVerified(authenticatorData: string): boolean {
   const flags = Buffer.from(authenticatorData, 'base64url')[32] ?? 0;
   return (flags & FLAG_UV) !== 0;
 }
+
+/** The agent's latest snapshot as the phone holds it. */
+export async function lastSnapshot(phone: HeadlessPhone) {
+  await eventually(() => phone.of('snapshot').length > 0, 'phone: no snapshot');
+  return phone.of('snapshot').at(-1)!;
+}
+
+/** The agent's log lines whose `event` is `event`, parsed. */
+export function logEvents(
+  lines: readonly string[],
+  event: string,
+): Readonly<Record<string, unknown>>[] {
+  return lines
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .filter((entry) => entry['event'] === event);
+}

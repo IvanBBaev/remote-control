@@ -50,6 +50,7 @@ const machine: MachineView = {
   machine: null,
   sessions: [],
   history: null,
+  repositories: [],
 };
 
 function view(test: TestPhone, id: string, change: Partial<ApprovalView> = {}): ApprovalView {

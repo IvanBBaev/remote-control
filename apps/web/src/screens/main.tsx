@@ -3,8 +3,10 @@ import { useStore } from 'zustand';
 
 import { useAppState } from '../app-state.js';
 import { presenceLabel } from '../realtime/realtime-store.js';
+import type { RealtimeState } from '../realtime/realtime-store.js';
 import { historySummary, machineUsage, usageSummary } from '../realtime/usage-stats.js';
 import { Notice, Screen } from './layout.js';
+import { ComposeBox } from './session-commands.js';
 
 /**
  * Paired computers and their online state, from relay timestamps (M0-20), with this
@@ -82,51 +84,41 @@ export function SessionsScreen() {
   );
 }
 
-/** One session: transcript and the compose box. */
+/** The session with `id` and the computer it runs on, from the latest snapshots. */
+const findSession = (machines: RealtimeState['machines'], id: string) => {
+  for (const machine of Object.values(machines)) {
+    const session = machine.sessions.find((candidate) => candidate.id === id);
+    if (session !== undefined) return { machineId: machine.deviceId, session };
+  }
+  return undefined;
+};
+
+/**
+ * One session: its state and the follow-up compose box (M1-04). The transcript and the
+ * live feed land with M1-05.
+ */
 export function SessionScreen() {
   const { id = '' } = useParams();
-  return (
-    <Screen title="Session" back="/sessions">
-      <p className="meta">
-        Session <code>{id}</code>
-      </p>
-      <Notice>Loading the transcript…</Notice>
-      <form
-        className="compose"
-        onSubmit={(event) => {
-          event.preventDefault();
-        }}
-      >
-        <label htmlFor="compose-text">Message</label>
-        <textarea id="compose-text" name="text" rows={3} disabled />
-        <button type="submit" className="primary" disabled>
-          Send
-        </button>
-      </form>
-    </Screen>
+  const { phone } = useAppState();
+  const found = findSession(
+    useStore(phone.realtime, (state) => state.machines),
+    id,
   );
-}
-
-/** Start a new agent session on a paired computer. */
-export function NewSessionScreen() {
+  const connected = useStore(phone.realtime, (state) => state.connection === 'open');
+  if (found === undefined) {
+    return (
+      <Screen title="Session" back="/sessions">
+        <Notice>{connected ? 'This session no longer exists.' : 'Connecting…'}</Notice>
+      </Screen>
+    );
+  }
+  const { machineId, session } = found;
   return (
-    <Screen title="New session" back="/sessions">
-      <form
-        className="new-session"
-        onSubmit={(event) => {
-          event.preventDefault();
-        }}
-      >
-        <label htmlFor="new-machine">Computer</label>
-        <select id="new-machine" name="machine" disabled>
-          <option>No computers paired</option>
-        </select>
-        <label htmlFor="new-prompt">Prompt</label>
-        <textarea id="new-prompt" name="prompt" rows={4} disabled />
-        <button type="submit" className="primary" disabled>
-          Start
-        </button>
-      </form>
+    <Screen title={session.name ?? 'Session'} back="/sessions">
+      <p className="meta">
+        {session.state} · {session.statusText}
+      </p>
+      <ComposeBox key={session.id} machineId={machineId} session={session} />
     </Screen>
   );
 }

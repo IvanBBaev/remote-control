@@ -5,6 +5,7 @@ import type {
   ProjectHistory,
   Question,
   RelayErrorCode,
+  Repository,
   Session,
 } from '@remote-control/protocol';
 import { createStore } from 'zustand/vanilla';
@@ -32,6 +33,8 @@ export interface MachineView {
   readonly sessions: readonly Session[];
   /** The computer's per-project counters (M2-06), from its latest history message. */
   readonly history: readonly ProjectHistory[] | null;
+  /** The computer's allow-listed repositories (M1-04), from its latest snapshot. */
+  readonly repositories: readonly Repository[];
 }
 
 export type RequestStatus = 'pending' | 'resolved' | 'expired';
@@ -61,6 +64,22 @@ export type RequestView = ApprovalView | QuestionView;
 /** What arrives later for a request: its status, outcome and decision result. */
 export type RequestUpdate = Partial<Omit<RequestViewBase, 'machineId'>>;
 
+/**
+ * A session start or follow-up instruction this phone sent (M1-04). It has no request
+ * on the agent, so its answer is tracked here by the phone's own `request_id`.
+ */
+export interface CommandView {
+  readonly machineId: string;
+  readonly kind: 'start' | 'instruct';
+  /** The repository a start runs in, or the session an instruction goes to. */
+  readonly target: string;
+  readonly text: string;
+  /** The agent's answer; an accepted start may name the new session. */
+  readonly result?: DecisionResultMessage;
+  /** The relay refused the envelope, or the decision expired before it could be sent. */
+  readonly relayError?: RelayErrorCode;
+}
+
 export interface RealtimeState {
   readonly connection: SocketStatus;
   /** Consecutive socket attempts that never reached `hello_ok`. */
@@ -73,6 +92,8 @@ export interface RealtimeState {
   readonly confirmedAt: number | null;
   readonly machines: Readonly<Record<string, MachineView>>;
   readonly requests: Readonly<Record<string, RequestView>>;
+  /** Starts and instructions by `request_id` (M1-04). */
+  readonly commands: Readonly<Record<string, CommandView>>;
 }
 
 export type RealtimeStore = StoreApi<RealtimeState>;
@@ -86,6 +107,7 @@ export function createRealtimeStore(): RealtimeStore {
     confirmedAt: null,
     machines: {},
     requests: {},
+    commands: {},
   }));
 }
 

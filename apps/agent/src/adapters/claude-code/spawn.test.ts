@@ -1,10 +1,24 @@
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { SpawnArgumentError, spawnBackgroundSession, startSessionArgv } from './spawn.js';
+import { trustWorkspace, writeClaudeShim } from '@remote-control/fake-claude-code';
+
+import {
+  SpawnArgumentError,
+  agentsArgv,
+  claudeVersion,
+  listAgents,
+  resumeBackgroundSession,
+  resumeSessionArgv,
+  spawnBackgroundSession,
+  startSessionArgv,
+  versionArgv,
+} from './spawn.js';
+
+const SESSION = '5b7c1e2a-9d3f-4e8a-b6c4-2f1d0e9a8b7c';
 
 describe('startSessionArgv', () => {
   it('builds the literal start argv', () => {
@@ -48,6 +62,7 @@ describe('spawnBackgroundSession', () => {
       repository: repository(),
       name: 'session',
       prompt: 'hello',
+      env: process.env,
     });
     expect(code).not.toBe(0);
   });
@@ -59,6 +74,7 @@ describe('spawnBackgroundSession', () => {
         repository: repository(),
         name: 'session',
         prompt: 'hello',
+        env: process.env,
       }),
     ).rejects.toMatchObject({ code: 'ENOENT' });
   });
@@ -70,7 +86,102 @@ describe('spawnBackgroundSession', () => {
         repository: repository(),
         name: 'bad name',
         prompt: 'hello',
+        env: process.env,
       }),
     ).toThrow(SpawnArgumentError);
+  });
+});
+
+describe('resumeSessionArgv, agentsArgv, versionArgv', () => {
+  it('build the literal argv', () => {
+    expect(resumeSessionArgv(SESSION, 'Run the tests')).toEqual([
+      '--resume',
+      SESSION,
+      '--bg',
+      'Run the tests',
+    ]);
+    expect(agentsArgv()).toEqual(['agents', '--json', '--all']);
+    expect(versionArgv()).toEqual(['--version']);
+  });
+
+  it('refuses a session id that is not a UUID and a prompt that looks like an option', () => {
+    for (const id of ['', '--settings', 'not-a-uuid', `${SESSION}x`]) {
+      expect(() => resumeSessionArgv(id, 'ok')).toThrow(SpawnArgumentError);
+    }
+    expect(() => resumeSessionArgv(SESSION, '--permission-mode')).toThrow(SpawnArgumentError);
+  });
+});
+
+// The `claude` shim is a POSIX script; Windows would need a shell to run `claude.cmd`.
+describe.skipIf(process.platform === 'win32')('against fake-claude', () => {
+  let base: string;
+  let repo: string;
+  let command: string;
+  let env: Record<string, string | undefined>;
+  beforeAll(async () => {
+    base = await realpath(await mkdtemp(join(tmpdir(), 'remotectl-fake-')));
+    repo = join(base, 'repo');
+    await mkdir(repo);
+    command = writeClaudeShim(join(base, 'bin'));
+    env = { ...process.env, HOME: join(base, 'home'), FAKE_CLAUDE_SCENARIO: 'stop' };
+    delete env['CLAUDE_CONFIG_DIR'];
+    trustWorkspace(env, repo);
+  });
+  afterAll(async () => {
+    await rm(base, { recursive: true, force: true });
+  });
+
+  const repository = () => ({ allowed: true as const, root: repo, realPath: repo });
+
+  it('starts, lists and resumes a background session', async () => {
+    const code = await spawnBackgroundSession({
+      command,
+      repository: repository(),
+      name: 'rc-repo-1',
+      prompt: 'Fix the tests',
+      env,
+    });
+    expect(code).toBe(0);
+    const roster = await listAgents(command, env);
+    expect(roster.code).toBe(0);
+    const entries = JSON.parse(roster.stdout) as { sessionId: string; name?: string }[];
+    const entry = entries.find((row) => row.name === 'rc-repo-1');
+    expect(entry).toBeDefined();
+    const resumed = await resumeBackgroundSession({
+      command,
+      repository: repository(),
+      sessionId: entry?.sessionId ?? SESSION,
+      prompt: 'Now run them',
+      env,
+    });
+    expect(resumed).toBe(0);
+  });
+
+  it('reports a failed resume through the exit code', async () => {
+    const code = await resumeBackgroundSession({
+      command,
+      repository: repository(),
+      sessionId: SESSION,
+      prompt: 'Hello',
+      env,
+    });
+    expect(code).toBe(1);
+  });
+
+  it('reads the version', async () => {
+    const result = await claudeVersion(command, env);
+    expect(result.stdout).toContain('(Claude Code)');
+  });
+
+  it('rejects a resume whose command cannot be started', async () => {
+    await expect(
+      resumeBackgroundSession({
+        command: join(base, 'missing-claude'),
+        repository: repository(),
+        sessionId: SESSION,
+        prompt: 'Hello',
+        env,
+      }),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });

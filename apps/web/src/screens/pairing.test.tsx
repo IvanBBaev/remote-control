@@ -122,6 +122,7 @@ describe('pair screen', () => {
             machine: null,
             sessions: [],
             history: null,
+            repositories: [],
           },
         },
       });

@@ -28,6 +28,7 @@ function machine(
     machine: null,
     sessions: [],
     history: null,
+    repositories: [],
   };
 }
 

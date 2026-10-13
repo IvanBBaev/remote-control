@@ -15,6 +15,15 @@
       "input": { "prompt": "Fix the CANARY-7f3a test", "cwd": "/home/dev/project" },
       "canonical": "{\"cwd\":\"/home/dev/project\",\"prompt\":\"Fix the CANARY-7f3a test\"}",
       "sha256": "2cf1755acff9e7bc66643dd7802b5a4599f96829b384cf68fbe40ec9021d5b98"
+    },
+    {
+      "name": "follow-up to a session",
+      "input": {
+        "prompt": "Now run the CANARY-7f3a tests",
+        "sessionId": "5b7c1e2a-9d3f-4e8a-b6c4-2f1d0e9a8b7c"
+      },
+      "canonical": "{\"prompt\":\"Now run the CANARY-7f3a tests\",\"session_id\":\"5b7c1e2a-9d3f-4e8a-b6c4-2f1d0e9a8b7c\"}",
+      "sha256": "419adcef0a0741ea64f401227245c12cbd555424e55e3944a97de07709681580"
     }
   ]
 }

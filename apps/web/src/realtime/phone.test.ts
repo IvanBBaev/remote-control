@@ -3,9 +3,10 @@ import {
   DECISION_TTL_SECONDS,
   decisionHash,
   encodeAnswerPayload,
+  requestHash,
   toBase64Url,
 } from '@remote-control/protocol';
-import type { ApprovalRequest, Question } from '@remote-control/protocol';
+import type { ApprovalRequest, Question, Repository } from '@remote-control/protocol';
 import { describe, expect, it, vi } from 'vitest';
 
 import { RelayError } from '../auth/relay-api.js';
@@ -513,6 +514,104 @@ describe('phone decisions', () => {
     await expect(
       t.phone.answer(AGENT, question, { answers: [{ labels: ['A'] }] }),
     ).resolves.toEqual({ ok: false, failure: 'offline' });
+  });
+
+  const REPOSITORY: Repository = {
+    id: 'repo-api',
+    machineId: AGENT,
+    name: 'api',
+    path: '/Users/me/code/api',
+  };
+
+  it('starts a session with a passkey: repository id in the payload, hash over prompt and path (M1-04)', async () => {
+    const credentials = mockCredentials();
+    try {
+      const t = await setup(assertingRelay());
+      await t.online();
+      t.phone.realtime.setState({ relayOffset: 90_000 });
+      const command = vi.spyOn(t.phone.client!, 'command');
+      const result = await t.phone.start(AGENT, REPOSITORY, 'Fix the tests');
+      expect(result).toMatchObject({ ok: true, asserted: true });
+      expect(credentials.get).toHaveBeenCalledOnce();
+      const issuedAt = Math.floor((t.timer.now() + 90_000) / 1000);
+      expect(command).toHaveBeenCalledWith(
+        AGENT,
+        {
+          t: 'start',
+          start: { machineId: AGENT, repositoryId: 'repo-api', prompt: 'Fix the tests' },
+          decision: {
+            v: 1,
+            kind: 'start',
+            request_id: result.requestId,
+            request_hash: await requestHash({ prompt: 'Fix the tests', cwd: REPOSITORY.path }),
+            payload: 'repo-api',
+            issued_at: issuedAt,
+            expires_at: issuedAt + DECISION_TTL_SECONDS,
+            phone_device_id: PHONE,
+            agent_device_id: AGENT,
+          },
+        },
+        result.ok ? result.decisionHash : 'never',
+      );
+      // A fresh request id per start, tracked until the agent answers.
+      const again = await t.phone.start(AGENT, REPOSITORY, 'Fix the tests');
+      expect(again.requestId).not.toBe(result.requestId);
+      expect(t.phone.realtime.getState().commands[result.requestId]).toEqual({
+        machineId: AGENT,
+        kind: 'start',
+        target: 'repo-api',
+        text: 'Fix the tests',
+      });
+    } finally {
+      credentials.restore();
+    }
+  });
+
+  it('sends a follow-up with a passkey: text in the payload, hash over prompt and session (M1-04)', async () => {
+    const credentials = mockCredentials();
+    try {
+      const t = await setup(assertingRelay());
+      await t.online();
+      const command = vi.spyOn(t.phone.client!, 'command');
+      const result = await t.phone.instruct(AGENT, REQUEST.sessionId, 'Now run lint');
+      expect(result).toMatchObject({ ok: true, asserted: true });
+      const [machineId, message, decisionHash] = command.mock.calls[0]!;
+      expect([machineId, decisionHash]).toEqual([AGENT, result.ok ? result.decisionHash : 'never']);
+      expect(message).toMatchObject({
+        t: 'instruct',
+        instruction: { sessionId: REQUEST.sessionId, text: 'Now run lint' },
+        decision: {
+          kind: 'instruct',
+          request_id: result.requestId,
+          request_hash: await requestHash({ prompt: 'Now run lint', sessionId: REQUEST.sessionId }),
+          payload: 'Now run lint',
+        },
+      });
+    } finally {
+      credentials.restore();
+    }
+  });
+
+  it('sends no start or follow-up when offline or cancelled', async () => {
+    const credentials = mockCredentials();
+    credentials.get.mockRejectedValueOnce(userCancelled());
+    try {
+      const t = await setup(assertingRelay());
+      await expect(t.phone.start(AGENT, REPOSITORY, 'Go')).resolves.toMatchObject({
+        ok: false,
+        failure: 'offline',
+      });
+      await t.online();
+      const command = vi.spyOn(t.phone.client!, 'command');
+      await expect(t.phone.instruct(AGENT, 's-1', 'Go')).resolves.toMatchObject({
+        ok: false,
+        failure: 'cancelled',
+      });
+      expect(command).not.toHaveBeenCalled();
+      expect(t.phone.realtime.getState().commands).toEqual({});
+    } finally {
+      credentials.restore();
+    }
   });
 
   it('schedules on its clock', async () => {

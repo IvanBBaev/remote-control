@@ -176,6 +176,35 @@ screens through their accessible names, which are part of the screen contract:
   line per repository — sessions, tool calls, active time, approved, denied and "last
   active … ago" in relay time. The phone keeps them in memory only.
 
+### New session and follow-up (M1-04, D7)
+
+- New session (`/new`) picks a paired computer (the first online one by default; others
+  read "(offline)"), one of the folders on that computer's allow-list (`repositories` in
+  its remotectl config, sent in the snapshot) and a prompt of at most 16,384 characters.
+  Folders show by name; "Show path" reveals the full path. The phone only picks; it never
+  edits the list. No folders: "No folders are allowed on this computer yet. Add them
+  under "repositories" in its remotectl config." Offline: "Offline. Start is available
+  when the computer is online." Start stays disabled until a folder and a non-blank
+  prompt are chosen and while an earlier start is unanswered.
+- Start and Send each ask for the passkey (D7) and carry a signed decision (`kind`
+  `start` over the repository id, `instruct` over the text) with a fresh request id.
+  While the computer has not answered: "Sent. Waiting for your computer…".
+- Outcomes: accepted start "Session started." with "Open the session" when the agent
+  names the session; accepted follow-up "Sent to the session."; `not_allowed` "That folder
+  is not on your computer's allow-list. Nothing was started."; `start_failed` "The
+  computer did not start the session. Try again."; `follow_up_unsupported` "This session
+  cannot take instructions from the phone. Continue it in the terminal."; `unsupported`
+  "Your computer's remotectl cannot do this yet. Update it and try again."; `expired` /
+  `too_late` "Too late: it took too long to reach your computer. Try again."; not
+  delivered before its expiry "Not delivered in time. Nothing was sent."; a relay
+  refusal "The relay refused it. Try again."
+- Session (`/sessions/:id`) shows the CLI's session name (else "Session"), the state and
+  status line, and the compose box. The box is enabled only when the agent marks the
+  session `followUp` (a background session) and the computer is online; otherwise it is
+  disabled with "This session runs in a terminal. Continue it there.", "This session has
+  ended." or "Offline.". Unknown id: "This session no longer exists." ("Connecting…"
+  before the first connection).
+
 ## Planned (no route yet)
 
 | Screen   | Route (planned) | Data needed                                                                                              | Empty                         | Offline                                                       | Error                                                     |

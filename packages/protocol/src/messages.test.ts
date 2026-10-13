@@ -81,6 +81,20 @@ describe('AgentMessage', () => {
     { t: 'resolved', requestId: REQUEST_ID, outcome: 'withdrawn' },
     { t: 'expired', requestId: REQUEST_ID },
     { t: 'decision_result', requestId: REQUEST_ID, result: 'accepted' },
+    { t: 'decision_result', requestId: REQUEST_ID, result: 'accepted', sessionId: 'sess-2' },
+    {
+      t: 'decision_result',
+      requestId: REQUEST_ID,
+      result: 'rejected',
+      reason: 'follow_up_unsupported',
+    },
+    {
+      t: 'snapshot',
+      machine,
+      sessions: [{ ...session, name: 'rc-api-1a2b', followUp: true }],
+      pending: [],
+      repositories: [{ id: 'repo-1', machineId: MACHINE_ID, name: 'api', path: '/src/api' }],
+    },
     { t: 'decision_result', requestId: REQUEST_ID, result: 'rejected', reason: 'too_late' },
     { t: 'history', projects: [project, { ...project, project: 'web', lastActiveAt: null }] },
   ])('accepts $t', (message) => {
@@ -125,6 +139,9 @@ describe('AgentMessage', () => {
       'wrong_peer',
       'unverified',
       'invalid_answer',
+      'not_allowed',
+      'start_failed',
+      'follow_up_unsupported',
     ]);
   });
 });
@@ -144,6 +161,42 @@ describe('PhoneMessage', () => {
 
   it('accepts a decision', () => {
     expect(PhoneMessage.parse({ t: 'decision', decision })).toEqual({ t: 'decision', decision });
+  });
+
+  it('accepts a start with its signed decision', () => {
+    const message = {
+      t: 'start',
+      start: { machineId: MACHINE_ID, repositoryId: 'repo-1', prompt: 'Fix the tests' },
+      decision: { ...decision, kind: 'start', payload: 'repo-1' },
+    };
+    expect(PhoneMessage.parse(message)).toEqual(message);
+  });
+
+  it('accepts an instruction with its signed decision', () => {
+    const message = {
+      t: 'instruct',
+      instruction: { sessionId: 'sess-1', text: 'Now run them' },
+      decision: { ...decision, kind: 'instruct', payload: 'Now run them' },
+    };
+    expect(PhoneMessage.parse(message)).toEqual(message);
+  });
+
+  it.each([
+    [
+      'a start without a prompt',
+      {
+        t: 'start',
+        start: { machineId: MACHINE_ID, repositoryId: 'repo-1', prompt: '' },
+        decision: { ...decision, kind: 'start', payload: 'repo-1' },
+      },
+    ],
+    [
+      'an instruction without a decision',
+      { t: 'instruct', instruction: { sessionId: 'sess-1', text: 'go' } },
+    ],
+    ['an unknown message', { t: 'stop', decision }],
+  ])('refuses %s', (_name, message) => {
+    expect(PhoneMessage.safeParse(message).success).toBe(false);
   });
 
   it('refuses a decision that is not canonical', () => {

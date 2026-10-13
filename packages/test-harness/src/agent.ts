@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
-import { writeClaudeShim } from '@remote-control/fake-claude-code';
+import { FAKE_CLAUDE_BIN, trustWorkspace, writeClaudeShim } from '@remote-control/fake-claude-code';
 import { createLogger, createMemoryDestination } from '@remote-control/log';
 import { createContainer, runCli, type Container } from 'remotectl';
 import { DEFAULT_HOOK_TIMEOUT_SECONDS, runHook } from 'remotectl/hook';
@@ -18,6 +18,19 @@ export interface StartAgentOptions {
   readonly name: string;
   /** Answer to the pairing fingerprint question (default: yes). */
   readonly confirm?: boolean;
+  /**
+   * Folders created under `repos/`, trusted for `claude` and put on the allow-list in
+   * that order (M1-04).
+   */
+  readonly repositories?: readonly string[];
+  /** Extra environment for the agent and every `claude` it runs (`FAKE_CLAUDE_SCENARIO`). */
+  readonly env?: Readonly<Record<string, string>>;
+}
+
+/** One `claude` run as the shim saw it: the working directory and the argv. */
+export interface ClaudeRun {
+  readonly cwd: string;
+  readonly argv: readonly string[];
 }
 
 export interface PairingRun {
@@ -36,8 +49,10 @@ export interface HookResult {
 }
 
 export interface HarnessAgent {
-  /** The temp root: `home/`, `tmp/` and `bin/` (the `claude` shim on `PATH`). */
+  /** The temp root: `home/`, `tmp/`, `repos/` and `bin/` (the `claude` shim on `PATH`). */
   readonly base: string;
+  /** The allow-listed repositories (absolute, canonical), in the order of the options. */
+  readonly repositories: readonly string[];
   readonly container: Container;
   /** Everything the CLI printed so far. */
   stdout(): string;
@@ -57,6 +72,8 @@ export interface HarnessAgent {
    * fake clock.
    */
   fire(input: Readonly<Record<string, unknown>>, timeoutSeconds?: number): Promise<HookResult>;
+  /** Every `claude` the agent ran so far (`--version`, `agents`, `--bg`, `--resume`). */
+  claudeRuns(): Promise<ClaudeRun[]>;
   /** Every agent log line (JSON), for canary scans and the decision log. */
   logs(): string[];
   /** The agent's X25519 public key (after `pair` or `run` created it). */
@@ -77,6 +94,27 @@ export async function startAgent(options: StartAgentOptions): Promise<HarnessAge
   const base = await realpath(await mkdtemp(join(tmpdir(), 'rc-harness-agent-')));
   const bin = join(base, 'bin');
   writeClaudeShim(bin);
+  // Records the working directory and argv (NUL-separated, one run per line) before the
+  // fake runs, so a journey can check the exact argv the agent spawned (D13).
+  const runsFile = join(base, 'claude-runs.log');
+  await writeFile(
+    join(bin, 'claude'),
+    `#!/bin/sh\n{ printf '%s\\0' "$(pwd -P)" "$@"; printf '\\n'; } >> "${runsFile}"\nexec "${process.execPath}" "${FAKE_CLAUDE_BIN}" "$@"\n`,
+    { mode: 0o755 },
+  );
+  const env: Record<string, string> = {
+    REMOTECTL_NO_UPDATE_CHECK: '1',
+    PATH: `${bin}${delimiter}${process.env['PATH'] ?? ''}`,
+    HOME: join(base, 'home'),
+    ...options.env,
+  };
+  const repositories: string[] = [];
+  for (const name of options.repositories ?? []) {
+    const path = join(base, 'repos', name);
+    await mkdir(path, { recursive: true });
+    trustWorkspace(env, path);
+    repositories.push(path);
+  }
   const hookSource = join(base, 'dist', 'hook.cjs');
   await mkdir(join(base, 'dist'));
   await writeFile(hookSource, '// harness hook\n');
@@ -84,10 +122,7 @@ export async function startAgent(options: StartAgentOptions): Promise<HarnessAge
   let err = '';
   const real = createContainer({
     platform: 'linux',
-    env: {
-      REMOTECTL_NO_UPDATE_CHECK: '1',
-      PATH: `${bin}${delimiter}${process.env['PATH'] ?? ''}`,
-    },
+    env,
     homedir: join(base, 'home'),
     tmpdir: join(base, 'tmp'),
     output: { stdout: (text) => (out += text), stderr: (text) => (err += text) },
@@ -113,7 +148,7 @@ export async function startAgent(options: StartAgentOptions): Promise<HarnessAge
   await mkdir(container.paths.config, { recursive: true });
   await writeFile(
     join(container.paths.config, 'config.json'),
-    JSON.stringify({ relay: { url: options.relayUrl } }),
+    JSON.stringify({ relay: { url: options.relayUrl }, repositories }),
   );
 
   const cli = (argv: readonly string[], signal = new AbortController().signal) =>
@@ -126,6 +161,7 @@ export async function startAgent(options: StartAgentOptions): Promise<HarnessAge
 
   return {
     base,
+    repositories,
     container,
     stdout: () => out,
     stderr: () => err,
@@ -162,6 +198,21 @@ export async function startAgent(options: StartAgentOptions): Promise<HarnessAge
         output:
           stdout === '' ? undefined : (JSON.parse(stdout) as Readonly<Record<string, unknown>>),
       };
+    },
+    async claudeRuns() {
+      let text: string;
+      try {
+        text = await readFile(runsFile, 'utf8');
+      } catch {
+        return [];
+      }
+      return text
+        .split('\n')
+        .filter((line) => line.length > 0)
+        .map((line) => {
+          const [cwd, ...argv] = line.split('\0').slice(0, -1);
+          return { cwd: cwd!, argv };
+        });
     },
     logs: () => destination.lines(),
     async publicKey() {

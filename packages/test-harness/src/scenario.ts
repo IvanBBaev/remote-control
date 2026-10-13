@@ -16,6 +16,10 @@ export interface ScenarioOptions {
   readonly canaries?: Canaries;
   /** Subscribe the phone to push (default: yes). */
   readonly push?: boolean;
+  /** The agent's allow-listed repository folders (see `StartAgentOptions`). */
+  readonly repositories?: readonly string[];
+  /** Extra environment for the agent and its `claude` runs. */
+  readonly env?: Readonly<Record<string, string>>;
 }
 
 export interface Scenario {
@@ -62,6 +66,8 @@ export async function scenario(options: ScenarioOptions = {}): Promise<Scenario>
       relayUrl: relay.wsOrigin,
       clock,
       name: options.agentName ?? 'harness-mac',
+      ...(options.repositories !== undefined ? { repositories: options.repositories } : {}),
+      ...(options.env !== undefined ? { env: options.env } : {}),
     });
     cleanup.push(() => agent.close());
     const bootMs = performance.now() - started;

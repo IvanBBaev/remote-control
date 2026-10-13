@@ -23,6 +23,7 @@ import { createPairingLock } from '../core/pairing-lock.js';
 import { createFakePhone } from '../testing/fake-phone.js';
 import { createFakeRelay } from '../testing/fake-relay.js';
 import { manualTime, waitFor } from '../testing/manual-time.js';
+import type { ClaudeCli } from '../ports/claude-cli.js';
 import type { ProcessResult } from '../ports/process-result.js';
 import type { Systemctl } from '../ports/systemctl.js';
 import { AGENT_VERSION } from '../version.js';
@@ -42,6 +43,13 @@ const notInstalledSystemctl: Systemctl = {
   show: () => ok('LoadState=not-found\nActiveState=inactive\n'),
   enableLinger: () => ok(),
   showLinger: () => ok('Linger=no\n'),
+};
+
+const noClaude: ClaudeCli = {
+  version: () => Promise.resolve(undefined),
+  agents: () => Promise.resolve(undefined),
+  start: () => Promise.reject(new Error('no claude in this test')),
+  resume: () => Promise.reject(new Error('no claude in this test')),
 };
 
 interface Harness {
@@ -68,6 +76,8 @@ describe('runCli', () => {
       platform: 'linux',
       // No npm registry request from a test; `update.test.ts` covers the checks.
       env: { REMOTECTL_NO_UPDATE_CHECK: '1' },
+      // No `claude` from PATH: a CLI that is not installed.
+      claude: noClaude,
       homedir: join(base, 'home'),
       tmpdir: join(base, 'tmp'),
       output: { stdout: (text) => (stdout += text), stderr: (text) => (stderr += text) },

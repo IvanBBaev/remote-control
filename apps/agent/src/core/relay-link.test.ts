@@ -13,7 +13,7 @@ import {
   type ProjectHistory,
   type Question,
 } from '@remote-control/protocol';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { CLAUDE_CODE_CAPABILITIES, claudeCodeAdapter } from '../adapters/claude-code/adapter.js';
 import { decideClaudeCode } from '../adapters/claude-code/decide.js';
@@ -21,9 +21,10 @@ import type { Peer } from '../ports/key-store.js';
 import { createFakePhone, type FakePhone } from '../testing/fake-phone.js';
 import { createFakeRelay } from '../testing/fake-relay.js';
 import { manualTime, waitFor } from '../testing/manual-time.js';
+import type { LaunchResult, SessionLauncher, SessionView } from './launcher.js';
 import { createPendingStore, type RegisterInput } from './pending-store.js';
 import { noticeSummaryText } from './push-summary.js';
-import { createRelayLink, type RelayLink } from './relay-link.js';
+import { createRelayLink, type RelayLink, type RelayLinkOptions } from './relay-link.js';
 import { NOTICE_TTL_MS } from './session-hub.js';
 
 const HOOK_TIMEOUT_MS = 600_000;
@@ -79,6 +80,7 @@ async function setup(
   seed = 11,
   history?: () => Promise<readonly ProjectHistory[]>,
   alwaysDestinations?: readonly AlwaysDestination[],
+  extra: Partial<RelayLinkOptions> = {},
 ) {
   const time = manualTime();
   const random = seededRandom(seed);
@@ -118,6 +120,7 @@ async function setup(
     log: (event, fields) => logs.push({ event, fields }),
     ...(history === undefined ? {} : { history }),
     ...(alwaysDestinations === undefined ? {} : { alwaysDestinations }),
+    ...extra,
   }));
   const started = link;
   started.start();
@@ -392,7 +395,7 @@ describe('relay link (fake relay, fake phones)', () => {
     expect(t.store.get(request.id)).toBeDefined();
   });
 
-  it('answers instruct and start with unsupported until M1-04', async () => {
+  it('answers an instruct or start sent as a plain decision with unsupported', async () => {
     const t = await setup();
     const [phone] = t.phones as [FakePhone];
     await t.open(phone);
@@ -918,6 +921,193 @@ describe('relay link (fake relay, fake phones)', () => {
       await t.link.hub.idle();
       expect(phone.of('question')).toEqual([]);
       expect(t.store.get(registration.request.id)).toBe(registration.request);
+    });
+  });
+  describe('start and instruct (M1-04)', () => {
+    const REPO = { id: 'f'.repeat(32), name: 'app', path: '/work/app' };
+    const SESSION = '5b7c1e2a-9d3f-4e8a-b6c4-2f1d0e9a8b7c';
+    const LIVE: SessionView = {
+      id: SESSION,
+      repositoryId: REPO.id,
+      state: 'working',
+      statusText: 'Working',
+      name: 'rc-app-00000000',
+      followUp: true,
+    };
+
+    function fakeLauncher(sessions: SessionView[] = []) {
+      let finish: ((result: LaunchResult) => void) | undefined;
+      const launcher = {
+        repositories: vi.fn(() => Promise.resolve([REPO])),
+        sessions: vi.fn(() => Promise.resolve(sessions)),
+        canFollowUp: vi.fn((id: string) => Promise.resolve(id === SESSION)),
+        start: vi.fn<SessionLauncher['start']>(
+          () => new Promise<LaunchResult>((resolve) => (finish = resolve)),
+        ),
+        instruct: vi.fn<SessionLauncher['instruct']>(() =>
+          Promise.resolve({ ok: true, sessionId: SESSION }),
+        ),
+      };
+      return { launcher, sessions, finish: (result: LaunchResult) => finish!(result) };
+    }
+
+    async function launching(followUps = true, sessions: SessionView[] = []) {
+      const fake = fakeLauncher(sessions);
+      const t = await setup(['Pixel'], 11, undefined, undefined, {
+        launcher: fake.launcher,
+        capabilities: [
+          { ...CLAUDE_CODE_CAPABILITIES, startSession: true, instructions: followUps },
+        ],
+      });
+      const [phone] = t.phones as [FakePhone];
+      await t.open(phone);
+      return { ...t, ...fake, phone };
+    }
+
+    it('lists the repositories and the launcher sessions in the snapshot', async () => {
+      const t = await launching(true, [LIVE]);
+      const [snapshot] = t.phone.of('snapshot');
+      expect(snapshot!.repositories).toEqual([{ ...REPO, machineId: t.agentId }]);
+      expect(snapshot!.sessions).toEqual([
+        expect.objectContaining({ ...LIVE, machineId: t.agentId, agent: 'claude-code' }),
+      ]);
+      // A session with a request shown is waiting for approval.
+      t.store.register(permission('npm test', { sessionId: SESSION }));
+      t.link.hub.sessionsChanged();
+      await waitFor(() => t.phone.of('snapshot').length === 2);
+      expect(t.phone.of('snapshot')[1]!.sessions[0]).toMatchObject({
+        id: SESSION,
+        state: 'waiting',
+        statusText: 'Waiting for approval',
+        name: 'rc-app-00000000',
+      });
+    });
+
+    it('AC: starts a session after the D7 checks and replies with its id (J10)', async () => {
+      const t = await launching();
+      const start = { machineId: t.agentId, repositoryId: REPO.id, prompt: 'fix the build' };
+      await t.phone.start(start, REPO.path);
+      await waitFor(() => t.launcher.start.mock.calls.length === 1);
+      expect(t.launcher.start).toHaveBeenCalledWith(REPO.id, 'fix the build');
+      // The phone's queue is free while `claude` runs: a request still reaches it.
+      const registration = t.store.register(permission());
+      await t.requestOn(t.phone, registration.request.id);
+      expect(t.phone.of('decision_result')).toEqual([]);
+      t.finish({ ok: true, sessionId: SESSION });
+      expect(await t.resultOn(t.phone)).toMatchObject({ result: 'accepted', sessionId: SESSION });
+      expect(t.logs.map((entry) => entry.event)).toContain('command_accepted');
+      expect(JSON.stringify(t.logs)).not.toContain('fix the build');
+    });
+
+    it('replies accepted without an id, and passes a launch refusal on', async () => {
+      const t = await launching();
+      const start = { machineId: t.agentId, repositoryId: REPO.id, prompt: 'go' };
+      await t.phone.start(start, REPO.path);
+      await waitFor(() => t.launcher.start.mock.calls.length === 1);
+      t.finish({ ok: true });
+      const accepted = await t.resultOn(t.phone);
+      expect(accepted).toMatchObject({ result: 'accepted' });
+      expect(accepted).not.toHaveProperty('sessionId');
+      await t.phone.start(start, REPO.path);
+      await waitFor(() => t.launcher.start.mock.calls.length === 2);
+      t.finish({ ok: false, reason: 'start_failed' });
+      expect(await t.resultOn(t.phone, 2)).toMatchObject({
+        result: 'rejected',
+        reason: 'start_failed',
+      });
+    });
+
+    it('AC: refuses an unknown repository without a launch (J11)', async () => {
+      const t = await launching();
+      const start = { machineId: t.agentId, repositoryId: '0'.repeat(32), prompt: 'go' };
+      await t.phone.start(start, '/elsewhere');
+      expect(await t.resultOn(t.phone)).toMatchObject({
+        result: 'rejected',
+        reason: 'not_allowed',
+      });
+      expect(t.launcher.start).not.toHaveBeenCalled();
+      expect(t.logs).toContainEqual({
+        event: 'command_rejected',
+        fields: expect.objectContaining({ reason: 'not_allowed' }) as unknown,
+      });
+    });
+
+    it('rejects a start for another machine, a prompt the hash does not cover, and a replay', async () => {
+      const t = await launching();
+      const start = { machineId: t.agentId, repositoryId: REPO.id, prompt: 'go' };
+      await t.phone.start({ ...start, machineId: t.phone.device.id }, REPO.path);
+      expect(await t.resultOn(t.phone)).toMatchObject({ reason: 'wrong_peer' });
+      await t.phone.start(start, '/other/path');
+      expect(await t.resultOn(t.phone, 2)).toMatchObject({ reason: 'hash_mismatch' });
+      await t.phone.start(start, REPO.path, { decision: { payload: 'x'.repeat(32) } });
+      expect(await t.resultOn(t.phone, 3)).toMatchObject({ reason: 'wrong_kind' });
+      const requestId = '00000000-0000-4000-8000-0000000000aa';
+      await t.phone.start(start, REPO.path, { decision: { request_id: requestId } });
+      await waitFor(() => t.launcher.start.mock.calls.length === 1);
+      t.finish({ ok: true });
+      await t.resultOn(t.phone, 4);
+      await t.phone.start(start, REPO.path, { decision: { request_id: requestId } });
+      expect(await t.resultOn(t.phone, 5)).toMatchObject({ reason: 'already_resolved' });
+      // A used id is forgotten once its decision expired.
+      const now = Math.floor(t.time.clock.now() / 1000);
+      await t.phone.start(start, REPO.path, {
+        decision: { issued_at: now - 299, expires_at: now + 1 },
+      });
+      await waitFor(() => t.launcher.start.mock.calls.length === 2);
+      t.finish({ ok: true });
+      await t.resultOn(t.phone, 6);
+      t.time.advance(2_000);
+      await t.phone.start(start, REPO.path, {
+        decision: { issued_at: now - 400, expires_at: now - 100 },
+      });
+      expect(await t.resultOn(t.phone, 7)).toMatchObject({ reason: 'expired' });
+      expect(t.launcher.start).toHaveBeenCalledTimes(2);
+    });
+
+    it('rejects a start the relay did not verify', async () => {
+      const t = await launching();
+      const start = { machineId: t.agentId, repositoryId: REPO.id, prompt: 'go' };
+      t.relay.verified.add('c'.repeat(64));
+      await t.phone.start(start, REPO.path, { envelopeHash: 'c'.repeat(64) });
+      expect(await t.resultOn(t.phone)).toMatchObject({ reason: 'unverified' });
+    });
+
+    it('AC: sends a follow-up to a session that takes one (J9)', async () => {
+      const t = await launching();
+      await t.phone.instruct(SESSION, 'now the tests');
+      expect(await t.resultOn(t.phone)).toMatchObject({ result: 'accepted', sessionId: SESSION });
+      expect(t.launcher.instruct).toHaveBeenCalledWith(SESSION, 'now the tests');
+      await t.phone.instruct('11111111-1111-4111-8111-111111111111', 'x');
+      expect(await t.resultOn(t.phone, 2)).toMatchObject({
+        result: 'rejected',
+        reason: 'follow_up_unsupported',
+      });
+      expect(t.launcher.instruct).toHaveBeenCalledTimes(1);
+    });
+
+    it('answers unsupported when the CLI is too old for follow-ups or there is no launcher', async () => {
+      const t = await launching(false);
+      await t.phone.instruct(SESSION, 'x');
+      expect(await t.resultOn(t.phone)).toMatchObject({ reason: 'unsupported' });
+
+      const bare = await setup();
+      const [phone] = bare.phones as [FakePhone];
+      await bare.open(phone);
+      expect(phone.of('snapshot')[0]).not.toHaveProperty('repositories');
+      await phone.start({ machineId: bare.agentId, repositoryId: REPO.id, prompt: 'go' }, '/r');
+      await phone.instruct(SESSION, 'x');
+      expect(await bare.resultOn(phone)).toMatchObject({ reason: 'unsupported' });
+      expect(await bare.resultOn(phone, 2)).toMatchObject({ reason: 'unsupported' });
+      // Nothing to tell without a phone session.
+      bare.link.hub.sessionsChanged();
+    });
+
+    it('re-sends the snapshot when sessions change, only to live phones', async () => {
+      const t = await launching(true, []);
+      t.sessions.push(LIVE);
+      t.link.hub.sessionsChanged();
+      await waitFor(() => t.phone.of('snapshot').length === 2);
+      expect(t.phone.of('snapshot')[1]!.sessions.map((session) => session.id)).toEqual([SESSION]);
     });
   });
 });

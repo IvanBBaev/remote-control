@@ -319,6 +319,62 @@ label.confirm input {
   overflow-wrap: anywhere;
 }
 
+.new-session,
+.compose {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.repositories {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.repository-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.repository-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+  padding: 4px var(--space);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.repository-list label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.repository-list .project-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* The full path only on demand (01 §5.3): a long path wraps inside the row. */
+.repository-list code.details {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
+}
+
+button.link {
+  border: 0;
+  background: none;
+  color: var(--color-accent);
+  padding: 0 8px;
+}
+
 .approval-card {
   display: flex;
   flex-direction: column;

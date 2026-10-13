@@ -4,7 +4,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { canonicalJson } from './canonical-json.js';
-import { requestHash } from './request-hash.js';
+import { requestHash, requestHashSubject } from './request-hash.js';
 import type { RequestHashInput } from './request-hash.js';
 
 interface RequestVector {
@@ -24,11 +24,7 @@ describe('requestHash (frozen vectors)', () => {
   });
 
   it.each(vectors)('$name: hashes the documented canonical object', ({ input, canonical }) => {
-    const subject =
-      'toolName' in input
-        ? { tool_name: input.toolName, tool_input: input.toolInput }
-        : { prompt: input.prompt, cwd: input.cwd };
-    expect(canonicalJson(subject)).toBe(canonical);
+    expect(canonicalJson(requestHashSubject(input))).toBe(canonical);
   });
 
   it('is a 64-digit lower-case hex string that differs for different tool input', async () => {

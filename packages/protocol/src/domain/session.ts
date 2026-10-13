@@ -24,5 +24,9 @@ export const Session = z.strictObject({
   /** The most recent steps, at most 20, each at most 200 characters. */
   steps: z.array(z.string().max(200)).max(20),
   changedFiles: z.array(ChangedFile).max(50),
+  /** The agent CLI's session name, when it has one (M1-04). */
+  name: z.string().min(1).max(64).nullable().optional(),
+  /** Whether the session takes a follow-up instruction from the phone (M1-04). */
+  followUp: z.boolean().optional(),
 });
 export type Session = z.infer<typeof Session>;

@@ -9,15 +9,10 @@ import { PendingWatch } from './push/pending-watch.js';
 import { RequestScreen } from './screens/approval.js';
 import { AppShell, BareShell } from './screens/layout.js';
 import { LoginScreen, PasskeyScreen } from './screens/auth.js';
-import {
-  MachinesScreen,
-  NewSessionScreen,
-  NotFoundScreen,
-  SessionScreen,
-  SessionsScreen,
-} from './screens/main.js';
+import { MachinesScreen, NotFoundScreen, SessionScreen, SessionsScreen } from './screens/main.js';
 import { InstallScreen, NotificationsScreen, UpdateBrowserScreen } from './screens/onboarding.js';
 import { PairScreen } from './screens/pairing.js';
+import { NewSessionScreen } from './screens/session-commands.js';
 
 /** Where the app lands once onboarding is complete. */
 export const HOME_ROUTE = '/sessions';

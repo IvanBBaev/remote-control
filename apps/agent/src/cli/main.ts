@@ -12,6 +12,7 @@ import { DEFAULT_HOLD_SECONDS } from '../core/agent-config.js';
 import { projectName } from '../core/approval-view.js';
 import { defaultConfigText } from '../core/default-config-text.js';
 import { createHookDispatcher } from '../core/hook-dispatcher.js';
+import { createLauncher, FOLLOW_UP_MIN_VERSION, versionAtLeast } from '../core/launcher.js';
 import {
   HooksSettingsError,
   createHooksInstaller,
@@ -27,6 +28,7 @@ import { noticeKind, noticeSummaryText } from '../core/push-summary.js';
 import { createRelayLink, type RelayLink } from '../core/relay-link.js';
 import { relayEndpoints } from '../core/relay-url.js';
 import { resolveRepository } from '../core/resolve-repository.js';
+import { createSessionRegistry } from '../core/session-registry.js';
 import {
   createActivityTracker,
   decisionStat,
@@ -256,13 +258,24 @@ async function runCommand(
   });
   const pauseWatch = createPauseWatch({ store, timer: c.timer, paused });
   pending.changed = () => pauseWatch.pendingChanged();
+  // Sessions on this machine, from hooks and the CLI roster (M1-04, 04 §5.3).
+  const sessions = createSessionRegistry({
+    clock: c.clock,
+    timer: c.timer,
+    cli: c.claude,
+    onChange: () => link?.hub.sessionsChanged(),
+  });
   const handler = createHookDispatcher({
     store,
     paused,
     onEvent: (input) => {
       log.logger.debug({ event: 'hook', hook: input.hook_event_name });
+      const cwd = input['cwd'];
+      if (typeof cwd === 'string') {
+        sessions.observe(input.session_id, cwd, input.hook_event_name === 'SessionEnd');
+      }
       const delta = activity.observe(input, c.clock.now());
-      if (delta !== undefined) count(input['cwd'], delta);
+      if (delta !== undefined) count(cwd, delta);
       const notice = noticeKind(input, config.notifications);
       if (notice !== undefined) link?.hub.notice(noticeSummaryText(input, notice));
     },
@@ -276,6 +289,20 @@ async function runCommand(
   if (config.relay !== undefined && credentials !== undefined) {
     const endpoints = relayEndpoints(config.relay.url);
     const lock = createPairingLock(c.fs, c.pathPort.join(c.paths.data, PAIRING_LOCK_FILE), c.clock);
+    // Follow-ups need `--resume <id> --bg` to keep the session id (04 §2.8).
+    const claudeVersion = await c.claude.version();
+    const followUps = versionAtLeast(claudeVersion, FOLLOW_UP_MIN_VERSION);
+    log.logger.info({ event: 'claude_cli', version: claudeVersion ?? null, followUps });
+    const launcher = createLauncher({
+      roots: config.repositories,
+      paths: c.pathPort,
+      cli: c.claude,
+      registry: sessions,
+      random: c.random,
+      followUps,
+      // Ids and codes only, never a prompt or a path (I3).
+      log: (event, fields) => log.logger.info({ ...fields, event }),
+    });
     link = createRelayLink({
       clock: c.clock,
       random: c.random,
@@ -294,7 +321,8 @@ async function runCommand(
         platform: snapshotPlatform(c.platform),
         agentVersion: c.version,
       },
-      capabilities: [CLAUDE_CODE_CAPABILITIES],
+      capabilities: [{ ...CLAUDE_CODE_CAPABILITIES, startSession: true, instructions: followUps }],
+      launcher,
       alwaysDestinations: config.always.destinations,
       history: async () => statsHistory(await stats.read()),
       url: endpoints.ws,
@@ -347,6 +375,7 @@ async function runCommand(
     return EXIT_ERROR;
   } finally {
     link?.stop();
+    sessions.close();
     pauseWatch.stop();
     // Held hooks get `{}` (handoff) instead of a dropped connection.
     store.releaseAll('shutdown');

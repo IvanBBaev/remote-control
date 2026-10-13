@@ -22,6 +22,7 @@ describe('realtime store', () => {
       confirmedAt: null,
       machines: {},
       requests: {},
+      commands: {},
     });
   });
 
