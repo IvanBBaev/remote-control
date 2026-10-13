@@ -1044,7 +1044,7 @@ repository; nothing stored on the relay.
 AC: counters survive agent restart (local file); privacy gate unchanged.
 
 #### M2-07 — "Always" with settings destinations
-Size S · Deps M1-02 · Status todo · Sources D24, 04 Q5
+Size S · Deps M1-02 · Status done 8671465 (destination signed in the always payload; null = session) · Sources D24, 04 Q5
 Scope: agent setting `always.destinations: ["session"]` extendable to `localSettings` /
 `projectSettings`; phone offers the choice only when enabled.
 AC: test shows a destination outside the setting is never emitted.
