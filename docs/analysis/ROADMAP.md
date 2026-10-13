@@ -10,6 +10,79 @@ the topic (table in `01-roles.md`) > any other report. Where this file resolves 
 conflict between reports, the resolution is marked **RESOLVED** and the losing option is
 named, so nobody re-derives it.
 
+<!-- release-progress:begin -->
+## Release progress (Opus 5.5 hours)
+
+> Maintained by the `relase-opus-5-5-persentage` skill. Unit: wall-clock hours
+> of one autonomous Opus 5.5 session at this project's gate standard.
+> Numbers are computed by the skill's script from the table below.
+
+| | |
+|---|---|
+| Release target | `M1 — Second user` exit (§3): `remotectl@0.1.0` published + M1 exit record (current version `0.0.0`, no tags) |
+| Progress | **65.3 %** — 63 h of 96.5 h earned |
+| Remaining | **33.5 h** Opus 5.5 (2 h workable now, 31.5 h blocked) |
+| Blocked by | domain + Railway deploy (Q2); device spike on iPhone/Android; first push (CI on GitHub, branch protection); npm placeholder + trusted publisher; second user named (Q13); two weeks of owner use; M1-04 chain waits on M0-23 (real CLI decided from the phone) |
+| Calibration | Same-session sequential WP gaps (git log 2026-10-12/13): M0-14 ~1.0 h, M0-11 ~1.1 h, M0-20 ~0.7 h, M0-19 ~3.2 h; 37 WPs closed in ~20.5 h wall across 3–4 parallel sessions. Scale: S = 1 h, M = 2 h, L = 4 h; owner-gated tails 0.5–3 h of agent work each |
+| Updated | 2026-10-13 at `727195e` |
+
+| ID | Item | Source | Status | Est h |
+|---|---|---|---|---|
+| M0-01 | Monorepo scaffold and CI skeleton | §4 M0-01 | `done` | 2 |
+| M0-02a | Relay skeleton, Dockerfile, Railway config (code part) | §4 M0-02 | `done` | 2 |
+| M0-02b | Domain, Railway project, first deploy, /health over TLS | §4 M0-02, §6 Q2 | `blocked-owner` | 1.5 |
+| M0-03a | Device spike page (code part) | §4 M0-03 | `done` | 1 |
+| M0-03b | Device runs on iPhone + Android, device-spike.md GO/NO-GO | §4 M0-03 | `blocked-owner` | 1 |
+| M0-04 | packages/log | §4 M0-04 | `done` | 1 |
+| M0-05 | packages/protocol v1 | §4 M0-05 | `done` | 2 |
+| M0-06 | packages/crypto (Noise KK/XXpsk0) | §4 M0-06 | `done` | 4 |
+| M0-07 | packages/fake-claude-code | §4 M0-07 | `done` | 2 |
+| M0-08 | Relay Postgres schema and migrator | §4 M0-08 | `done` | 2 |
+| M0-09 | Relay accounts, passkeys, invite codes | §4 M0-09 | `done` | 2 |
+| M0-10 | Relay WebSocket hub, presence, limits, shutdown | §4 M0-10 | `done` | 4 |
+| M0-11 | Relay pairing slots, agent tokens, decision verification | §4 M0-11 | `done` | 2 |
+| M0-12 | Relay Web Push adapter | §4 M0-12 | `done` | 2 |
+| M0-13 | Agent package, CLI, config, keys, argv gate | §4 M0-13 | `done` | 2 |
+| M0-14 | hook.js, hook receiver, pending store, hooks installer | §4 M0-14 | `done` | 2 |
+| M0-15 | Claude Code adapter v0 | §4 M0-15 | `done` | 1 |
+| M0-16 | Agent relay client, pairing, E2E sessions, decision intake | §4 M0-16 | `done` | 4 |
+| M0-17 | packages/test-harness v0 | §4 M0-17 | `done` | 2 |
+| M0-18 | PWA scaffold, probe, onboarding gate, theming | §4 M0-18 | `done` | 2 |
+| M0-19 | PWA passkeys and per-action assertion | §4 M0-19 | `done` | 2 |
+| M0-20 | PWA pairing, key store, realtime client | §4 M0-20 | `done` | 2 |
+| M0-21 | PWA push subscription, service worker, approval card | §4 M0-21 | `done` | 2 |
+| M0-22 | Journeys J1–J3, J5–J7 and the privacy gate | §4 M0-22 | `done` | 4 |
+| M0-23 | Real Claude Code verification (held ≥ 11 min, decided from the phone) — needs M0-02b/M0-03b | §4 M0-23 | `blocked-owner` | 3 |
+| M0-24 | Agent macOS launchd service | §4 M0-24 | `done` | 1 |
+| M0-25 | CI completion: OS matrix, coverage, pg-real, browser vectors | §4 M0-25 | `done` | 2 |
+| PUSH | First push: ci/agent-os/pg-real/image green on GitHub runners, fix runner-only failures, branch protection | §4 M0-25, M1-08 notes | `blocked-owner` | 3 |
+| M0-26a | Sentry scrubbing, ops runbook (code part) | §4 M0-26 | `done` | 1 |
+| M0-26b | Railway backups + restore drill, UptimeRobot, usage alert, Sentry DSN | §4 M0-26 | `blocked-owner` | 1 |
+| M0-27a | SECURITY.md, README v0, publish settings (repo part) | §4 M0-27 | `done` | 1 |
+| M0-27b | remotectl@0.0.1 placeholder on npm | §4 M0-27, §6 Q15 | `blocked-owner` | 0.5 |
+| M0-EXIT | M0 exit record (real approval from outside home) | §4 M0 exit record | `blocked-owner` | 1 |
+| M1-01 | AskUserQuestion end-to-end | §4 M1-01 | `done` | 2 |
+| M1-02 | "Always" from the phone (session scope) | §4 M1-02 | `open` | 1 |
+| M1-03 | "Reply in terminal", early handoff, remotectl pause | §4 M1-03 | `open` | 1 |
+| M1-04 | Session registry, launcher, follow-up, J9–J11 — deps M0-23 | §4 M1-04 | `blocked-owner` | 4 |
+| M1-05 | Live feed and thin session view, J8 — deps M1-04 | §4 M1-05 | `blocked-owner` | 4 |
+| M1-06 | Encrypted push summary | §4 M1-06 | `done` | 2 |
+| M1-07 | Machines screen, checklist, onboarding self-test — deps M1-05 | §4 M1-07 | `blocked-owner` | 2 |
+| M1-08 | Linux and Windows services, uninstall, logs, update | §4 M1-08 | `done` | 2 |
+| M1-09a | Tag-driven release pipeline (code part) | §4 M1-09 | `done` | 1 |
+| M1-09b | First tagged publish remotectl@0.1.0 + release checklist executed | §4 M1-09, §3 M1 (2)(6) | `blocked-owner` | 1.5 |
+| M1-10 | Revocation and deletion, J12 — deps M1-07 | §4 M1-10 | `blocked-owner` | 2 |
+| M1-11 | Tool-label dictionary, card polish, local stats | §4 M1-11 | `done` | 1 |
+| M1-12 | Playwright P1–P9 + WebKit smoke — deps M1-05 | §4 M1-12 | `blocked-owner` | 3 |
+| M1-13 | Audit log and admin counters | §4 M1-13 | `done` | 1 |
+| M1-14 | README final, screens doc, second-user run — deps M1-09, Q13 | §4 M1-14, §6 Q13 | `blocked-owner` | 1.5 |
+| M1-15 | Soak (24 h) and load smoke — deps M1-12 | §4 M1-15 | `blocked-owner` | 1.5 |
+| M1-EXIT | M1 exit record: two weeks, ≥ 20 approvals from outside home | §4 M1 exit record, §3 M1 (4) | `blocked-owner` | 1 |
+
+### History
+- 2026-10-13 `727195e` — 65.3 %, 33.5 h left (first run; target M1 exit; M2-04 and M2-08 are done but outside the target and not counted)
+<!-- release-progress:end -->
+
 ## 0. How to execute this roadmap
 
 1. **Read order.** This file first. Then `00-brief.md`. Then, per work package (WP), only
