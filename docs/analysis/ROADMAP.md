@@ -697,7 +697,7 @@ AC: tests with a mocked `navigator.credentials`; Playwright P1 register + login 
 CDP virtual authenticator (wired in M1-12, prepared here).
 
 #### M0-20 — PWA: pairing, key store, realtime client
-Size M · Deps M0-19, M0-11, M0-16 · Status todo · Sources 05 W7–W8, 05 Rec-5, 02 §5.3, D6, D23
+Size M · Deps M0-19, M0-11, M0-16 · Status done 2eb7d0d (on-device pairing and reconnect wait for the M0-02/M0-03 device runs) · Sources 05 W7–W8, 05 Rec-5, 02 §5.3, D6, D23
 Scope: short-code entry screen (12 chars, Crockford, auto-format), XXpsk0 initiator,
 fingerprint confirmation screen, key store in IndexedDB (non-extractable `CryptoKey`
 where WebCrypto allows, raw static seed otherwise, documented), KK initiator per machine
