@@ -1003,7 +1003,7 @@ outside home, hangs = 0; second-user log; release checklist link.
 ### M2 — Beyond Claude Code
 
 #### M2-01 — Codex CLI adapter
-Size M · Deps M1-05 · Status todo · Sources 04 W13, 04 §2.11, 04 §5.9, D12
+Size M · Deps M1-05 · Status done 8246841 (real-CLI log pending, ADR 0008) · Sources 04 W13, 04 §2.11, 04 §5.9, D12
 Scope: `~/.codex/hooks.json` writer (`PermissionRequest`, `PreToolUse`, `PostToolUse`,
 `UserPromptSubmit`, `Stop`, `SessionStart/End`, timeout 1800), `hook.js --adapter codex`,
 decision mapping, `/hooks` trust instruction + `SessionStart` canary in `status`,
