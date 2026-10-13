@@ -13,6 +13,7 @@ import { MachinesScreen, NotFoundScreen, SessionScreen, SessionsScreen } from '.
 import { InstallScreen, NotificationsScreen, UpdateBrowserScreen } from './screens/onboarding.js';
 import { PairScreen } from './screens/pairing.js';
 import { NewSessionScreen } from './screens/session-commands.js';
+import { SessionsSplit } from './screens/split.js';
 
 /** Where the app lands once onboarding is complete. */
 export const HOME_ROUTE = '/sessions';
@@ -104,10 +105,15 @@ export const ROUTES: RouteObject[] = [
     children: [
       { path: '/', element: <Navigate to={HOME_ROUTE} replace /> },
       { path: '/machines', element: <MachinesScreen /> },
-      { path: '/sessions', element: <SessionsScreen /> },
-      { path: '/sessions/:id', element: <SessionScreen /> },
-      { path: '/requests/:id', element: <RequestScreen /> },
-      { path: '/new', element: <NewSessionScreen /> },
+      {
+        element: <SessionsSplit />,
+        children: [
+          { path: '/sessions', element: <SessionsScreen /> },
+          { path: '/sessions/:id', element: <SessionScreen /> },
+          { path: '/requests/:id', element: <RequestScreen /> },
+          { path: '/new', element: <NewSessionScreen /> },
+        ],
+      },
     ],
   },
 ];

@@ -1,7 +1,7 @@
 import { HOOK_SEEN, NO_HOOK_SEEN, SETUP_CHECKLIST } from '@remote-control/protocol';
 import type { ChangedFile, PairedDevice, Repository, Session } from '@remote-control/protocol';
 import { useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, NavLink, useParams } from 'react-router';
 import { useStore } from 'zustand';
 
 import { useAppState } from '../app-state.js';
@@ -11,6 +11,7 @@ import { historySummary, machineUsage, usageSummary } from '../realtime/usage-st
 import { DiffView } from './diff-view.js';
 import { Notice, Screen } from './layout.js';
 import { ComposeBox } from './session-commands.js';
+import { useWideLayout } from './split.js';
 
 /**
  * Paired computers and their online state, from relay timestamps (M0-20), with this
@@ -152,37 +153,49 @@ const STATE_LABEL: Record<Session['state'], string> = {
 
 /**
  * Running and recent agent sessions, per computer (M1-05): the state badge and what the
- * session waits for.
+ * session waits for. The open session is marked `aria-current` (M2-05).
  */
-export function SessionsScreen() {
+export function SessionList() {
   const { phone } = useAppState();
   const machines = Object.values(useStore(phone.realtime, (state) => state.machines))
     .filter((machine) => machine.sessions.length > 0)
     .sort((a, b) => a.name.localeCompare(b.name));
+  if (machines.length === 0) {
+    return <Notice>No sessions yet. Start one here or run an agent on a paired computer.</Notice>;
+  }
+  return machines.map((machine) => (
+    <section key={machine.deviceId} className="session-group">
+      <h2>{machine.name}</h2>
+      <ul className="session-list">
+        {machine.sessions.map((session) => (
+          <li key={session.id}>
+            <NavLink to={`/sessions/${encodeURIComponent(session.id)}`}>
+              <span className="session-name">{sessionName(session)}</span>
+              <span className={`badge state-${session.state}`}>{STATE_LABEL[session.state]}</span>
+              <span className="meta">{session.statusText}</span>
+            </NavLink>
+          </li>
+        ))}
+      </ul>
+    </section>
+  ));
+}
+
+/**
+ * The Sessions tab. On a wide screen the list is already in the left pane (M2-05), so the
+ * right one only asks to pick a session.
+ */
+export function SessionsScreen() {
+  if (useWideLayout()) {
+    return (
+      <Screen title="Sessions">
+        <Notice>Pick a session on the left, or start a new one.</Notice>
+      </Screen>
+    );
+  }
   return (
     <Screen title="Sessions">
-      {machines.length === 0 ? (
-        <Notice>No sessions yet. Start one here or run an agent on a paired computer.</Notice>
-      ) : (
-        machines.map((machine) => (
-          <section key={machine.deviceId} className="session-group">
-            <h2>{machine.name}</h2>
-            <ul className="session-list">
-              {machine.sessions.map((session) => (
-                <li key={session.id}>
-                  <Link to={`/sessions/${encodeURIComponent(session.id)}`}>
-                    <span className="session-name">{sessionName(session)}</span>
-                    <span className={`badge state-${session.state}`}>
-                      {STATE_LABEL[session.state]}
-                    </span>
-                    <span className="meta">{session.statusText}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))
-      )}
+      <SessionList />
       <div className="actions">
         <Link className="button primary" to="/new">
           New session

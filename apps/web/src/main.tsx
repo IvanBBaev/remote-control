@@ -2,6 +2,7 @@ import './styles.css';
 
 import { webCryptoRandom } from '@remote-control/crypto';
 
+import { browserMediaQuery } from './adapters/browser-media-query.js';
 import { browserSocketFactory } from './adapters/browser-socket.js';
 import { systemTimer } from './adapters/system-clock.js';
 import { storageSessionHint } from './auth/auth-store.js';
@@ -14,6 +15,7 @@ import { cameraQrScanner } from './pairing/qr-scanner.js';
 import { createPhoneService, phoneNameFrom, relaySocketUrl } from './realtime/phone.js';
 import { bindLifecycle } from './realtime/realtime-client.js';
 import { browserUsageStorage } from './realtime/usage-stats.js';
+import { WIDE_LAYOUT_QUERY } from './screens/split.js';
 
 /** Sent in `hello`; the relay refuses versions below its floor. */
 const APP_VERSION = '0.0.0';
@@ -49,4 +51,8 @@ void bootstrap({
   phone,
   hint: storageSessionHint(() => window.localStorage),
   installChoice: storageInstallChoice(() => window.localStorage),
+  // Browsers without `matchMedia` stay on the one-pane phone layout.
+  ...(typeof window.matchMedia === 'function' && {
+    wideLayout: browserMediaQuery(window, WIDE_LAYOUT_QUERY),
+  }),
 });

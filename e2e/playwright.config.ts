@@ -41,12 +41,22 @@ export default defineConfig({
         browserName: 'chromium',
         channel: 'chromium',
       },
-      testIgnore: /webkit\.spec\.ts$/,
+      testIgnore: /(webkit|desktop)\.spec\.ts$/,
     },
     {
       name: 'mobile-webkit',
       use: { ...devices['iPhone 13'] },
       testMatch: /webkit\.spec\.ts$/,
+    },
+    {
+      // M2-05: the two-pane layout from 900 px, on a laptop-sized window.
+      name: 'desktop-chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 800 },
+        channel: 'chromium',
+      },
+      testMatch: /desktop\.spec\.ts$/,
     },
   ],
 });

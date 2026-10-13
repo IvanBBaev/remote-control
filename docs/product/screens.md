@@ -38,7 +38,8 @@ when every step is done; a step out of order redirects to the current one.
 
 ### End-to-end hooks (M1-12)
 
-The Playwright specs in `e2e/specs/` (P1–P9 in Chromium, W1–W2 in WebKit) drive these
+The Playwright specs in `e2e/specs/` (P1–P9 in Chromium, W1–W2 in WebKit, D1–D2 in a
+1280 × 800 desktop Chromium, M2-05) drive these
 screens through their accessible names, which are part of the screen contract:
 
 - Register: open `/onboarding/passkey?invite=<code>`, press **Create passkey**, read the
@@ -272,6 +273,22 @@ screens through their accessible names, which are part of the screen contract:
   most 2,000 lines render ("N more lines not shown.").
 - "The diff is not available." when the agent kept nothing for the file, the computer is
   not connected, or no answer came within 15 s.
+
+### Desktop two-pane layout (M2-05, 05 Rec-10, W16)
+
+- From 900 px wide (`(min-width: 900px)`, followed live on resize) `/sessions`,
+  `/sessions/:id`, `/requests/:id` and `/new` share one layout: the sessions list with
+  **New session** on the left (`nav` labelled **Sessions**, the open session marked
+  `aria-current="page"`), the route's screen on the right. The right pane hides its back
+  link; `/sessions` alone shows "Pick a session on the left, or start a new one."
+- Below 900 px, or where the browser has no `matchMedia`, every route stays a screen of
+  its own, as on a phone.
+- On an open approval card <kbd>A</kbd> allows and <kbd>D</kbd> denies (`aria-keyshortcuts`
+  on the buttons). Keys take the same path as a tap: the passkey still asks (UV), the
+  700 ms tap guard applies, and Allow stays off for a truncated request. Keys held down,
+  with Ctrl/Alt/Cmd, or typed into a field are ignored; the listener goes once the card
+  is answered. On a wide screen the card shows "Keyboard: A allows, D denies. Your
+  passkey still confirms."
 
 ## Planned (no route yet)
 

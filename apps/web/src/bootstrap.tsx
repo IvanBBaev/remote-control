@@ -12,6 +12,7 @@ import { probeCapabilities } from './capabilities.js';
 import type { BrowserEnvironment, WebCryptoCheck } from './capabilities.js';
 import type { InstallChoice, NotificationPermissionState } from './onboarding.js';
 import type { QrScanner } from './pairing/qr-scanner.js';
+import type { MediaQuery } from './ports/media-query.js';
 import type { NavigationSource } from './push/navigation.js';
 import { registerPush } from './push/push-subscription.js';
 import type { PushManagerLike } from './push/push-subscription.js';
@@ -47,14 +48,16 @@ export interface PlatformApis {
   readonly badge?: BadgeApi;
   readonly qrScanner?: QrScanner;
   readonly installChoice?: InstallChoice;
+  readonly wideLayout?: MediaQuery;
 }
 
 export function createPlatformActions(
   api: NotificationApi | undefined,
-  { relay, serviceWorker, badge, qrScanner, installChoice }: PlatformApis,
+  { relay, serviceWorker, badge, qrScanner, installChoice, wideLayout }: PlatformApis,
 ): PlatformActions {
   return {
     ...(qrScanner && { qrScanner }),
+    ...(wideLayout && { wideLayout }),
     ...(installChoice && { rememberInstallSkip: () => installChoice.skip() }),
     requestNotificationPermission: async () => {
       if (api === undefined) return 'unsupported';
@@ -84,6 +87,7 @@ export interface BootstrapOptions {
   readonly hint?: SessionHint;
   readonly checkWebCrypto?: WebCryptoCheck;
   readonly installChoice?: InstallChoice;
+  readonly wideLayout?: MediaQuery;
 }
 
 /** Probes the platform and the session, then mounts the app. */
@@ -115,6 +119,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<Root> {
             ...(options.badge && { badge: options.badge }),
             ...(options.qrScanner && { qrScanner: options.qrScanner }),
             ...(options.installChoice && { installChoice: options.installChoice }),
+            ...(options.wideLayout && { wideLayout: options.wideLayout }),
           })}
           auth={auth}
           relay={relay}

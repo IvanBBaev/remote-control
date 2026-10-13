@@ -6,6 +6,7 @@ import { isSignedIn } from './auth/auth-store.js';
 import type { AuthState, AuthStore } from './auth/auth-store.js';
 import type { RelayApi } from './auth/relay-api.js';
 import type { NotificationPermissionState, OnboardingState } from './onboarding.js';
+import type { MediaQuery } from './ports/media-query.js';
 import type { QrScanner } from './pairing/qr-scanner.js';
 import type { NavigationSource } from './push/navigation.js';
 import type { PhoneService } from './realtime/phone.js';
@@ -25,6 +26,8 @@ export interface PlatformActions {
   readonly qrScanner?: QrScanner;
   /** Remembers "Continue in the browser" across reloads. */
   readonly rememberInstallSkip?: () => void;
+  /** Wide screens get the two-pane layout (M2-05); missing means narrow. */
+  readonly wideLayout?: MediaQuery;
 }
 
 export interface AppStateValue {
