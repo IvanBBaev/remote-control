@@ -1,9 +1,14 @@
 {
   "name": "remotectl",
   "version": "0.0.0",
-  "private": true,
   "description": "Home agent: bridges local AI coding agents to the phone over an end-to-end encrypted channel.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IvanBBaev/remote-control.git",
+    "directory": "apps/agent"
+  },
+  "homepage": "https://github.com/IvanBBaev/remote-control#readme",
   "type": "module",
   "bin": {
     "remotectl": "dist/cli.mjs"
@@ -16,7 +21,10 @@
   },
   "publishConfig": {
     "access": "public",
-    "provenance": true
+    "provenance": true,
+    "exports": {
+      "./package.json": "./package.json"
+    }
   },
   "exports": {
     ".": "./src/index.ts"

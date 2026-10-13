@@ -1,0 +1,72 @@
+# Publishes `remotectl` to npm when a `remotectl-v<x.y.z>` tag is pushed (M1-09, ADR 0003).
+# Authentication is npm trusted publishing (OIDC): the package settings on npmjs.com name
+# this repository and this workflow file, and no npm token exists anywhere.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'remotectl-v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # GitHub release for the tag
+      id-token: write # npm trusted publishing + provenance
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Enable corepack (pnpm from packageManager field)
+        run: corepack enable
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm >= 11.5.1; Node 22 ships npm 10.
+      - name: Upgrade npm
+        run: npm install -g npm@11
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm check
+
+      - name: Pack remotectl
+        id: pack
+        run: |
+          mkdir -p "$RUNNER_TEMP/pkg"
+          pnpm --filter remotectl pack --pack-destination "$RUNNER_TEMP/pkg"
+          echo "tarball=$(ls "$RUNNER_TEMP"/pkg/remotectl-*.tgz)" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag, manifest and tarball
+        run: pnpm exec tsx tools/release.ts verify "$GITHUB_REF_NAME" "${{ steps.pack.outputs.tarball }}"
+
+      - name: Publish to npm
+        run: npm publish "${{ steps.pack.outputs.tarball }}" --provenance --access public
+
+      - name: Verify the published package signatures
+        run: |
+          version="${GITHUB_REF_NAME#remotectl-v}"
+          mkdir -p "$RUNNER_TEMP/verify" && cd "$RUNNER_TEMP/verify"
+          npm init -y > /dev/null
+          for attempt in 1 2 3 4 5 6; do
+            npm install --ignore-scripts "remotectl@$version" && break
+            sleep 20
+          done
+          npm ls remotectl
+          npm audit signatures
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "remotectl ${GITHUB_REF_NAME#remotectl-v}"

@@ -51,19 +51,39 @@ Sources: the linked Claude Code docs pages and the
 [the product analysis](docs/analysis/reports/01-product.md) (§2.1–2.3, §4.2). If Remote
 Control gains "Always" from the phone and a non-Claude agent, this project stops.
 
+## Install
+
+> Not published yet: the first public version is **`remotectl@0.1.0`**, cut by the
+> release pipeline once M0 is verified end to end. Until then build from source
+> (Development below).
+
+On the computer that runs your coding agent (Node 22 or later):
+
+```sh
+npm install -g remotectl@0.1.0
+remotectl hooks install   # registers the Claude Code hooks
+remotectl install         # starts the agent as a user service (launchd, systemd, Task Scheduler)
+remotectl pair            # prints the pairing code for the phone
+```
+
+Install it globally, not through `npx`: the service must point at a stable path
+([ADR 0002](docs/adr/0002-install-from-npx-refuses.md)). Every release is published from
+GitHub Actions with npm provenance; check it with `npm audit signatures`. How releases are
+cut: [docs/release-checklist.md](docs/release-checklist.md).
+
 ## Repository layout
 
-| Path                        | What                                                                    |
-| --------------------------- | ----------------------------------------------------------------------- |
-| `apps/agent`                | `remotectl` — home agent and CLI (npm name reserved, not published yet) |
-| `apps/relay`                | Fastify relay — see [apps/relay/README.md](apps/relay/README.md)        |
-| `apps/web`                  | Phone PWA (_planned_)                                                   |
-| `packages/protocol`         | `rc/v1` envelope and message schemas (zod)                              |
-| `packages/crypto`           | Noise `KK` / `XXpsk0` over WebCrypto                                    |
-| `packages/log`              | pino logger with payload redaction                                      |
-| `packages/fake-claude-code` | Test double for Claude Code hooks                                       |
-| `packages/test-harness`     | End-to-end journey harness (_planned_)                                  |
-| `docs/analysis`             | Analysis corpus and [roadmap](docs/analysis/ROADMAP.md)                 |
+| Path                        | What                                                                            |
+| --------------------------- | ------------------------------------------------------------------------------- |
+| `apps/agent`                | `remotectl` — home agent and CLI, [published to npm](docs/release-checklist.md) |
+| `apps/relay`                | Fastify relay — see [apps/relay/README.md](apps/relay/README.md)                |
+| `apps/web`                  | Phone PWA (_planned_)                                                           |
+| `packages/protocol`         | `rc/v1` envelope and message schemas (zod)                                      |
+| `packages/crypto`           | Noise `KK` / `XXpsk0` over WebCrypto                                            |
+| `packages/log`              | pino logger with payload redaction                                              |
+| `packages/fake-claude-code` | Test double for Claude Code hooks                                               |
+| `packages/test-harness`     | End-to-end journey harness (_planned_)                                          |
+| `docs/analysis`             | Analysis corpus and [roadmap](docs/analysis/ROADMAP.md)                         |
 
 ## Development
 

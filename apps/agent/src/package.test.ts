@@ -79,12 +79,13 @@ describe('npm package', () => {
     expect(pkg['bin']).toEqual({ remotectl: 'dist/cli.mjs' });
   });
 
-  it('packs only the bundles, the source map and package.json', async () => {
+  it('packs only the bundles, the source map, the README and package.json', async () => {
     const { stdout } = await run('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
       cwd: PACKAGE_DIR,
     });
     const [packed] = JSON.parse(stdout) as [{ files: PackFile[]; bundled: string[] }];
     expect(packed.files.map((file) => file.path).sort()).toEqual([
+      'README.md',
       'dist/cli.mjs',
       'dist/cli.mjs.map',
       'dist/hook.cjs',
