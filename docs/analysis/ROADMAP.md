@@ -667,7 +667,7 @@ second receives `resolved`; `remotectl pair` against the test relay produces a u
 `peers.json`.
 
 #### M0-17 — `packages/test-harness` v0
-Size M · Deps M0-10, M0-12, M0-16 · Status todo · Sources 07 W6, 07 W19, 03 §5.15
+Size M · Deps M0-10, M0-12, M0-16 · Status done 9ccb0e8 (AC budget measured after the relay database boots; agent tsbuildinfo moved into dist/) · Sources 07 W6, 07 W19, 03 §5.15
 Scope: in-process relay (`buildApp` on PGlite, port 0, fake push service, log capture),
 in-process agent (temp HOME, fake-claude on PATH, loopback port 0), headless phone (Node
 WebCrypto + `ws`, software WebAuthn authenticator from `@simplewebauthn` test utils,
