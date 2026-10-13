@@ -63,7 +63,7 @@ named, so nobody re-derives it.
 | M0-EXIT | M0 exit record (real approval from outside home) | §4 M0 exit record | `blocked-owner` | 1 |
 | M1-01 | AskUserQuestion end-to-end | §4 M1-01 | `done` | 2 |
 | M1-02 | "Always" from the phone (session scope) | §4 M1-02 | `done` | 1 |
-| M1-03 | "Reply in terminal", early handoff, remotectl pause | §4 M1-03 | `open` | 1 |
+| M1-03 | "Reply in terminal", early handoff, remotectl pause | §4 M1-03 | `done` | 1 |
 | M1-04 | Session registry, launcher, follow-up, J9–J11 — deps M0-23 | §4 M1-04 | `blocked-owner` | 4 |
 | M1-05 | Live feed and thin session view, J8 — deps M1-04 | §4 M1-05 | `blocked-owner` | 4 |
 | M1-06 | Encrypted push summary | §4 M1-06 | `done` | 2 |
