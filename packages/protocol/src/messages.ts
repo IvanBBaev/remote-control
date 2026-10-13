@@ -2,8 +2,9 @@ import { z } from 'zod';
 
 import { CanonicalDecision } from './canonical-decision.js';
 import { ApprovalRequest } from './domain/approval-request.js';
-import { Machine } from './domain/machine.js';
 import { Instruction } from './domain/instruction.js';
+import { Machine } from './domain/machine.js';
+import { PairedDevice } from './domain/paired-device.js';
 import { Question } from './domain/question.js';
 import { Repository } from './domain/repository.js';
 import { Session } from './domain/session.js';
@@ -37,7 +38,8 @@ export type QuestionMessage = z.infer<typeof QuestionMessage>;
  * Sent after every handshake (D4) and whenever the agent's session list changes: the
  * machine, its sessions, and the ids of every request still pending, so the phone can
  * drop any request it shows that is gone. `repositories` is the allow-list a new
- * session can start in (M1-04); older agents leave it out.
+ * session can start in (M1-04); older agents leave it out. `devices` (the paired phones)
+ * and `hooksInstalled` feed the `/machines` screen and its checklist (M1-07).
  */
 export const SnapshotMessage = z.strictObject({
   t: z.literal('snapshot'),
@@ -45,6 +47,8 @@ export const SnapshotMessage = z.strictObject({
   sessions: z.array(Session).max(100),
   pending: z.array(RequestId).max(100),
   repositories: z.array(Repository).max(100).optional(),
+  devices: z.array(PairedDevice).max(100).optional(),
+  hooksInstalled: z.boolean().optional(),
 });
 export type SnapshotMessage = z.infer<typeof SnapshotMessage>;
 

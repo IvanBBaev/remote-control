@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createLogger, createRollingDestination } from '@remote-control/log';
 
+import { createAgentProbe } from './adapters/agent-probe.js';
 import { createClaudeCli } from './adapters/claude-code/claude-cli.js';
 import { envPaths } from './adapters/env-paths.js';
 import { createFileKeyStore } from './adapters/file-key-store.js';
@@ -77,6 +78,8 @@ export interface Container {
   readonly execPath: string;
   /** Binds the loopback hook receiver; rejects with `HookReceiverBindError`. */
   startHookReceiver(options: HookReceiverOptions): Promise<HookReceiver>;
+  /** Whether a running agent answers on its published hook endpoint (M1-07). */
+  agentAlive(): Promise<boolean>;
   /** Opens the rolling agent log (pino-roll, 10 MB × 5) in `paths.log`. */
   openLog(): Promise<AgentLog>;
   /** Waits `ms`; rejects with an `AbortError` when `signal` fires. */
@@ -130,7 +133,7 @@ export interface ContainerOptions {
   readonly pathPort?: PathPort;
   /** Default: `nodeWebSocket`. */
   readonly webSocket?: WebSocketFactory;
-  /** `fetch` for the relay HTTP API; default: the global `fetch`. */
+  /** `fetch` for the relay HTTP API and the agent probe; default: the global `fetch`. */
   readonly fetch?: FetchFn;
   /** Default: a readline prompt on stdin/stdout. */
   readonly prompt?: Prompt;
@@ -156,6 +159,7 @@ export function createContainer(options: ContainerOptions): Container {
   const fs = options.fs ?? createNodeFileSystem(random);
   const pathPort = options.pathPort ?? nodePaths;
   const output = options.output;
+  const fetchFn: FetchFn = options.fetch ?? ((url, init) => fetch(url, init));
   const keyStore = createFileKeyStore({
     dir: paths.data,
     fs,
@@ -180,6 +184,7 @@ export function createContainer(options: ContainerOptions): Container {
     hookSource: options.hookSource ?? fileURLToPath(new URL('./hook.cjs', import.meta.url)),
     execPath: options.execPath ?? process.execPath,
     startHookReceiver,
+    agentAlive: createAgentProbe({ keyStore, fetch: fetchFn }),
     logReader: {
       newest: () => newestLogFile(paths.log),
       size: fileSize,
@@ -219,7 +224,7 @@ export function createContainer(options: ContainerOptions): Container {
       createRelayHttp({
         baseUrl,
         token,
-        fetch: options.fetch ?? ((url, init) => fetch(url, init)),
+        fetch: fetchFn,
       }),
     prompt: options.prompt ?? createReadlinePrompt(),
     // The protocol's machine and pairing names are 1..64 characters.

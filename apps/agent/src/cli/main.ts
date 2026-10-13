@@ -1,17 +1,26 @@
 import { parseArgs } from 'node:util';
 
-import { toBase64Url } from '@remote-control/protocol';
+import {
+  HOOK_SEEN,
+  NO_HOOK_SEEN,
+  SETUP_CHECKLIST,
+  setupCheckLine,
+  toBase64Url,
+  type SetupCheckId,
+} from '@remote-control/protocol';
 
 import { CLAUDE_CODE_CAPABILITIES, claudeCodeAdapter } from '../adapters/claude-code/adapter.js';
 import { NO_DECISION_MESSAGE } from '../adapters/claude-code/decide.js';
-import { KeyStoreError } from '../adapters/file-key-store.js';
+import { createFileHookSeenStore } from '../adapters/file-hook-seen-store.js';
+import { AGENT_ENDPOINT_FILE, KeyStoreError } from '../adapters/file-key-store.js';
 import { createFilePauseStore, type PauseStore } from '../adapters/file-pause-store.js';
 import { createFileStatsStore, type StatsStore } from '../adapters/file-stats-store.js';
 import { HookReceiverBindError, type HookReceiver } from '../adapters/hook-receiver.js';
-import { DEFAULT_HOLD_SECONDS } from '../core/agent-config.js';
+import { DEFAULT_HOLD_SECONDS, type AgentConfig } from '../core/agent-config.js';
 import { projectName } from '../core/approval-view.js';
 import { defaultConfigText } from '../core/default-config-text.js';
 import { createHookDispatcher } from '../core/hook-dispatcher.js';
+import { createHookSeenTracker } from '../core/hook-seen.js';
 import { createLauncher, FOLLOW_UP_MIN_VERSION, versionAtLeast } from '../core/launcher.js';
 import {
   HooksSettingsError,
@@ -38,6 +47,7 @@ import {
   type StatDelta,
 } from '../core/usage-stats.js';
 import type { Container } from '../container.js';
+import { runHook } from '../hook/run-hook.js';
 import { installService, serviceStatusLine, uninstallService } from './service.js';
 import { startUpdateChecks, updateCommand, updateStatusLine } from './update.js';
 
@@ -62,7 +72,9 @@ Commands:
   install [--dry-run]      Run the agent as a login service (launchd, systemd --user,
                            Task Scheduler)
   uninstall [--dry-run]    Stop and remove the login service
-  status                   Show configuration, allowed repositories and keys
+  status [--self-test]     Show configuration, allowed repositories, keys and the
+                           setup checklist (--self-test sends a test request to the
+                           paired phones and waits for an answer)
   login <rc-enroll:token> [--user-id <uuid>]
                            Store the relay credentials from the enrolment token
   pair                     Pair a phone with this agent
@@ -268,14 +280,27 @@ async function runCommand(
   });
   // The live feed (M1-05): per-session content from hook events, kept in memory only.
   const feed = createSessionFeed();
+  // Which repositories Claude Code runs the hooks in, i.e. trusts (M1-07, 04 §2.6).
+  const hookSeen = createHookSeenTracker({
+    roots: config.repositories.map((entry) => entry.path),
+    paths: c.pathPort,
+    clock: c.clock,
+    store: createFileHookSeenStore({ dir: c.paths.data, fs: c.fs, paths: c.pathPort }),
+    onChange: () => link?.hub.sessionsChanged(),
+  });
   const handler = createHookDispatcher({
     store,
     paused,
     onEvent: (input) => {
       log.logger.debug({ event: 'hook', hook: input.hook_event_name });
+      // `remotectl status --self-test` is a request, not a session: nothing else to track.
+      if (input.session_id === SELF_TEST_SESSION_ID) return;
       const cwd = input['cwd'];
       if (typeof cwd === 'string') {
         sessions.observe(input.session_id, cwd, input.hook_event_name === 'SessionEnd');
+        hookSeen.observe(cwd).catch((error: unknown) => {
+          log.logger.warn({ event: 'hook_seen_write_failed' }, (error as Error).message);
+        });
       }
       const update = feed.observe(input);
       if (update !== undefined) link?.hub.feedEvent(input.session_id, update.seq, update.event);
@@ -331,6 +356,10 @@ async function runCommand(
       feed: (sessionId) => feed.get(sessionId),
       alwaysDestinations: config.always.destinations,
       history: async () => statsHistory(await stats.read()),
+      setup: async () => ({
+        hookSeen: await hookSeen.seen(),
+        hooksInstalled: await hooksComplete(c, config.hooks.holdSeconds),
+      }),
       url: endpoints.ws,
       token: credentials.token,
       version: c.version,
@@ -393,7 +422,7 @@ async function runCommand(
 }
 
 async function statusCommand(args: readonly string[], c: Container): Promise<number> {
-  noArguments(args);
+  const { values } = parse(args, { options: { 'self-test': { type: 'boolean' } } });
   const out = (line: string): void => c.output.stdout(`${line}\n`);
   out(`remotectl ${c.version}`);
   const loaded = await loadConfig(c.paths.config, c.fs, c.pathPort);
@@ -411,9 +440,11 @@ async function statusCommand(args: readonly string[], c: Container): Promise<num
     out(`on expire:       ${config.agent.onExpire}`);
     if (config.relay?.url !== undefined) out(`relay:           ${config.relay.url}`);
     out(`repositories:    ${config.repositories.length === 0 ? '(none)' : ''}`.trimEnd());
+    const seen = await openHookSeen(c).read();
     for (const { path: root, maxPermissionMode } of config.repositories) {
       const result = await resolveRepository([root], root, c.pathPort);
-      const state = result.allowed ? `ok (${result.realPath})` : result.reason;
+      const hooks = Object.hasOwn(seen, root) ? HOOK_SEEN : NO_HOOK_SEEN;
+      const state = result.allowed ? `ok (${result.realPath}); ${hooks}` : result.reason;
       out(`  ${root}  ${state}  max mode: ${maxPermissionMode}`);
     }
   }
@@ -430,7 +461,120 @@ async function statusCommand(args: readonly string[], c: Container): Promise<num
   for (const line of statsProjects) out(line);
   out(`service:         ${await serviceStatusLine(c)}`);
   out(`update:          ${await updateStatusLine(c)}`);
-  return exitCode;
+  const config = loaded.status === 'ok' ? loaded.config : undefined;
+  out('checklist:');
+  const checks = await setupChecks(c, config);
+  for (const check of SETUP_CHECKLIST) out(`  ${setupCheckLine(check, checks[check.id])}`);
+  if (values['self-test'] !== true) return exitCode;
+  const selfTest = await runSelfTest(c, config, out);
+  return exitCode === EXIT_OK ? selfTest : exitCode;
+}
+
+/** The answers to the "Can't connect?" checklist on this computer (M1-07). */
+async function setupChecks(
+  c: Container,
+  config: AgentConfig | undefined,
+): Promise<Record<SetupCheckId, boolean | undefined>> {
+  const credentials = await c.keyStore.readRelayCredentials().catch(() => undefined);
+  const relay =
+    config?.relay === undefined || credentials === undefined
+      ? false
+      : await c
+          .relayApi(relayEndpoints(config.relay.url).http, credentials.token)
+          .health()
+          .then((result) => result.ok)
+          .catch(() => false);
+  const roots = (config?.repositories ?? []).map((entry) => entry.path);
+  const seen = await openHookSeen(c).read();
+  return {
+    agent: await c.agentAlive(),
+    relay,
+    hooks: await hooksComplete(c, config?.hooks.holdSeconds ?? DEFAULT_HOLD_SECONDS),
+    trust: roots.length === 0 ? undefined : roots.every((root) => Object.hasOwn(seen, root)),
+  };
+}
+
+/** The session id of the self-test request; the agent tracks no session for it. */
+export const SELF_TEST_SESSION_ID = 'remotectl-self-test';
+/** The self-test's hook timeout: the agent holds the request for about two minutes. */
+const SELF_TEST_TIMEOUT_SECONDS = 130;
+
+/**
+ * `status --self-test` (M1-07): one harmless permission request through the running
+ * agent, exactly as `hook.cjs` sends it, answered on a paired phone. Nothing runs either
+ * way; the command only reports whether an answer came back.
+ */
+async function runSelfTest(
+  c: Container,
+  config: AgentConfig | undefined,
+  out: (line: string) => void,
+): Promise<number> {
+  if (isPaused(await openPause(c).read(), c.clock.now())) {
+    out('self-test: the agent is paused; run `remotectl resume` first.');
+    return EXIT_ERROR;
+  }
+  if (!(await c.agentAlive())) {
+    out(`self-test: the agent is not running. ${SETUP_CHECKLIST[0]!.fix}`);
+    return EXIT_ERROR;
+  }
+  out('self-test: sent a test request; answer it on a paired phone (Allow or Deny).');
+  let stdout = '';
+  await runHook({
+    argv: [String(SELF_TEST_TIMEOUT_SECONDS)],
+    readStdin: () =>
+      Promise.resolve(
+        JSON.stringify({
+          hook_event_name: 'PermissionRequest',
+          session_id: SELF_TEST_SESSION_ID,
+          cwd: c.paths.data,
+          transcript_path: '',
+          permission_mode: 'default',
+          tool_name: 'Bash',
+          tool_input: {
+            command: 'echo "remotectl self-test"',
+            description: 'remotectl self-test: nothing runs, whatever you answer',
+          },
+        }),
+      ),
+    readEndpoint: async () =>
+      (await c.fs.readText(c.pathPort.join(c.paths.data, AGENT_ENDPOINT_FILE))) ?? '',
+    write: (text) => {
+      stdout += text;
+      return Promise.resolve();
+    },
+  });
+  const behavior = selfTestAnswer(stdout, config);
+  if (behavior === undefined) {
+    out('self-test: no answer from a phone. Is a phone paired and online? See the checklist.');
+    return EXIT_ERROR;
+  }
+  out(`self-test: ok — the phone answered ${behavior}.`);
+  return EXIT_OK;
+}
+
+/** The phone's answer in the hook output; the agent's own deadline deny is no answer. */
+function selfTestAnswer(stdout: string, config: AgentConfig | undefined): string | undefined {
+  let decision: unknown;
+  try {
+    const output = JSON.parse(stdout) as {
+      hookSpecificOutput?: { decision?: { behavior?: unknown; message?: unknown } };
+    };
+    decision = output.hookSpecificOutput?.decision;
+  } catch {
+    return undefined;
+  }
+  if (typeof decision !== 'object' || decision === null) return undefined;
+  const { behavior, message } = decision as { behavior?: unknown; message?: unknown };
+  if (behavior !== 'allow' && behavior !== 'deny') return undefined;
+  if (behavior === 'deny' && message === NO_DECISION_MESSAGE && config?.agent.onExpire === 'deny') {
+    return undefined;
+  }
+  return behavior;
+}
+
+/** `hooks-seen.json`: the repositories a hook came from (M1-07). */
+function openHookSeen(c: Container) {
+  return createFileHookSeenStore({ dir: c.paths.data, fs: c.fs, paths: c.pathPort });
 }
 
 /** The local usage counters (M1-11): this computer only, never sent to the relay (I1/I3). */
@@ -631,6 +775,32 @@ function describeHook(entry: HookStateEntry): string {
   return `  ${name.padEnd(34)}${entry.state}`;
 }
 
+function hooksInstaller(c: Container, holdSeconds: number) {
+  return createHooksInstaller({
+    fs: c.fs,
+    paths: c.pathPort,
+    clock: c.clock,
+    settingsDir: c.claudeConfigDir,
+    dataDir: c.paths.data,
+    hookSource: c.hookSource,
+    execPath: c.execPath,
+    holdSeconds,
+  });
+}
+
+function installComplete(status: Awaited<ReturnType<ReturnType<typeof hooksInstaller>['status']>>) {
+  return status.script === 'current' && status.hooks.every((entry) => entry.state === 'installed');
+}
+
+/** Whether the current hooks are installed; `undefined` when the settings cannot be read. */
+async function hooksComplete(c: Container, holdSeconds: number): Promise<boolean | undefined> {
+  try {
+    return installComplete(await hooksInstaller(c, holdSeconds).status());
+  } catch {
+    return undefined;
+  }
+}
+
 async function hooksCommand(args: readonly string[], c: Container): Promise<number> {
   const [action, ...rest] = args;
   if (action === undefined || !HOOK_ACTIONS.has(action)) {
@@ -642,16 +812,10 @@ async function hooksCommand(args: readonly string[], c: Container): Promise<numb
     reportInvalidConfig(c, loaded);
     return EXIT_ERROR;
   }
-  const installer = createHooksInstaller({
-    fs: c.fs,
-    paths: c.pathPort,
-    clock: c.clock,
-    settingsDir: c.claudeConfigDir,
-    dataDir: c.paths.data,
-    hookSource: c.hookSource,
-    execPath: c.execPath,
-    holdSeconds: loaded.status === 'ok' ? loaded.config.hooks.holdSeconds : DEFAULT_HOLD_SECONDS,
-  });
+  const installer = hooksInstaller(
+    c,
+    loaded.status === 'ok' ? loaded.config.hooks.holdSeconds : DEFAULT_HOLD_SECONDS,
+  );
   const out = (line: string): void => c.output.stdout(`${line}\n`);
   try {
     if (action === 'status') {
@@ -659,10 +823,8 @@ async function hooksCommand(args: readonly string[], c: Container): Promise<numb
       out(`settings:     ${status.settingsPath}${status.settingsExists ? '' : ' (missing)'}`);
       out(`hook script:  ${status.scriptPath} (${status.script})`);
       for (const entry of status.hooks) out(describeHook(entry));
-      const complete =
-        status.script === 'current' && status.hooks.every((entry) => entry.state === 'installed');
       out(
-        complete
+        installComplete(status)
           ? 'Hooks are installed.'
           : 'Run `remotectl hooks install` to install or update them.',
       );

@@ -495,6 +495,33 @@ describe('realtime client', () => {
       expect(pendingRequests(t.store.getState())).toHaveLength(2);
     });
 
+    it('stores the paired phones and hook facts from the snapshot (M1-07)', async () => {
+      const t = await setup();
+      await t.client.start();
+      const socket = await t.connect();
+      await t.agent.send(socket, { t: 'snapshot', machine: MACHINE, sessions: [], pending: [] });
+      await settle();
+      expect(t.store.getState().machines[AGENT]).toMatchObject({ devices: [] });
+      expect(t.store.getState().machines[AGENT]?.hooksInstalled).toBeUndefined();
+
+      const devices = [{ id: AGENT, name: 'iPhone', pairedAt: 1_791_764_990_000 }];
+      await t.agent.send(socket, {
+        t: 'snapshot',
+        machine: MACHINE,
+        sessions: [],
+        pending: [],
+        repositories: [{ ...REPO, hookSeen: true }],
+        devices,
+        hooksInstalled: true,
+      });
+      await settle();
+      expect(t.store.getState().machines[AGENT]).toMatchObject({
+        devices,
+        hooksInstalled: true,
+        repositories: [{ ...REPO, hookSeen: true }],
+      });
+    });
+
     it('sends a start, tracks it, and records the accepted session id', async () => {
       const t = await setup();
       await t.client.start();

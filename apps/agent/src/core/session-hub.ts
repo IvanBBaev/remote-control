@@ -85,7 +85,20 @@ export interface SessionHubOptions {
   readonly launcher?: SessionLauncher;
   /** A session's live feed content (M1-05), merged into the snapshot. */
   readonly feed?: (sessionId: string) => FeedEntry | undefined;
+  /**
+   * Setup facts for the phone's `/machines` checklist (M1-07); without it the snapshot
+   * carries neither `hookSeen` nor `hooksInstalled`. A failed read leaves both out.
+   */
+  readonly setup?: () => Promise<SetupFacts>;
   readonly log?: HubLog;
+}
+
+/** What `/machines` shows about this computer's setup (M1-07). */
+export interface SetupFacts {
+  /** Repository roots (as configured) a hook came from: Claude Code trusts them. */
+  readonly hookSeen: ReadonlySet<string>;
+  /** `remotectl hooks status` is complete; `undefined` when it could not be read. */
+  readonly hooksInstalled: boolean | undefined;
 }
 
 /** The end-to-end side of the relay link: KK sessions per phone and decision intake. */
@@ -378,10 +391,19 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
         statusText: shown ? 'Waiting for approval' : view.statusText,
       });
     }
+    const setup = await options.setup?.().catch(() => undefined);
     const repositories =
       launcher === undefined
         ? undefined
-        : (await launcher.repositories()).slice(0, 100).map((entry) => ({ ...entry, machineId }));
+        : (await launcher.repositories()).slice(0, 100).map((entry) => ({
+            ...entry,
+            machineId,
+            ...(setup === undefined ? {} : { hookSeen: setup.hookSeen.has(entry.path) }),
+          }));
+    // The paired phones for `/machines` (M1-07): ids, names and dates, never a key.
+    const devices = (await options.listPeers().catch(() => []))
+      .slice(0, 100)
+      .map((peer) => ({ id: peer.deviceId, name: peer.name, pairedAt: peer.pairedAt }));
     // Content is thinned until the snapshot fits in one frame (M1-05 size cap).
     return fitSnapshot({
       t: 'snapshot',
@@ -389,6 +411,8 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
       sessions: [...sessions.values()].slice(0, 100),
       pending: views.slice(0, 100).map((view) => view.request.id),
       ...(repositories === undefined ? {} : { repositories }),
+      devices,
+      ...(setup?.hooksInstalled === undefined ? {} : { hooksInstalled: setup.hooksInstalled }),
     });
   }
 

@@ -16,5 +16,10 @@ export const Repository = z.strictObject({
    * agent config. Left out (an older agent), only the default mode is offered.
    */
   maxPermissionMode: PermissionMode.optional(),
+  /**
+   * A Claude Code hook came from this folder (M1-07): it is trusted and the hooks run.
+   * `false` shows "no hook seen yet"; older agents leave it out.
+   */
+  hookSeen: z.boolean().optional(),
 });
 export type Repository = z.infer<typeof Repository>;

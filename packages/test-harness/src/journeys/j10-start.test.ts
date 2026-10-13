@@ -40,6 +40,8 @@ describe.skipIf(process.platform === 'win32')(
             name: 'app',
             path: root,
             maxPermissionMode: 'default',
+            // No hook has come from the folder yet (M1-07).
+            hookSeen: false,
           },
         ]);
         const repository = snapshot.repositories![0]!;

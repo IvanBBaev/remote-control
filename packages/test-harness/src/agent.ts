@@ -71,6 +71,8 @@ export interface HarnessAgent {
   run(): Promise<void>;
   /** Stops `remotectl run` (Ctrl-C) and waits for it to exit. */
   stop(): Promise<void>;
+  /** `remotectl status [...args]` (`--self-test`, M1-07); resolves with the exit code. */
+  status(args?: readonly string[]): Promise<number>;
   /**
    * Fires one hook event the way Claude Code runs `hook.cjs [T]`: the hook's own logic
    * (`runHook`) in process, reading `agent.json` from the data directory. `T` defaults to
@@ -193,6 +195,7 @@ export async function startAgent(options: StartAgentOptions): Promise<HarnessAge
       await eventually(() => out.includes('press Ctrl-C to stop'), '`run` did not start');
     },
     stop,
+    status: (args = []) => cli(['status', ...args]),
     async fire(input, timeoutSeconds = DEFAULT_HOOK_TIMEOUT_SECONDS) {
       let stdout = '';
       await runHook({

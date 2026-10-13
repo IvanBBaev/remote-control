@@ -86,6 +86,16 @@ describe('createRelayHttp', () => {
     expect(calls[0]?.init.method).toBe('DELETE');
   });
 
+  it('asks the relay health route outside /api', async () => {
+    const { calls, relay } = api(() => json(200, { status: 'ok', db: 'ok' }));
+    expect(await relay.health()).toEqual({ ok: true, value: null });
+    expect(`${calls[0]?.init.method} ${calls[0]?.url}`).toBe('GET https://relay.test/health');
+    expect(await api(() => json(503, { error: 'db_down' })).relay.health()).toMatchObject({
+      ok: false,
+      status: 503,
+    });
+  });
+
   it('reports the relay error code, a bad body and a network failure', async () => {
     expect(await api(() => json(409, { error: 'code_in_use' })).relay.openSlot('h')).toEqual({
       ok: false,

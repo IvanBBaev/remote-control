@@ -1,3 +1,4 @@
+import { HOOK_SEEN, NO_HOOK_SEEN, SETUP_CHECKLIST } from '@remote-control/protocol';
 import { act } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -122,5 +123,63 @@ describe('machines screen', () => {
       'api 2 approved, 1 denied, 1 session',
       'web 1 approved, 0 denied, 1 session',
     ]);
+  });
+
+  it("shows each computer's paired phones, hooks and repository trust (M1-07)", async () => {
+    const test = createTestPhone();
+    const now = test.timer.now();
+    mounted = await renderApp('/machines', fixtures.onboarded, { phone: test.phone });
+    act(() => {
+      test.phone.realtime.setState({
+        confirmedAt: now,
+        machines: {
+          a: {
+            ...machine('a', 'Studio Mac', true, null),
+            hooksInstalled: false,
+            repositories: [
+              { id: 'r1', machineId: 'a', name: 'api', path: '/src/api', hookSeen: true },
+              { id: 'r2', machineId: 'a', name: 'web', path: '/src/web', hookSeen: false },
+              { id: 'r3', machineId: 'a', name: 'old', path: '/src/old' },
+            ],
+            devices: [
+              { id: 'p1', name: 'iPhone', pairedAt: Date.UTC(2026, 9, 1, 12) },
+              { id: 'p2', name: 'Pixel', pairedAt: Date.UTC(2026, 9, 12, 23, 30) },
+            ],
+          },
+          b: { ...machine('b', 'Work laptop', true, null), hooksInstalled: true },
+        },
+      });
+    });
+    const setups = [...mounted.container.querySelectorAll('.machine-setup')];
+    expect(setups).toHaveLength(1);
+    expect([...setups[0]!.querySelectorAll('p')].map((line) => line.textContent)).toEqual([
+      'Claude Code hooks are not installed. Run `remotectl hooks install` on the computer.',
+      `api ${HOOK_SEEN}`,
+      `web ${NO_HOOK_SEEN}`,
+    ]);
+    const devices = [...setups[0]!.querySelectorAll('.paired-devices li')];
+    expect(devices.map((row) => row.textContent)).toEqual([
+      'iPhone paired 2026-10-01Revoke',
+      'Pixel paired 2026-10-12Revoke',
+    ]);
+    const revoke = devices[0]!.querySelector('button')!;
+    expect(revoke.disabled).toBe(true);
+    expect(revoke.title).toBe('Revoking a phone arrives in a later version.');
+  });
+
+  it.each([
+    ['no computers', {}],
+    ['a computer', { a: machine('a', 'Studio Mac', false, null) }],
+  ])('lists the shared "Can\'t connect?" checks with %s', async (_name, machines) => {
+    const test = createTestPhone();
+    mounted = await renderApp('/machines', fixtures.onboarded, { phone: test.phone });
+    act(() => {
+      test.phone.realtime.setState({ confirmedAt: test.timer.now(), machines });
+    });
+    const checklist = mounted.container.querySelector('details.setup-checklist')!;
+    expect(checklist.querySelector('summary')?.textContent).toBe("Can't connect?");
+    expect([...checklist.querySelectorAll('li')].map((item) => item.textContent)).toEqual(
+      SETUP_CHECKLIST.map((check) => `${check.question} ${check.fix}`),
+    );
   });
 });

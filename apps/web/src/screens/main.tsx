@@ -1,11 +1,12 @@
-import type { ChangedFile, Session } from '@remote-control/protocol';
+import { HOOK_SEEN, NO_HOOK_SEEN, SETUP_CHECKLIST } from '@remote-control/protocol';
+import type { ChangedFile, PairedDevice, Repository, Session } from '@remote-control/protocol';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { useStore } from 'zustand';
 
 import { useAppState } from '../app-state.js';
 import { presenceLabel } from '../realtime/realtime-store.js';
-import type { RealtimeState } from '../realtime/realtime-store.js';
+import type { MachineView, RealtimeState } from '../realtime/realtime-store.js';
 import { historySummary, machineUsage, usageSummary } from '../realtime/usage-stats.js';
 import { Notice, Screen } from './layout.js';
 import { ComposeBox } from './session-commands.js';
@@ -13,7 +14,8 @@ import { ComposeBox } from './session-commands.js';
 /**
  * Paired computers and their online state, from relay timestamps (M0-20), with this
  * computer's own history per repository (M2-06) and this phone's local counters per
- * computer and project (M1-11).
+ * computer and project (M1-11), its paired phones and hook status, and the "Can't
+ * connect?" checklist in the wording `remotectl status` prints (M1-07).
  */
 export function MachinesScreen() {
   const { phone } = useAppState();
@@ -48,6 +50,7 @@ export function MachinesScreen() {
                     ))}
                   </div>
                 )}
+                <MachineSetup machine={machine} />
                 {totals !== undefined && (
                   <div className="machine-usage">
                     <p className="meta">From this phone: {usageSummary(totals)}</p>
@@ -63,12 +66,74 @@ export function MachinesScreen() {
           })}
         </ul>
       )}
+      <details className="setup-checklist">
+        <summary>Can&apos;t connect?</summary>
+        <ol>
+          {SETUP_CHECKLIST.map((check) => (
+            <li key={check.id}>
+              <span className="check-question">{check.question}</span>{' '}
+              <span className="meta">{check.fix}</span>
+            </li>
+          ))}
+        </ol>
+      </details>
       <div className="actions">
         <Link className="button primary" to="/onboarding/pair">
           {machines.length === 0 ? 'Add your first computer' : 'Add a computer'}
         </Link>
       </div>
     </Screen>
+  );
+}
+
+/** The day a phone was paired, as `YYYY-MM-DD` (UTC). */
+const pairedDay = (device: PairedDevice) => new Date(device.pairedAt).toISOString().slice(0, 10);
+
+/** Repositories whose hook status the computer reported. */
+const hookStatus = (repositories: readonly Repository[]) =>
+  repositories.filter((repository) => repository.hookSeen !== undefined);
+
+/**
+ * What a computer reported about its setup (M1-07): missing hooks, the hook status per
+ * repository, and the paired phones. Revoking a phone is M1-10; the entry point is here.
+ */
+function MachineSetup({ machine }: { machine: MachineView }) {
+  const devices = machine.devices ?? [];
+  const repositories = hookStatus(machine.repositories);
+  const hooks = SETUP_CHECKLIST.find((check) => check.id === 'hooks')!;
+  if (devices.length === 0 && repositories.length === 0 && machine.hooksInstalled !== false) {
+    return null;
+  }
+  return (
+    <div className="machine-setup">
+      {machine.hooksInstalled === false && (
+        <p className="meta hooks-missing">Claude Code hooks are not installed. {hooks.fix}</p>
+      )}
+      {repositories.map((repository) => (
+        <p key={repository.id} className="meta repository-hooks">
+          <span className="project-name">{repository.name}</span>{' '}
+          {repository.hookSeen === true ? HOOK_SEEN : NO_HOOK_SEEN}
+        </p>
+      ))}
+      {devices.length > 0 && (
+        <ul className="paired-devices">
+          {devices.map((device) => (
+            <li key={device.id}>
+              <span className="device-name">{device.name}</span>{' '}
+              <span className="meta">paired {pairedDay(device)}</span>
+              <button
+                type="button"
+                className="button"
+                disabled
+                title="Revoking a phone arrives in a later version."
+              >
+                Revoke
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

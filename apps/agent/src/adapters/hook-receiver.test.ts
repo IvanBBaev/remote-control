@@ -176,6 +176,14 @@ describe('HookReceiver', () => {
     expect(localhost.status).toBe(204);
   });
 
+  it('answers the authenticated health probe with 204', async () => {
+    const { port } = await start();
+    const get = { method: 'GET', path: '/health' };
+    expect(await post(port, '', {}, get)).toEqual({ status: 204, body: '' });
+    expect((await post(port, '', { authorization: 'Bearer nope' }, get)).status).toBe(401);
+    expect((await post(port, '', { origin: 'http://127.0.0.1' }, get)).status).toBe(403);
+  });
+
   it('rejects malformed input with 400 and has no other route', async () => {
     const { port } = await start();
     expect((await post(port, JSON.stringify({ session_id: 's' }))).status).toBe(400);

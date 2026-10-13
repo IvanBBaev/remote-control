@@ -58,8 +58,9 @@ const encoder = new TextEncoder();
 /**
  * The loopback endpoint `hook.js` posts to (D11, 04 §5.2). Checks, in order: no browser
  * `Origin` (a web page cannot reach it, even by DNS rebinding), `Host` is the loopback
- * address with our port, bearer token (constant-time compare). The only route is
- * `POST /hook`; there is no decide route — decisions enter through the relay channel (I1).
+ * address with our port, bearer token (constant-time compare). The routes are
+ * `POST /hook` and `GET /health` (the `remotectl status` probe, M1-07); there is no decide
+ * route — decisions enter through the relay channel (I1).
  */
 export async function startHookReceiver(options: HookReceiverOptions): Promise<HookReceiver> {
   const app = fastify({
@@ -88,6 +89,8 @@ export async function startHookReceiver(options: HookReceiverOptions): Promise<H
     }
     return undefined;
   });
+
+  app.get('/health', async (_request, reply) => reply.code(204).send());
 
   app.post('/hook', async (request, reply) => {
     if (!isHookInput(request.body)) {

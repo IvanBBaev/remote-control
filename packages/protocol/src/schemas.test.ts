@@ -94,7 +94,14 @@ describe('01 W2 field lists', () => {
 
   it('domain schemas carry the fields the screens need', () => {
     expect(keys(Machine)).toEqual(['agentVersion', 'agents', 'id', 'name', 'platform']);
-    expect(keys(Repository)).toEqual(['id', 'machineId', 'maxPermissionMode', 'name', 'path']);
+    expect(keys(Repository)).toEqual([
+      'hookSeen',
+      'id',
+      'machineId',
+      'maxPermissionMode',
+      'name',
+      'path',
+    ]);
     expect(keys(Session)).toEqual(
       expect.arrayContaining(['id', 'machineId', 'repositoryId', 'state', 'changedFiles']),
     );

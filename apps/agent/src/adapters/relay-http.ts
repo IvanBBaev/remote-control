@@ -35,7 +35,7 @@ export interface RelayHttpOptions {
 }
 
 /**
- * `RelayApi` over `fetch` (M0-10 routes under `/api`). Every call carries the agent's
+ * `RelayApi` over `fetch` (M0-10 routes under `/api`, plus the relay's `/health`). Every call carries the agent's
  * bearer token, refuses redirects and times out after 10 s; bodies are validated, and
  * anything unexpected becomes a failed result instead of an exception.
  */
@@ -53,7 +53,7 @@ export function createRelayHttp(options: RelayHttpOptions): RelayApi {
     if (body !== undefined) headers['content-type'] = 'application/json';
     let response: Response;
     try {
-      response = await options.fetch(new URL(`/api${path}`, options.baseUrl).href, {
+      response = await options.fetch(new URL(path, options.baseUrl).href, {
         method,
         headers,
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -84,14 +84,15 @@ export function createRelayHttp(options: RelayHttpOptions): RelayApi {
       : { ok: false, status: response.status, error: 'bad_response' };
   }
 
-  const slot = (slotId: string): string => `/pairings/${encodeURIComponent(slotId)}`;
+  const slot = (slotId: string): string => `/api/pairings/${encodeURIComponent(slotId)}`;
 
   return {
-    rotateToken: () => call('POST', '/agents/token', TokenBody),
-    openSlot: (codeHash) => call('POST', '/pairings', OpenedBody, { codeHash }),
+    rotateToken: () => call('POST', '/api/agents/token', TokenBody),
+    openSlot: (codeHash) => call('POST', '/api/pairings', OpenedBody, { codeHash }),
     slotStatus: (slotId) => call('GET', slot(slotId), StatusBody),
     completeSlot: (slotId) => call('POST', `${slot(slotId)}/complete`, CompletedBody),
     failSlot: (slotId) => call('POST', `${slot(slotId)}/fail`, FailedBody),
     cancelSlot: (slotId) => call('DELETE', slot(slotId), null),
+    health: () => call('GET', '/health', null),
   };
 }

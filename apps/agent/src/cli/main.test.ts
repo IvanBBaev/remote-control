@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { seededRandom } from '@remote-control/fake-claude-code';
-import { toBase64Url } from '@remote-control/protocol';
+import { NO_HOOK_SEEN, toBase64Url } from '@remote-control/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HookReceiverBindError } from '../adapters/hook-receiver.js';
@@ -748,7 +748,7 @@ describe('runCli', () => {
       expect(h.out()).toContain('hold seconds:    1800');
       expect(h.out()).toContain('on expire:       handoff');
       expect(h.out()).toContain('relay:           wss://relay.example.com');
-      expect(h.out()).toContain(`  ${repo}  ok (${repo})  max mode: default`);
+      expect(h.out()).toContain(`  ${repo}  ok (${repo}); ${NO_HOOK_SEEN}  max mode: default`);
       expect(h.out()).toContain(`  ${join(base, 'gone')}  not_found`);
       expect(h.out()).toContain(`device key:      ${toBase64Url(key.keyPair.publicKey)}`);
     });
@@ -761,6 +761,179 @@ describe('runCli', () => {
       expect(await h.run(['status'])).toBe(EXIT_ERROR);
       expect(h.out()).toContain('(invalid)');
       expect(h.err()).toContain('not valid JSON');
+    });
+  });
+
+  describe('status checklist and --self-test (M1-07)', () => {
+    /** A stand-in agent: the real receiver, published, answering every hook with `body`. */
+    async function fakeAgent(body?: Readonly<Record<string, unknown>>) {
+      const seen: unknown[] = [];
+      const receiver = await h.c.startHookReceiver({
+        port: 0,
+        token: 'self-test-token',
+        defaultHookTimeoutMs: 1_000,
+        handler: (input) => {
+          seen.push(input);
+          return Promise.resolve(body === undefined ? { status: 204 } : { status: 200, body });
+        },
+      });
+      await h.c.keyStore.publishHookEndpoint({ port: receiver.port, token: 'self-test-token' });
+      return { seen, close: () => receiver.close() };
+    }
+
+    it('answers the checklist with what is missing and how to fix it', async () => {
+      await writeConfig({});
+      expect(await h.run(['status'])).toBe(EXIT_OK);
+      expect(h.out()).toContain(
+        'checklist:\n' +
+          '  [no] Is the agent running? Run `remotectl install` on the computer (or `remotectl run` in a terminal).\n' +
+          '  [no] Can the agent reach the relay?',
+      );
+      expect(h.out()).toContain('  [no] Are the Claude Code hooks installed?');
+      expect(h.out()).toContain('  [?]  Is each repository trusted in Claude Code?');
+    });
+
+    it('ticks every check once the agent runs, the relay answers and hooks were seen', async () => {
+      const repo = join(base, 'repo');
+      await mkdir(repo);
+      await writeConfig({ repositories: [repo], relay: { url: 'wss://relay.example.com' } });
+      expect(await h.run(['hooks', 'install'])).toBe(EXIT_OK);
+      await mkdir(h.c.paths.data, { recursive: true });
+      await writeFile(
+        join(h.c.paths.data, 'hooks-seen.json'),
+        JSON.stringify({ version: 1, roots: { [repo]: 1 } }),
+      );
+      const health = vi.fn(() => Promise.resolve({ ok: true as const, value: null }));
+      const c: Container = {
+        ...h.c,
+        agentAlive: () => Promise.resolve(true),
+        keyStore: {
+          ...h.c.keyStore,
+          readRelayCredentials: () =>
+            Promise.resolve({ userId: '00000000-0000-4000-8000-000000000000', token: 't' }),
+        },
+        relayApi: (baseUrl, token) => ({
+          ...createRelayHttp({ baseUrl, token, fetch: () => Promise.reject(new Error('net')) }),
+          health,
+        }),
+      };
+      expect(await runCli(['status'], c, { signal: new AbortController().signal })).toBe(EXIT_OK);
+      expect(health).toHaveBeenCalledTimes(1);
+      expect(h.out()).toContain(`  ${repo}  ok (${repo}); hooks seen`);
+      expect(h.out()).toContain(
+        'checklist:\n' +
+          '  [ok] Is the agent running?\n' +
+          '  [ok] Can the agent reach the relay?\n' +
+          '  [ok] Are the Claude Code hooks installed?\n' +
+          '  [ok] Is each repository trusted in Claude Code?\n',
+      );
+    });
+
+    it('marks a repository no hook came from yet', async () => {
+      const repo = join(base, 'repo');
+      await mkdir(repo);
+      await writeConfig({ repositories: [repo] });
+      expect(await h.run(['status'])).toBe(EXIT_OK);
+      expect(h.out()).toContain(
+        `  ${repo}  ok (${repo}); no hook seen yet — trust the folder in Claude Code`,
+      );
+      expect(h.out()).toContain('  [no] Is each repository trusted in Claude Code?');
+    });
+
+    it('does not self-test while paused or without a running agent', async () => {
+      await writeConfig({});
+      expect(await h.run(['status', '--self-test'])).toBe(EXIT_ERROR);
+      expect(h.out()).toContain('self-test: the agent is not running.');
+      expect(await h.run(['pause'])).toBe(EXIT_OK);
+      expect(await h.run(['status', '--self-test'])).toBe(EXIT_ERROR);
+      expect(h.out()).toContain('self-test: the agent is paused; run `remotectl resume` first.');
+    });
+
+    it('reports the phone answer to the self-test request', async () => {
+      await writeConfig({});
+      const agent = await fakeAgent({
+        hookSpecificOutput: {
+          hookEventName: 'PermissionRequest',
+          decision: { behavior: 'allow' },
+        },
+      });
+      try {
+        expect(await h.run(['status', '--self-test'])).toBe(EXIT_OK);
+      } finally {
+        await agent.close();
+      }
+      expect(h.out()).toContain('self-test: ok — the phone answered allow.');
+      expect(agent.seen).toEqual([
+        expect.objectContaining({
+          hook_event_name: 'PermissionRequest',
+          session_id: 'remotectl-self-test',
+          tool_name: 'Bash',
+        }),
+      ]);
+    });
+
+    it.each([
+      ['a handoff', undefined, {}],
+      ['an empty reply', undefined, undefined],
+      [
+        'the agent deadline deny',
+        { agent: { onExpire: 'deny' } },
+        {
+          hookSpecificOutput: {
+            hookEventName: 'PermissionRequest',
+            decision: { behavior: 'deny', message: 'No decision from phone', interrupt: false },
+          },
+        },
+      ],
+      ['a malformed decision', undefined, { hookSpecificOutput: { decision: 'allow' } }],
+      ['an unknown behavior', undefined, { hookSpecificOutput: { decision: { behavior: 'ask' } } }],
+    ])('reads %s as no answer', async (_name, config, body) => {
+      await writeConfig(config ?? {});
+      const agent = await fakeAgent(body);
+      try {
+        expect(await h.run(['status', '--self-test'])).toBe(EXIT_ERROR);
+      } finally {
+        await agent.close();
+      }
+      expect(h.out()).toContain('self-test: no answer from a phone.');
+    });
+
+    it('records the repository a hook came from and ignores the self-test session', async () => {
+      const repo = join(base, 'repo');
+      await mkdir(repo);
+      await writeConfig({ repositories: [repo] });
+      const controller = new AbortController();
+      const running = h.run(['run'], controller.signal);
+      await vi.waitFor(() => expect(h.out()).toContain('press Ctrl-C to stop'));
+      const endpoint = JSON.parse(await readFile(join(h.c.paths.data, 'agent.json'), 'utf8')) as {
+        port: number;
+        token: string;
+      };
+      const post = (body: unknown) =>
+        fetch(`http://127.0.0.1:${endpoint.port}/hook`, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${endpoint.token}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        });
+      expect(
+        (await post({ hook_event_name: 'Stop', session_id: 'remotectl-self-test', cwd: repo }))
+          .status,
+      ).toBe(204);
+      expect(await readFile(join(h.c.paths.data, 'hooks-seen.json'), 'utf8').catch(() => '')).toBe(
+        '',
+      );
+      expect((await post({ hook_event_name: 'Stop', session_id: 's1', cwd: repo })).status).toBe(
+        204,
+      );
+      await vi.waitFor(async () => {
+        const text = await readFile(join(h.c.paths.data, 'hooks-seen.json'), 'utf8');
+        expect(Object.keys((JSON.parse(text) as { roots: object }).roots)).toEqual([repo]);
+      });
+      controller.abort();
+      expect(await running).toBe(EXIT_OK);
     });
   });
 

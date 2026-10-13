@@ -2,6 +2,7 @@ import type {
   ApprovalRequest,
   DecisionResultMessage,
   Machine,
+  PairedDevice,
   ProjectHistory,
   Question,
   RelayErrorCode,
@@ -35,6 +36,10 @@ export interface MachineView {
   readonly history: readonly ProjectHistory[] | null;
   /** The computer's allow-listed repositories (M1-04), from its latest snapshot. */
   readonly repositories: readonly Repository[];
+  /** The phones paired with the computer (M1-07), from its latest snapshot. */
+  readonly devices?: readonly PairedDevice[];
+  /** Whether the computer's Claude Code hooks are installed (M1-07); unknown when absent. */
+  readonly hooksInstalled?: boolean;
 }
 
 export type RequestStatus = 'pending' | 'resolved' | 'expired';

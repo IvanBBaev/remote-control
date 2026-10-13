@@ -95,6 +95,17 @@ describe('AgentMessage', () => {
       pending: [],
       repositories: [{ id: 'repo-1', machineId: MACHINE_ID, name: 'api', path: '/src/api' }],
     },
+    {
+      t: 'snapshot',
+      machine,
+      sessions: [],
+      pending: [],
+      repositories: [
+        { id: 'repo-1', machineId: MACHINE_ID, name: 'api', path: '/src/api', hookSeen: false },
+      ],
+      devices: [{ id: MACHINE_ID, name: 'iPhone', pairedAt: 1_791_764_990_000 }],
+      hooksInstalled: true,
+    },
     { t: 'decision_result', requestId: REQUEST_ID, result: 'rejected', reason: 'too_late' },
     { t: 'history', projects: [project, { ...project, project: 'web', lastActiveAt: null }] },
   ])('accepts $t', (message) => {
@@ -115,6 +126,16 @@ describe('AgentMessage', () => {
       { t: 'decision_result', requestId: REQUEST_ID, result: 'accepted', reason: 'expired' },
     ],
     ['an unknown type', { t: 'hello' }],
+    [
+      'a paired device without a name',
+      {
+        t: 'snapshot',
+        machine,
+        sessions: [],
+        pending: [],
+        devices: [{ id: MACHINE_ID, name: '', pairedAt: 0 }],
+      },
+    ],
     ['an extra field', { t: 'expired', requestId: REQUEST_ID, extra: 1 }],
     ['a negative history count', { t: 'history', projects: [{ ...project, toolCalls: -1 }] }],
     ['a history project without a name', { t: 'history', projects: [{ ...project, project: '' }] }],

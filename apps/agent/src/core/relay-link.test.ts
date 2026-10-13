@@ -993,6 +993,36 @@ describe('relay link (fake relay, fake phones)', () => {
       });
     });
 
+    it('tells /machines the paired phones, the hooks and which repositories sent one (M1-07)', async () => {
+      const fake = fakeLauncher();
+      const t = await setup(['Pixel'], 11, undefined, undefined, {
+        launcher: fake.launcher,
+        setup: () => Promise.resolve({ hookSeen: new Set([REPO.path]), hooksInstalled: true }),
+      });
+      const [phone] = t.phones as [FakePhone];
+      await t.open(phone);
+      const [snapshot] = phone.of('snapshot');
+      expect(snapshot!.repositories).toEqual([{ ...REPO, machineId: t.agentId, hookSeen: true }]);
+      expect(snapshot!.devices).toEqual([
+        { id: phone.peer(1).deviceId, name: 'Pixel', pairedAt: 1 },
+      ]);
+      expect(snapshot!.hooksInstalled).toBe(true);
+    });
+
+    it('leaves the setup facts out when they cannot be read', async () => {
+      const fake = fakeLauncher();
+      const t = await setup(['Pixel'], 11, undefined, undefined, {
+        launcher: fake.launcher,
+        setup: () => Promise.reject(new Error('EACCES')),
+      });
+      const [phone] = t.phones as [FakePhone];
+      await t.open(phone);
+      const [snapshot] = phone.of('snapshot');
+      expect(snapshot!.repositories).toEqual([{ ...REPO, machineId: t.agentId }]);
+      expect(snapshot).not.toHaveProperty('hooksInstalled');
+      expect(snapshot!.devices).toHaveLength(1);
+    });
+
     it('AC: starts a session after the D7 checks and replies with its id (J10)', async () => {
       const t = await launching();
       const start = { machineId: t.agentId, repositoryId: REPO.id, prompt: 'fix the build' };

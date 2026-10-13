@@ -314,6 +314,58 @@ label.confirm input {
   color: var(--color-muted);
 }
 
+.machine-list .machine-setup {
+  margin-top: 6px;
+}
+
+.machine-list .machine-setup p {
+  margin: 2px 0 0;
+}
+
+.machine-list li.online .machine-setup .meta {
+  color: var(--color-muted);
+}
+
+.machine-list .paired-devices {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+
+.machine-list .paired-devices li {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.machine-list .device-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.setup-checklist {
+  margin-top: var(--space);
+  padding: 12px var(--space);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.setup-checklist summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.setup-checklist ol {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.setup-checklist li {
+  margin-top: 6px;
+}
+
 .machine-list .project-name {
   font-weight: 600;
   overflow-wrap: anywhere;

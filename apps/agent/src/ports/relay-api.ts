@@ -40,7 +40,7 @@ export interface FailedSlot {
   readonly failedAttempts: number;
 }
 
-/** The relay's agent-side HTTP API (M0-10): token rotation and pairing slots (D6). */
+/** The relay's agent-side HTTP API (M0-10): token rotation, pairing slots (D6), health. */
 export interface RelayApi {
   /**
    * `POST /api/agents/token`: a new bearer token (the presented one stops working) and
@@ -54,4 +54,6 @@ export interface RelayApi {
   /** Counts a failed handshake; the slot closes at the third. */
   failSlot(slotId: string): Promise<RelayResult<FailedSlot>>;
   cancelSlot(slotId: string): Promise<RelayResult<null>>;
+  /** `GET /health`: whether the relay answers at all (`remotectl status`, M1-07). */
+  health(): Promise<RelayResult<null>>;
 }

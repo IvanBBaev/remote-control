@@ -38,6 +38,9 @@ export {
   permissionModeWithin,
 } from './domain/permission-mode.js';
 export { Repository } from './domain/repository.js';
+export { PairedDevice } from './domain/paired-device.js';
+export { HOOK_SEEN, NO_HOOK_SEEN, SETUP_CHECKLIST, setupCheckLine } from './setup-checklist.js';
+export type { SetupCheck, SetupCheckId } from './setup-checklist.js';
 export { ChangedFile, Session } from './domain/session.js';
 export { AlwaysDestination } from './domain/always-destination.js';
 export { ApprovalRequest } from './domain/approval-request.js';

@@ -435,6 +435,8 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
               machine: message.machine,
               sessions: message.sessions,
               repositories: message.repositories ?? [],
+              devices: message.devices ?? [],
+              hooksInstalled: message.hooksInstalled,
             },
           },
           // Anything this machine no longer has pending is gone from the agent (D4).
