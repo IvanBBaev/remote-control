@@ -1,4 +1,4 @@
-# ADR 0006 — Machines screen and self-test ahead of the real-CLI check
+# ADR 0007 — Machines screen and self-test ahead of the real-CLI check
 
 Status: accepted (owner, 2026-10-13), M1-07
 Deviates from: ROADMAP §4 dependency order (M1-07 depends on M1-05, which is
@@ -42,7 +42,7 @@ The owner chose to build M1-07 now, in the same way as ADR 0005.
 - **Revoke.** The paired-device list shows a disabled "Revoke" entry point. Revocation
   itself is M1-10.
 - **Presence.** "Last seen" on `/machines` keeps the existing relay-timestamp presence.
-- The WP status stays `doing — code done; real-CLI check pending M0-23 (ADR 0006)` until
+- The WP status stays `doing — code done; real-CLI check pending M0-23 (ADR 0007)` until
   M1-05 is done. The real-CLI check then covers one thing: that a real Claude Code
   install in a trusted folder fills `hooks-seen.json`, and an untrusted one does not.
 
