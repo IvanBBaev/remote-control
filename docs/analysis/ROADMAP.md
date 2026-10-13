@@ -75,7 +75,8 @@ named, so nobody re-derives it.
 | M1-11 | Tool-label dictionary, card polish, local stats | §4 M1-11 | `done` | 1 |
 | M1-12 | Playwright P1–P9 + WebKit smoke — deps M1-05 | §4 M1-12 | `done 5286172 — first CI run pending the next push` | 3 |
 | M1-13 | Audit log and admin counters | §4 M1-13 | `done` | 1 |
-| M1-14 | README final, screens doc, second-user run — deps M1-09, Q13 | §4 M1-14, §6 Q13 | `blocked-owner` | 1.5 |
+| M1-14a | README final, screens doc, second-user protocol and template (repo part) | §4 M1-14 | `done 181c488` | 1 |
+| M1-14b | Second-user run logged in `docs/verification/second-user.md` — deps M0-02b, M1-09b, Q13 | §4 M1-14, §6 Q13 | `blocked-owner` | 0.5 |
 | M1-15a | Soak harness, `pnpm soak` and CI load smoke (code part) | §4 M1-15 | `done 287eb9c` | 1 |
 | M1-15b | 24 h soak run logged in `docs/verification/soak.md` | §4 M1-15 | `blocked-owner` | 0.5 |
 | M1-EXIT | M1 exit record: two weeks, ≥ 20 approvals from outside home | §4 M1 exit record, §3 M1 (4) | `blocked-owner` | 1 |
@@ -985,7 +986,7 @@ per day) — no bodies anywhere.
 AC: privacy gate scans the audit table; counters test.
 
 #### M1-14 — README positioning, screens doc, second-user run
-Size S · Deps M1-09 · Status todo · Sources 01 W1, 01 W3, 01 W14, 01 §1.6
+Size S · Deps M1-09 · Status doing — repo part done 181c488 (README, screens doc, `docs/product/usability-protocol.md`, result template); second-user run pending owner (Q13) · Sources 01 W1, 01 W3, 01 W14, 01 §1.6
 Scope: README final comparison table, quick start, `docs/product/screens.md` final; the
 owner runs the second-user protocol (01 W14) with the named second user (§6 Q13) and
 logs timings/blockers.
