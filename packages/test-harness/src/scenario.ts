@@ -22,11 +22,18 @@ export interface ScenarioOptions {
   readonly env?: Readonly<Record<string, string>>;
   /** The phone runs the relay's passkey check too (default: yes; see `CreatePhoneOptions`). */
   readonly relayCheck?: boolean;
+  /**
+   * `2`: two relay replicas on one database (ADR 0012); the phone uses {@link Scenario.relay},
+   * the agent {@link Scenario.replica}. Default `1`.
+   */
+  readonly replicas?: 1 | 2;
 }
 
 export interface Scenario {
   readonly clock: FakeClock;
   readonly relay: HarnessRelay;
+  /** The agent's relay when `replicas: 2`; otherwise `undefined`. */
+  readonly replica: HarnessRelay | undefined;
   readonly agent: HarnessAgent;
   readonly phone: HeadlessPhone;
   readonly canaries: Canaries;
@@ -58,14 +65,17 @@ export async function scenario(options: ScenarioOptions = {}): Promise<Scenario>
   const started = performance.now();
   const clock = createFakeClock();
   const canaries = options.canaries ?? createCanaries();
-  const relay = await startRelay({ clock });
+  const twoReplicas = options.replicas === 2;
+  const relay = await startRelay({ clock, hub: twoReplicas ? 'pg' : 'local' });
   const cleanup: (() => Promise<void>)[] = [() => relay.close()];
   const close = async () => {
     for (const step of cleanup.splice(0).reverse()) await step();
   };
   try {
+    const replica = twoReplicas ? await startRelay({ clock, replicaOf: relay }) : undefined;
+    if (replica !== undefined) cleanup.push(() => replica.close());
     const agent = await startAgent({
-      relayUrl: relay.wsOrigin,
+      relayUrl: (replica ?? relay).wsOrigin,
       clock,
       name: options.agentName ?? 'harness-mac',
       ...(options.repositories !== undefined ? { repositories: options.repositories } : {}),
@@ -100,6 +110,7 @@ export async function scenario(options: ScenarioOptions = {}): Promise<Scenario>
       await relay.idle();
       return [
         { name: 'relay-log', lines: relay.logs() },
+        ...(replica === undefined ? [] : [{ name: 'replica-log', lines: replica.logs() }]),
         { name: 'pglite', lines: await relay.dump() },
         // The push message as the relay built it: the wire body and what it decrypts to.
         {
@@ -115,6 +126,7 @@ export async function scenario(options: ScenarioOptions = {}): Promise<Scenario>
     return {
       clock,
       relay,
+      replica,
       agent,
       phone,
       canaries,

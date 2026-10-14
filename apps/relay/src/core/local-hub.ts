@@ -4,7 +4,7 @@ import type { DeviceKind } from '../ports/device-directory.js';
 import type { AttachResult, HubConnection, HubPort } from '../ports/hub.js';
 
 /** Presence change times kept for `/api/state?since=`; oldest are dropped beyond this. */
-const MAX_PRESENCE_ENTRIES = 100_000;
+export const MAX_PRESENCE_ENTRIES = 100_000;
 
 /** The in-memory hub of a single relay replica (D15). */
 export class LocalHub implements HubPort {
@@ -66,8 +66,13 @@ export class LocalHub implements HubPort {
     return this.#changedAt.get(deviceId);
   }
 
+  /** Every connection of every user. */
+  all(): readonly HubConnection[] {
+    return [...this.#users.values()].flatMap((devices) => [...devices.values()]);
+  }
+
   closeAll(code: number, reason: string): readonly HubConnection[] {
-    const all = [...this.#users.values()].flatMap((devices) => [...devices.values()]);
+    const all = this.all();
     this.#users.clear();
     for (const connection of all) connection.close(code, reason);
     return all;

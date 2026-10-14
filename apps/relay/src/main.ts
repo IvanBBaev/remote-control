@@ -88,6 +88,8 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
     errors: container.errors,
   });
   app.addHook('onClose', async () => {
+    // Say goodbye first: the other replicas drop this one's devices at once.
+    await container.relay?.cluster?.stop();
     // Background pushes and audit writes finish before the pool closes (pushes write audit rows).
     await container.push?.notifier.idle();
     await container.audit?.idle();
@@ -95,6 +97,12 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
     await container.database.close();
   });
 
+  try {
+    await container.relay?.cluster?.start();
+  } catch (error) {
+    await app.close();
+    throw error;
+  }
   await app.listen({ host: config.host, port: config.port });
   const shutdown = installShutdown({
     close: () => app.close(),

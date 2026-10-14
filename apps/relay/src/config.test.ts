@@ -19,6 +19,7 @@ describe('loadConfig', () => {
       push: undefined,
       sentry: undefined,
       spike: false,
+      hub: 'local',
     });
   });
 
@@ -133,6 +134,15 @@ describe('loadConfig', () => {
     expect(loadConfig({ ...keys, RC_SPIKE: '1' }).spike).toBe(true);
     expect(() => loadConfig({ RC_SPIKE: '1' })).toThrow(/RC_SPIKE/);
     expect(() => loadConfig({ RC_SPIKE: 'yes' })).toThrow(/RC_SPIKE/);
+  });
+
+  it('selects the Postgres hub only with a database (ADR 0012)', () => {
+    const url = 'postgres://rc@db:5432/rc';
+    expect(loadConfig({ RC_DATABASE_URL: url, RC_HUB: 'pg' }).hub).toBe('pg');
+    expect(loadConfig({ DATABASE_URL: url, RC_HUB: 'pg' }).hub).toBe('pg');
+    expect(loadConfig({ RC_HUB: 'local' }).hub).toBe('local');
+    expect(() => loadConfig({ RC_HUB: 'pg' })).toThrow(/RC_HUB/);
+    expect(() => loadConfig({ RC_HUB: 'redis' })).toThrow(/RC_HUB/);
   });
 
   it('reads the optional admin token (M1-13)', () => {

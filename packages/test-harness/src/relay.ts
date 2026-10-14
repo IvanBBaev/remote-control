@@ -13,6 +13,7 @@ import {
   createDrizzleDeviceRevocations,
   createDrizzlePushSubscriptionStore,
   createPgliteDb,
+  createPgliteNotifyBus,
   createScryptSecretHasher,
   createSimpleWebAuthn,
   createWebPushSender,
@@ -24,10 +25,12 @@ import {
   mintInvites,
   MIGRATIONS_DIR,
   PairingService,
+  PgNotifyHub,
   PushNotifier,
   RelayRouter,
   RevocationService,
   type AuthRateLimits,
+  type HubPort,
 } from '@remote-control/relay/testing';
 
 import type { HarnessClock } from './fake-clock.js';
@@ -54,6 +57,13 @@ export interface StartRelayOptions {
    * so a suite that registers many accounts raises the per-IP ones.
    */
   readonly authLimits?: Partial<AuthRateLimits>;
+  /**
+   * `pg`: the hub is a `PgNotifyHub` on this relay's PGlite (ADR 0012), so a second relay
+   * started with {@link replicaOf} shares its devices. Default `local`.
+   */
+  readonly hub?: 'local' | 'pg';
+  /** Starts a second replica of `replicaOf` (which must use `hub: 'pg'`): same database. */
+  readonly replicaOf?: HarnessRelay;
 }
 
 export interface HarnessRelay {
@@ -64,6 +74,10 @@ export interface HarnessRelay {
   /** The origin the phone presents (WebAuthn RP, origin guard). */
   readonly origin: string;
   readonly rpId: string;
+  /** This relay's PGlite instance (shared with its replicas). */
+  readonly database: PGlite;
+  /** Whether this relay's hub knows `deviceId` as connected (to it or to a replica). */
+  connected(userId: string, deviceId: string): boolean;
   /** The fake Web Push service the relay delivers to (VAPID and aes128gcm checked). */
   readonly push: FakePushService;
   /** Every relay log line (JSON), for canary scans. */
@@ -113,9 +127,10 @@ export async function startRelay(options: StartRelayOptions): Promise<HarnessRel
   const { clock } = options;
   const rpId = options.rpId ?? RELAY_RP_ID;
   const origin = options.origin ?? RELAY_ORIGIN;
-  const client = new PGlite();
+  const shared = options.replicaOf?.database;
+  const client = shared ?? new PGlite();
   const db = createPgliteDb(client, { migrationsFolder: MIGRATIONS_DIR });
-  await db.migrate();
+  if (shared === undefined) await db.migrate();
   const vapid = { ...generateVapidKeys(), subject: 'mailto:harness@example.test' };
   const push = await FakePushService.start(vapid.publicKey);
   const destination = createMemoryDestination();
@@ -125,7 +140,19 @@ export async function startRelay(options: StartRelayOptions): Promise<HarnessRel
   const accountStore = createDrizzleAccountStore(db.orm);
   const directory = createDrizzleDeviceDirectory(db.orm);
   const subscriptions = createDrizzlePushSubscriptionStore(db.orm);
-  const hub = new LocalHub(clock, DEVICE_CAP);
+  const pgHub =
+    options.hub === 'pg' || shared !== undefined
+      ? new PgNotifyHub({
+          clock,
+          timer: clock,
+          random,
+          bus: createPgliteNotifyBus(client),
+          logger,
+          deviceCap: DEVICE_CAP,
+        })
+      : undefined;
+  await pgHub?.start();
+  const hub: HubPort = pgHub ?? new LocalHub(clock, DEVICE_CAP);
   const audit = new AuditRecorder({ clock, store: createDrizzleAuditLog(db.orm), logger });
   const webauthn = createSimpleWebAuthn({ id: rpId, origin, name: 'rc' });
   const decisions = new DecisionVerifier({ store: accountStore, webauthn, clock });
@@ -199,6 +226,8 @@ export async function startRelay(options: StartRelayOptions): Promise<HarnessRel
     wsOrigin: `ws://127.0.0.1:${String(address.port)}`,
     origin,
     rpId,
+    database: client,
+    connected: (userId, deviceId) => hub.connection(userId, deviceId) !== undefined,
     push,
     logs: () => destination.lines(),
     takeLogs: () => destination.take(),
@@ -216,10 +245,11 @@ export async function startRelay(options: StartRelayOptions): Promise<HarnessRel
     },
     async close() {
       await app.close();
+      await pgHub?.stop();
       await notifier.idle();
       await audit.idle();
       await push.close();
-      await client.close();
+      if (shared === undefined) await client.close();
     },
   };
 }

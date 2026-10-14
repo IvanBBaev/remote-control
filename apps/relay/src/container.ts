@@ -7,6 +7,7 @@ import { disabledDatabaseHealth } from './adapters/disabled-database-health.js';
 import { createDrizzleAccountStore } from './adapters/drizzle-account-store.js';
 import { createDrizzleAuditLog } from './adapters/drizzle-audit-log.js';
 import { createPgDb } from './adapters/pg-db.js';
+import { createPgNotifyBus } from './adapters/pg-notify-bus.js';
 import { createScryptSecretHasher } from './adapters/scrypt-secret-hasher.js';
 import { createSimpleWebAuthn } from './adapters/simple-webauthn.js';
 import { createDrizzlePushSubscriptionStore } from './adapters/drizzle-push-subscription-store.js';
@@ -26,6 +27,7 @@ import { DrainState } from './core/drain-state.js';
 import { DEVICE_CAP } from './core/hub-limits.js';
 import { LocalHub } from './core/local-hub.js';
 import { PairingService } from './core/pairing-service.js';
+import { PgNotifyHub } from './core/pg-notify-hub.js';
 import { PushNotifier } from './core/push-notifier.js';
 import { RelayRouter } from './core/relay-router.js';
 import { MIGRATIONS_DIR, SPIKE_DIR } from './package-paths.js';
@@ -60,6 +62,9 @@ export interface Container {
         readonly pairing: PairingService;
         readonly decisions: DecisionVerifier;
         readonly revocations: RevocationService;
+        /** Joins and leaves the other replicas (`RC_HUB=pg`, ADR 0012); `undefined` for one replica. */
+        readonly cluster:
+          { readonly start: () => Promise<void>; readonly stop: () => Promise<void> } | undefined;
       }
     | undefined;
   /** Web Push (M0-12); `undefined` without a database or VAPID keys. */
@@ -103,7 +108,18 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
   const clock = systemClock;
   const random = webCryptoRandom;
   const directory = db && createDrizzleDeviceDirectory(db.orm);
-  const hub = new LocalHub(clock, DEVICE_CAP);
+  const pgHub =
+    config.hub === 'pg' && config.databaseUrl !== undefined
+      ? new PgNotifyHub({
+          clock,
+          timer: systemTimer,
+          random,
+          bus: createPgNotifyBus(config.databaseUrl, logger),
+          logger,
+          deviceCap: DEVICE_CAP,
+        })
+      : undefined;
+  const hub: HubPort = pgHub ?? new LocalHub(clock, DEVICE_CAP);
   const store = db && createDrizzleAccountStore(db.orm);
   const webauthn = createSimpleWebAuthn({ id: config.rpId, origin: config.origin, name: RP_NAME });
   const decisions = store && new DecisionVerifier({ store, webauthn, clock });
@@ -187,6 +203,7 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
           clock,
           logger,
         }),
+        cluster: pgHub && { start: () => pgHub.start(), stop: () => pgHub.stop() },
       },
     push,
     audit,

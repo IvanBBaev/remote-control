@@ -47,6 +47,8 @@ const EnvSchema = z
     ),
     /** `1` serves the M0-03 device spike under `/spike/` (needs the VAPID keys). */
     RC_SPIKE: optional(z.enum(['0', '1'])),
+    /** `pg` shares devices across relay replicas over Postgres NOTIFY (ADR 0012). */
+    RC_HUB: optional(z.enum(['local', 'pg'])),
     /** Sentry project DSN (D16); unset disables error reporting. */
     RC_SENTRY_DSN: optional(
       z.string().refine((value) => parseSentryDsn(value) !== null, 'must be an https Sentry DSN'),
@@ -109,6 +111,13 @@ const EnvSchema = z
         message: 'needs RC_VAPID_PUBLIC and RC_VAPID_PRIVATE',
       });
     }
+    if (env.RC_HUB === 'pg' && !env.RC_DATABASE_URL && !env.DATABASE_URL) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['RC_HUB'],
+        message: 'pg needs RC_DATABASE_URL (or DATABASE_URL)',
+      });
+    }
     if ((env.RC_TLS_CERT_FILE === undefined) !== (env.RC_TLS_KEY_FILE === undefined)) {
       ctx.addIssue({
         code: 'custom',
@@ -150,6 +159,8 @@ export interface Config {
   readonly adminToken: string | undefined;
   /** Error reporting (D16); `undefined` disables it. */
   readonly sentry: SentryDsn | undefined;
+  /** `local`: one replica holds every socket; `pg`: replicas share them (ADR 0012). */
+  readonly hub: 'local' | 'pg';
 }
 
 /** Thrown when the environment is invalid; the message names variables, never values. */
@@ -191,6 +202,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
         : undefined,
     spike: e.RC_SPIKE === '1',
     adminToken: e.RC_ADMIN_TOKEN,
+    hub: e.RC_HUB ?? 'local',
     sentry:
       e.RC_SENTRY_DSN === undefined ? undefined : (parseSentryDsn(e.RC_SENTRY_DSN) ?? undefined),
   };

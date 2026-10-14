@@ -95,6 +95,10 @@ export class RelayRouter {
     this.#pending = deps.pending ?? ignorePendingRequests;
     this.#audit = deps.audit ?? ignoreAudit;
     this.#acks = new AckTracker(deps.timer, (delivery) => this.#pending.unacked(delivery));
+    deps.hub.cluster?.bind({
+      ack: (userId, recipientId, ids) => this.#settle(userId, recipientId, ids),
+      lost: (device, localPeers) => this.#announce(device, false, localPeers),
+    });
   }
 
   /** Starts serving an upgraded socket whose identity was established before the upgrade. */
@@ -172,6 +176,10 @@ export class RelayRouter {
 
   /** @internal Tells the user's other devices that `identity` came online or left. */
   broadcastPresence(identity: DeviceIdentity, online: boolean): void {
+    this.#announce(identity, online, this.deps.hub.connections(identity.userId));
+  }
+
+  #announce(identity: DeviceIdentity, online: boolean, peers: readonly HubConnection[]): void {
     if (this.#draining) return;
     const text = encodeFrame({
       v: VERSION_TABLE.v,
@@ -180,7 +188,7 @@ export class RelayRouter {
       online,
       at: this.deps.clock.now(),
     });
-    for (const peer of this.deps.hub.connections(identity.userId)) {
+    for (const peer of peers) {
       if (peer.identity.deviceId !== identity.deviceId) peer.send(text);
     }
   }
@@ -252,10 +260,17 @@ export class RelayRouter {
 
   /** @internal Forwards the recipient's `ack` to each original sender (D4). */
   forwardAck(recipient: DeviceSession, ids: readonly string[]): void {
-    const bySender = this.#acks.ack(recipient.identity.deviceId, ids);
+    const { userId, deviceId } = recipient.identity;
+    this.#settle(userId, deviceId, ids);
+    // The envelope may have been routed (and tracked) by another replica (ADR 0012).
+    this.deps.hub.cluster?.publishAck(userId, deviceId, ids);
+  }
+
+  #settle(userId: string, recipientId: string, ids: readonly string[]): void {
+    const bySender = this.#acks.ack(recipientId, ids);
     for (const [from, settled] of bySender) {
       this.deps.hub
-        .connection(recipient.identity.userId, from)
+        .connection(userId, from)
         ?.send(encodeFrame({ v: VERSION_TABLE.v, kind: 'ack', ids: settled }));
     }
   }
