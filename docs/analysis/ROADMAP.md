@@ -13,18 +13,18 @@ named, so nobody re-derives it.
 <!-- release-progress:begin -->
 ## Release progress (Opus 5.5 hours)
 
-> Maintained by the `relase-opus-5-5-persentage` skill. Unit: wall-clock hours
+> Maintained by the `%-relase-opus-5-5-persentage` skill. Unit: wall-clock hours
 > of one autonomous Opus 5.5 session at this project's gate standard.
 > Numbers are computed by the skill's script from the table below.
 
 | | |
 |---|---|
 | Release target | `M1 — Second user` exit (§3): `remotectl@0.1.0` published + M1 exit record (current version `0.0.0`, no tags) |
-| Progress | **65.3 %** — 63 h of 96.5 h earned |
-| Remaining | **33.5 h** Opus 5.5 (2 h workable now, 31.5 h blocked) |
-| Blocked by | domain + Railway deploy (Q2); device spike on iPhone/Android; first push (CI on GitHub, branch protection); npm placeholder + trusted publisher; second user named (Q13); two weeks of owner use; M1-04 chain waits on M0-23 (real CLI decided from the phone) |
+| Progress | **85.5 %** — 82.5 h of 96.5 h earned |
+| Remaining | **14 h** Opus 5.5 (0 h workable now, 14 h blocked) |
+| Blocked by | domain + Railway deploy (Q2); device spike on iPhone/Android; first push (CI on GitHub, branch protection); npm placeholder + trusted publisher; second user named (Q13); two weeks of owner use; real-CLI runs with the claude CLI (M0-23b, then M1-04b/05b/07b); 24 h soak run |
 | Calibration | Same-session sequential WP gaps (git log 2026-10-12/13): M0-14 ~1.0 h, M0-11 ~1.1 h, M0-20 ~0.7 h, M0-19 ~3.2 h; 37 WPs closed in ~20.5 h wall across 3–4 parallel sessions. Scale: S = 1 h, M = 2 h, L = 4 h; owner-gated tails 0.5–3 h of agent work each |
-| Updated | 2026-10-13 at `727195e` |
+| Updated | 2026-10-14 at `a84d088` |
 
 | ID | Item | Source | Status | Est h |
 |---|---|---|---|---|
@@ -52,7 +52,8 @@ named, so nobody re-derives it.
 | M0-20 | PWA pairing, key store, realtime client | §4 M0-20 | `done` | 2 |
 | M0-21 | PWA push subscription, service worker, approval card | §4 M0-21 | `done` | 2 |
 | M0-22 | Journeys J1–J3, J5–J7 and the privacy gate | §4 M0-22 | `done` | 4 |
-| M0-23 | Real Claude Code verification (held ≥ 11 min, decided from the phone) — needs M0-02b/M0-03b | §4 M0-23 | `blocked-owner` | 3 |
+| M0-23a | Real Claude Code verification kit + synthetic hook overhead (p95 31.9 ms) | §4 M0-23 | `done` | 2 |
+| M0-23b | Real-CLI runs (held ≥ 11 min, decided from the phone, A2/A3, version) — needs claude CLI, M0-02b/M0-03b | §4 M0-23 | `blocked-owner` | 1 |
 | M0-24 | Agent macOS launchd service | §4 M0-24 | `done` | 1 |
 | M0-25 | CI completion: OS matrix, coverage, pg-real, browser vectors | §4 M0-25 | `done` | 2 |
 | PUSH | First push: ci/agent-os/pg-real/image green on GitHub runners, fix runner-only failures, branch protection | §4 M0-25, M1-08 notes | `blocked-owner` | 3 |
@@ -64,25 +65,29 @@ named, so nobody re-derives it.
 | M1-01 | AskUserQuestion end-to-end | §4 M1-01 | `done` | 2 |
 | M1-02 | "Always" from the phone (session scope) | §4 M1-02 | `done` | 1 |
 | M1-03 | "Reply in terminal", early handoff, remotectl pause | §4 M1-03 | `done` | 1 |
-| M1-04 | Session registry, launcher, follow-up, J9–J11 — deps M0-23 | §4 M1-04 | `doing — code done f25cfea; real-CLI check pending M0-23 (ADR 0005)` | 4 |
-| M1-05 | Live feed and thin session view, J8 — deps M1-04 | §4 M1-05 | `doing — code done d22c187; real-CLI check pending M0-23 (ADR 0005)` | 4 |
+| M1-04a | Session registry, launcher, follow-up, J9–J11 (code, f25cfea, ADR 0005) | §4 M1-04 | `done` | 3.5 |
+| M1-04b | M1-04 real-CLI check — deps M0-23b | §4 M1-04 | `blocked-owner` | 0.5 |
+| M1-05a | Live feed and thin session view, J8 (code, d22c187) | §4 M1-05 | `done` | 3.5 |
+| M1-05b | M1-05 real-CLI check — deps M0-23b | §4 M1-05 | `blocked-owner` | 0.5 |
 | M1-06 | Encrypted push summary | §4 M1-06 | `done` | 2 |
-| M1-07 | Machines screen, checklist, onboarding self-test — deps M1-05 | §4 M1-07 | `doing — code done b69ecf3; real-CLI check pending M0-23 (ADR 0007)` | 2 |
+| M1-07a | Machines screen, checklist, onboarding self-test (code, b69ecf3, ADR 0007) | §4 M1-07 | `done` | 1.5 |
+| M1-07b | M1-07 real-CLI check — deps M0-23b | §4 M1-07 | `blocked-owner` | 0.5 |
 | M1-08 | Linux and Windows services, uninstall, logs, update | §4 M1-08 | `done` | 2 |
 | M1-09a | Tag-driven release pipeline (code part) | §4 M1-09 | `done` | 1 |
 | M1-09b | First tagged publish remotectl@0.1.0 + release checklist executed | §4 M1-09, §3 M1 (2)(6) | `blocked-owner` | 1.5 |
-| M1-10 | Revocation and deletion, J12 — deps M1-07 | §4 M1-10 | `done 5c11cfa — ahead of M1-07's real-CLI check (ADR 0009)` | 2 |
+| M1-10 | Revocation and deletion, J12 (5c11cfa, ahead of M1-07b, ADR 0009) | §4 M1-10 | `done` | 2 |
 | M1-11 | Tool-label dictionary, card polish, local stats | §4 M1-11 | `done` | 1 |
-| M1-12 | Playwright P1–P9 + WebKit smoke — deps M1-05 | §4 M1-12 | `done 5286172 — first CI run pending the next push` | 3 |
+| M1-12 | Playwright P1–P9 + WebKit smoke (5286172; first CI run rides on PUSH) | §4 M1-12 | `done` | 3 |
 | M1-13 | Audit log and admin counters | §4 M1-13 | `done` | 1 |
-| M1-14a | README final, screens doc, second-user protocol and template (repo part) | §4 M1-14 | `done 181c488` | 1 |
+| M1-14a | README final, screens doc, second-user protocol and template (repo part, 181c488) | §4 M1-14 | `done` | 1 |
 | M1-14b | Second-user run logged in `docs/verification/second-user.md` — deps M0-02b, M1-09b, Q13 | §4 M1-14, §6 Q13 | `blocked-owner` | 0.5 |
-| M1-15a | Soak harness, `pnpm soak` and CI load smoke (code part) | §4 M1-15 | `done 287eb9c` | 1 |
+| M1-15a | Soak harness, `pnpm soak` and CI load smoke (code part, 287eb9c) | §4 M1-15 | `done` | 1 |
 | M1-15b | 24 h soak run logged in `docs/verification/soak.md` | §4 M1-15 | `blocked-owner` | 0.5 |
 | M1-EXIT | M1 exit record: two weeks, ≥ 20 approvals from outside home | §4 M1 exit record, §3 M1 (4) | `blocked-owner` | 1 |
 
 ### History
 - 2026-10-13 `727195e` — 65.3 %, 33.5 h left (first run; target M1 exit; M2-04 and M2-08 are done but outside the target and not counted)
+- 2026-10-14 `a84d088` — 85.5 %, 14 h left (+20.2 pp, −19.5 h; done M1-02, M1-03, M1-10, M1-12 and the code parts of M0-23, M1-04, M1-05, M1-07, M1-14, M1-15; split M0-23 3→2+1, M1-04 4→3.5+0.5, M1-05 4→3.5+0.5, M1-07 2→1.5+0.5 into code + real-CLI check, peer sessions split M1-14/M1-15 1.5→1+0.5, totals unchanged; M2-01/02/03/05/06/07/09 and M3 Node 24, Gemini, PgNotifyHub done but outside the target; no estimates changed — the day's WPs landed within S/M/L)
 <!-- release-progress:end -->
 
 ## 0. How to execute this roadmap
