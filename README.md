@@ -91,7 +91,7 @@ Then:
 
 ```sh
 remotectl login rc-enroll:…   # the command the phone showed
-remotectl hooks install       # Claude Code hooks; add --agent codex for Codex CLI
+remotectl hooks install       # Claude Code hooks; --agent codex or --agent gemini for those CLIs
 remotectl install             # runs the agent as a login service (launchd, systemd --user, Task Scheduler)
 remotectl pair                # prints a QR code and a 12-character code
 ```

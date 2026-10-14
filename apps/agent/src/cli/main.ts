@@ -12,7 +12,12 @@ import {
 import { CLAUDE_CODE_CAPABILITIES, claudeCodeAdapter } from '../adapters/claude-code/adapter.js';
 import { NO_DECISION_MESSAGE } from '../adapters/claude-code/decide.js';
 import { CODEX_CAPABILITIES, codexAdapter } from '../adapters/codex/adapter.js';
-import { CODEX_HOOK_SEEN_FILE, createFileHookSeenStore } from '../adapters/file-hook-seen-store.js';
+import {
+  CODEX_HOOK_SEEN_FILE,
+  GEMINI_HOOK_SEEN_FILE,
+  createFileHookSeenStore,
+} from '../adapters/file-hook-seen-store.js';
+import { GEMINI_CAPABILITIES, geminiAdapter } from '../adapters/gemini/adapter.js';
 import { AGENT_ENDPOINT_FILE, KeyStoreError } from '../adapters/file-key-store.js';
 import { createFilePauseStore, type PauseStore } from '../adapters/file-pause-store.js';
 import { createFileStatsStore, type StatsStore } from '../adapters/file-stats-store.js';
@@ -296,8 +301,12 @@ async function runCommand(
   });
   // Diffs of changed files (M2-02): memory only, sent when a phone asks for one.
   const diffs = createDiffStore();
-  // The Codex `/hooks` trust canary (M2-01): the first Codex hook of each kind is recorded.
-  const codexSeen = openCodexHookSeen(c);
+  // The Codex `/hooks` trust canary (M2-01): the first Codex hook of each kind is recorded;
+  // Gemini's the same way, so `status` shows its hooks run (04 W14).
+  const agentSeen = {
+    codex: openAgentHookSeen(c, 'codex'),
+    gemini: openAgentHookSeen(c, 'gemini'),
+  };
   const handler = createHookDispatcher({
     store,
     paused,
@@ -306,14 +315,15 @@ async function runCommand(
       // `remotectl status --self-test` is a request, not a session: nothing else to track.
       if (input.session_id === SELF_TEST_SESSION_ID) return;
       const cwd = input['cwd'];
-      if (agent === 'codex') {
-        codexSeen.record(input.hook_event_name, c.clock.now()).catch((error: unknown) => {
+      if (agent !== 'claude-code') {
+        agentSeen[agent].record(input.hook_event_name, c.clock.now()).catch((error: unknown) => {
           log.logger.warn({ event: 'hook_seen_write_failed' }, (error as Error).message);
         });
       }
       if (typeof cwd === 'string') {
         sessions.observe(input.session_id, cwd, input.hook_event_name === 'SessionEnd', agent);
-        // Claude Code trust is per folder (04 §2.6); Codex trust is per hook (`/hooks`).
+        // Claude Code trust is per folder (04 §2.6); Codex trust is per hook (`/hooks`), and
+        // Gemini user hooks need none.
         if (agent === 'claude-code') {
           hookSeen.observe(cwd).catch((error: unknown) => {
             log.logger.warn({ event: 'hook_seen_write_failed' }, (error as Error).message);
@@ -380,6 +390,10 @@ async function runCommand(
         // Codex approvals only, offered once its hooks are installed (M2-01).
         ...((await hooksComplete(c, config.hooks.holdSeconds, 'codex')) === true
           ? [CODEX_CAPABILITIES]
+          : []),
+        // Gemini observe and deny only, offered once its hooks are installed (04 W14).
+        ...((await hooksComplete(c, config.hooks.holdSeconds, 'gemini')) === true
+          ? [GEMINI_CAPABILITIES]
           : []),
       ],
       launcher,
@@ -501,7 +515,8 @@ async function statusCommand(args: readonly string[], c: Container): Promise<num
   );
   out(`paired devices:  ${(await c.keyStore.listPeers()).length}`);
   out(`pause:           ${pauseStatusText(await openPause(c).read(), c.clock.now())}`);
-  out(`codex hooks:     ${await codexStatusText(c, loaded)}`);
+  out(`codex hooks:     ${await agentHooksStatusText(c, loaded, 'codex')}`);
+  out(`gemini hooks:    ${await agentHooksStatusText(c, loaded, 'gemini')}`);
   const [statsHead, ...statsProjects] = formatStats(await openStats(c, () => undefined).read());
   out(`local counters:  ${statsHead!}`);
   for (const line of statsProjects) out(line);
@@ -623,32 +638,42 @@ function openHookSeen(c: Container) {
   return createFileHookSeenStore({ dir: c.paths.data, fs: c.fs, paths: c.pathPort });
 }
 
-function openCodexHookSeen(c: Container) {
+function openAgentHookSeen(c: Container, agent: 'codex' | 'gemini') {
   return createFileHookSeenStore({
     dir: c.paths.data,
     fs: c.fs,
     paths: c.pathPort,
-    file: CODEX_HOOK_SEEN_FILE,
+    file: agent === 'codex' ? CODEX_HOOK_SEEN_FILE : GEMINI_HOOK_SEEN_FILE,
   });
 }
 
-/** `remotectl status`: whether the Codex hooks are installed and trusted (M2-01). */
-async function codexStatusText(c: Container, loaded: LoadConfigResult): Promise<string> {
+/** `remotectl status`: whether the Codex (M2-01) or Gemini (04 W14) hooks are installed and ran. */
+async function agentHooksStatusText(
+  c: Container,
+  loaded: LoadConfigResult,
+  agent: 'codex' | 'gemini',
+): Promise<string> {
   const holdSeconds =
     loaded.status === 'ok' ? loaded.config.hooks.holdSeconds : DEFAULT_HOLD_SECONDS;
-  const installed = await hooksComplete(c, holdSeconds, 'codex');
-  if (installed === undefined) return 'hooks.json unreadable';
-  if (!installed) return 'not installed (`remotectl hooks install --agent codex`)';
-  const seen = await openCodexHookSeen(c).read();
-  // A hook arrived, so the user trusted the entries in Codex's `/hooks` (04 risk 9).
-  return Object.keys(seen).length > 0
-    ? 'installed; a Codex hook arrived'
-    : 'installed; no Codex hook yet (trust them in `/hooks`)';
+  const installed = await hooksComplete(c, holdSeconds, agent);
+  const name = agent === 'codex' ? 'Codex' : 'Gemini';
+  if (installed === undefined) {
+    return agent === 'codex' ? 'hooks.json unreadable' : 'settings.json unreadable';
+  }
+  if (!installed) return `not installed (\`remotectl hooks install --agent ${agent}\`)`;
+  const seen = await openAgentHookSeen(c, agent).read();
+  // A Codex hook arrived, so the user trusted the entries in Codex's `/hooks` (04 risk 9).
+  if (Object.keys(seen).length > 0) return `installed; a ${name} hook arrived`;
+  return agent === 'codex'
+    ? 'installed; no Codex hook yet (trust them in `/hooks`)'
+    : 'installed; no Gemini hook yet (restart running `gemini` sessions)';
 }
 
 /** The adapter that decodes and answers a held request; absent means Claude Code. */
 function adapterFor(agent: AgentAdapterId | undefined): AgentAdapter {
-  return agent === 'codex' ? codexAdapter : claudeCodeAdapter;
+  if (agent === 'codex') return codexAdapter;
+  if (agent === 'gemini') return geminiAdapter;
+  return claudeCodeAdapter;
 }
 
 /** The local usage counters (M1-11): this computer only, never sent to the relay (I1/I3). */
@@ -900,6 +925,24 @@ export const CODEX_TRUST_HINT =
   'Codex runs these hooks only after you trust them: start `codex`, open `/hooks` and\n' +
   'trust the remotectl entries. `remotectl status` shows whether a Codex hook arrived.\n';
 
+/** Gemini can only be stopped from the phone, never approved (04 A6, ADR 0013). */
+export const GEMINI_HINT =
+  'Gemini sessions started before an install pick up the hooks after a restart. The phone\n' +
+  "can deny a shell command or a file edit; an allow leaves the call to Gemini's own\n" +
+  'confirmation in the terminal. `remotectl status` shows whether a Gemini hook arrived.\n';
+
+const HOOKS_AGENTS: readonly HooksAgent[] = ['claude-code', 'codex', 'gemini'];
+const HOOKS_DIRS: Readonly<Record<HooksAgent, (c: Container) => string>> = {
+  'claude-code': (c) => c.claudeConfigDir,
+  codex: (c) => c.codexConfigDir,
+  gemini: (c) => c.geminiConfigDir,
+};
+const HOOKS_HINTS: Readonly<Record<HooksAgent, string>> = {
+  'claude-code': TRUST_HINT,
+  codex: CODEX_TRUST_HINT,
+  gemini: GEMINI_HINT,
+};
+
 function describeHook(entry: HookStateEntry): string {
   const name = entry.matcher === undefined ? entry.event : `${entry.event} (${entry.matcher})`;
   return `  ${name.padEnd(34)}${entry.state}`;
@@ -910,7 +953,7 @@ function hooksInstaller(c: Container, holdSeconds: number, agent: HooksAgent = '
     fs: c.fs,
     paths: c.pathPort,
     clock: c.clock,
-    settingsDir: agent === 'codex' ? c.codexConfigDir : c.claudeConfigDir,
+    settingsDir: HOOKS_DIRS[agent](c),
     dataDir: c.paths.data,
     hookSource: c.hookSource,
     execPath: c.execPath,
@@ -942,12 +985,12 @@ async function hooksCommand(args: readonly string[], c: Container): Promise<numb
     throw new UsageError('expected one of: install, remove, status');
   }
   const { values } = parse(rest, { options: { agent: { type: 'string' } } });
-  const agent = values['agent'] ?? 'claude-code';
-  if (agent !== 'claude-code' && agent !== 'codex') {
-    throw new UsageError('--agent must be claude-code or codex');
+  const agent = HOOKS_AGENTS.find((id) => id === (values['agent'] ?? 'claude-code'));
+  if (agent === undefined) {
+    throw new UsageError('--agent must be claude-code, codex or gemini');
   }
-  const trustHint = agent === 'codex' ? CODEX_TRUST_HINT : TRUST_HINT;
-  const agentFlag = agent === 'codex' ? ' --agent codex' : '';
+  const trustHint = HOOKS_HINTS[agent];
+  const agentFlag = agent === 'claude-code' ? '' : ` --agent ${agent}`;
   const loaded = await loadConfig(c.paths.config, c.fs, c.pathPort);
   if (loaded.status === 'invalid') {
     reportInvalidConfig(c, loaded);

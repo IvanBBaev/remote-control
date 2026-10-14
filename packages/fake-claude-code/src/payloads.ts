@@ -83,6 +83,26 @@ export function codexPermissionRequestPayload(
   };
 }
 
+/**
+ * Gemini CLI `BeforeTool` (04 §2.12, W14): the base fields `session_id`,
+ * `transcript_path`, `cwd`, `hook_event_name`, `timestamp`, plus `tool_name` and
+ * `tool_input`; no permission mode and no tool-use id.
+ */
+export function geminiBeforeToolPayload(
+  ctx: Omit<PayloadContext, 'permissionMode' | 'promptId'> & { readonly timestamp: string },
+  tool: { toolName: string; toolInput: Record<string, unknown> },
+): Payload {
+  return {
+    session_id: ctx.sessionId,
+    transcript_path: ctx.transcriptPath,
+    cwd: ctx.cwd,
+    hook_event_name: 'BeforeTool',
+    timestamp: ctx.timestamp,
+    tool_name: tool.toolName,
+    tool_input: tool.toolInput,
+  };
+}
+
 /** 04 §2.4 / 07 §2.1: `tool_input`, `tool_response`, `tool_use_id`, `duration_ms`. */
 export function postToolUsePayload(
   ctx: PayloadContext,

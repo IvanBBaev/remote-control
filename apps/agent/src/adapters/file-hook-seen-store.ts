@@ -8,6 +8,8 @@ import { SECRET_DIR_MODE, SECRET_FILE_MODE } from './file-key-store.js';
 export const HOOK_SEEN_FILE = 'hooks-seen.json';
 /** The Codex canary (M2-01): keyed by hook event, a `SessionStart` proves `/hooks` trust. */
 export const CODEX_HOOK_SEEN_FILE = 'codex-hooks-seen.json';
+/** The Gemini canary (04 W14): keyed by hook event, proves Gemini runs the hooks. */
+export const GEMINI_HOOK_SEEN_FILE = 'gemini-hooks-seen.json';
 
 const HookSeenFile = z.object({
   version: z.literal(1),

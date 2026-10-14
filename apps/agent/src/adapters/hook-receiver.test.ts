@@ -193,9 +193,10 @@ describe('HookReceiver', () => {
     });
     const stop = JSON.stringify({ hook_event_name: 'Stop', session_id: 's' });
     expect((await post(port, stop, { [HOOK_AGENT_HEADER]: 'codex' })).status).toBe(204);
+    expect((await post(port, stop, { [HOOK_AGENT_HEADER]: 'gemini' })).status).toBe(204);
     expect((await post(port, stop)).status).toBe(204);
     expect((await post(port, stop, { [HOOK_AGENT_HEADER]: 'cursor' })).status).toBe(400);
-    expect(agents).toEqual(['codex', 'claude-code']);
+    expect(agents).toEqual(['codex', 'gemini', 'claude-code']);
   });
 
   it('rejects malformed input with 400 and has no other route', async () => {

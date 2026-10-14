@@ -74,6 +74,8 @@ export interface Container {
   readonly claudeConfigDir: string;
   /** `$CODEX_HOME`, else `~/.codex`: where Codex reads `hooks.json` (M2-01). */
   readonly codexConfigDir: string;
+  /** `~/.gemini`: where Gemini CLI reads its user `settings.json` (04 §2.12). */
+  readonly geminiConfigDir: string;
   /** The bundled `hook.cjs` that `hooks install` copies into the data dir. */
   readonly hookSource: string;
   /** Absolute path of the Node binary that runs `hook.cjs`. */
@@ -184,6 +186,7 @@ export function createContainer(options: ContainerOptions): Container {
     output,
     claudeConfigDir: options.env['CLAUDE_CONFIG_DIR'] || pathPort.join(options.homedir, '.claude'),
     codexConfigDir: options.env['CODEX_HOME'] || pathPort.join(options.homedir, '.codex'),
+    geminiConfigDir: pathPort.join(options.homedir, '.gemini'),
     hookSource: options.hookSource ?? fileURLToPath(new URL('./hook.cjs', import.meta.url)),
     execPath: options.execPath ?? process.execPath,
     startHookReceiver,

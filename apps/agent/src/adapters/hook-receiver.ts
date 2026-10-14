@@ -13,7 +13,7 @@ export const HOOK_TIMEOUT_HEADER = 'x-remotectl-hook-timeout';
 /** Header `hook.js` sends with `--adapter <id>`; absent means `claude-code` (M2-01). */
 export const HOOK_AGENT_HEADER = 'x-remotectl-agent';
 /** The agents whose hooks the receiver accepts. */
-const HOOK_AGENTS: readonly AgentAdapterId[] = ['claude-code', 'codex'];
+const HOOK_AGENTS: readonly AgentAdapterId[] = ['claude-code', 'codex', 'gemini'];
 /** Largest hook body accepted (tool inputs can carry whole files). */
 export const HOOK_BODY_LIMIT = 8 * 1024 * 1024;
 const MAX_HOOK_TIMEOUT_SECONDS = 86_400;

@@ -27,7 +27,15 @@ import type { ClaudeCli } from '../ports/claude-cli.js';
 import type { ProcessResult } from '../ports/process-result.js';
 import type { Systemctl } from '../ports/systemctl.js';
 import { AGENT_VERSION } from '../version.js';
-import { CODEX_TRUST_HINT, EXIT_ERROR, EXIT_OK, EXIT_USAGE, HELP_TEXT, runCli } from './main.js';
+import {
+  CODEX_TRUST_HINT,
+  GEMINI_HINT,
+  EXIT_ERROR,
+  EXIT_OK,
+  EXIT_USAGE,
+  HELP_TEXT,
+  runCli,
+} from './main.js';
 
 const posixOnly = process.platform === 'win32' ? it.skip : it;
 
@@ -503,9 +511,44 @@ describe('runCli', () => {
       expect(h.out()).toContain(`Removed the hooks in ${codexHooks}.`);
     });
 
+    it('installs the Gemini hooks into ~/.gemini/settings.json with --agent gemini (04 W14)', async () => {
+      const geminiSettings = join(base, 'home', '.gemini', 'settings.json');
+      expect(await h.run(['hooks', 'status', '--agent', 'gemini'])).toBe(EXIT_OK);
+      expect(h.out()).toContain('Run `remotectl hooks install --agent gemini`');
+
+      expect(await h.run(['hooks', 'install', '--agent', 'gemini'])).toBe(EXIT_OK);
+      expect(h.out()).toContain(`Installed the hooks in ${geminiSettings}.`);
+      expect(h.out()).toContain(GEMINI_HINT);
+      const installed = JSON.parse(await readFile(geminiSettings, 'utf8')) as {
+        hooks: Record<
+          string,
+          { matcher?: string; hooks: { command: string; timeout: number }[] }[]
+        >;
+      };
+      const script = join(h.c.paths.data, 'hook.cjs');
+      const [gate] = installed.hooks['BeforeTool'] ?? [];
+      expect(gate?.matcher).toBe('^(run_shell_command|write_file|replace)$');
+      expect(gate?.hooks[0]?.command).toBe(
+        `"/usr/local/bin/node" "${script}" 1800 --adapter gemini`,
+      );
+      expect(gate?.hooks[0]?.timeout).toBe(1_800_000);
+      // The Claude Code settings stay untouched.
+      await expect(readFile(settingsPath(), 'utf8')).rejects.toThrow();
+
+      expect(await h.run(['status'])).toBe(EXIT_OK);
+      expect(h.out()).toContain('gemini hooks:    installed; no Gemini hook yet');
+
+      expect(await h.run(['hooks', 'remove', '--agent', 'gemini'])).toBe(EXIT_OK);
+      expect(h.out()).toContain(`Removed the hooks in ${geminiSettings}.`);
+      expect(await h.run(['status'])).toBe(EXIT_OK);
+      expect(h.out()).toContain(
+        'gemini hooks:    not installed (`remotectl hooks install --agent gemini`)',
+      );
+    });
+
     it('refuses an unknown --agent', async () => {
       expect(await h.run(['hooks', 'install', '--agent', 'bogus'])).toBe(EXIT_USAGE);
-      expect(h.err()).toContain('--agent must be claude-code or codex');
+      expect(h.err()).toContain('--agent must be claude-code, codex or gemini');
     });
 
     it('uses holdSeconds from the config', async () => {

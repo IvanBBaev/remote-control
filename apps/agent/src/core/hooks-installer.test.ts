@@ -9,6 +9,8 @@ import { systemRandom } from '../adapters/system-random.js';
 import {
   CODEX_FEED_EVENTS,
   FEED_EVENTS,
+  GEMINI_FEED_EVENTS,
+  GEMINI_GATE_MATCHER,
   HOOK_SCRIPT_FILE,
   HooksSettingsError,
   createHooksInstaller,
@@ -194,6 +196,64 @@ describe('hooks installer', () => {
     await expect(stat(settingsPath)).rejects.toThrow();
     await codex.remove();
     expect(await readFile(hooksPath, 'utf8')).toBe('{}\n');
+  });
+
+  it('installs the Gemini set into its settings.json with millisecond timeouts (04 §5.9)', async () => {
+    const geminiDir = join(base, 'gemini');
+    const gemini = createHooksInstaller({
+      fs: createNodeFileSystem(systemRandom),
+      paths: nodePaths,
+      clock: { now: () => NOW },
+      settingsDir: geminiDir,
+      dataDir,
+      hookSource,
+      execPath: EXEC,
+      holdSeconds: 1800,
+      agent: 'gemini',
+    });
+    const geminiSettings = join(geminiDir, 'settings.json');
+    expect(gemini.settingsPath).toBe(geminiSettings);
+    expect(await gemini.install()).toMatchObject({ changed: true });
+    const script = join(dataDir, HOOK_SCRIPT_FILE);
+    const parsed = JSON.parse(await readFile(geminiSettings, 'utf8')) as {
+      hooks: Record<string, unknown[]>;
+    };
+    expect(Object.keys(parsed.hooks)).toEqual(['BeforeTool', ...GEMINI_FEED_EVENTS]);
+    // The command's `T` stays in seconds; Gemini's own timeout is in milliseconds.
+    expect(parsed.hooks['BeforeTool']).toEqual([
+      {
+        matcher: GEMINI_GATE_MATCHER,
+        hooks: [
+          {
+            type: 'command',
+            command: `"${EXEC}" "${script}" 1800 --adapter gemini`,
+            timeout: 1_800_000,
+          },
+        ],
+      },
+    ]);
+    expect(parsed.hooks['AfterTool']).toEqual([
+      {
+        hooks: [
+          { type: 'command', command: hookCommand(EXEC, script, 5, 'gemini'), timeout: 5000 },
+        ],
+      },
+    ]);
+    expect((await gemini.status()).hooks.every((hook) => hook.state === 'installed')).toBe(true);
+    // The Claude Code settings are untouched.
+    await expect(stat(settingsPath)).rejects.toThrow();
+    await gemini.remove();
+    expect(await readFile(geminiSettings, 'utf8')).toBe('{}\n');
+  });
+
+  it('matches only the Gemini tools that change files or run commands (ADR 0013)', () => {
+    const gate = new RegExp(GEMINI_GATE_MATCHER);
+    for (const tool of ['run_shell_command', 'write_file', 'replace']) {
+      expect(gate.test(tool)).toBe(true);
+    }
+    for (const tool of ['read_file', 'glob', 'list_directory', 'write_file_x', 'my_replace']) {
+      expect(gate.test(tool)).toBe(false);
+    }
   });
 
   it('creates a missing settings file without a backup', async () => {

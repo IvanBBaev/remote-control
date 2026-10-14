@@ -31,12 +31,14 @@ export const ASK_USER_QUESTION = 'AskUserQuestion';
 
 /**
  * The blocking kind of a hook event, or `undefined` for a feed-only event (D11). Codex has
- * no question tool, so only its `PermissionRequest` blocks (04 §2.11).
+ * no question tool, so only its `PermissionRequest` blocks (04 §2.11); Gemini has no
+ * approval hook, so its `BeforeTool` gate blocks (04 §5.9).
  */
 export function blockingKind(
   input: HookInput,
   agent: AgentAdapterId = 'claude-code',
 ): PendingKind | undefined {
+  if (agent === 'gemini') return input.hook_event_name === 'BeforeTool' ? 'permission' : undefined;
   if (input.hook_event_name === 'PermissionRequest') return 'permission';
   if (agent !== 'claude-code') return undefined;
   if (input.hook_event_name === 'PreToolUse' && input['tool_name'] === ASK_USER_QUESTION) {

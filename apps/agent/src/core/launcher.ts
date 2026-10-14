@@ -142,7 +142,7 @@ export function createLauncher(options: LauncherOptions): SessionLauncher {
   /** The session's folder when it is still on the allow-list. */
   async function followUpTarget(sessionId: string) {
     const session = registry.get(sessionId);
-    // Only Claude Code background sessions take a follow-up; Codex has none (M2-01).
+    // Only Claude Code background sessions take a follow-up; Codex and Gemini have none.
     if (
       !options.followUps ||
       session === undefined ||

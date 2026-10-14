@@ -86,7 +86,10 @@ export interface HarnessAgent {
   fire(
     input: Readonly<Record<string, unknown>>,
     timeoutSeconds?: number,
-    /** `codex`: runs the hook as the Codex hooks do, `hook.cjs T --adapter codex` (M2-01). */
+    /**
+     * `codex` or `gemini`: runs the hook as that agent's hooks do, `hook.cjs T --adapter
+     * <id>` (M2-01, 04 W14).
+     */
     adapter?: string,
   ): Promise<HookResult>;
   /** Every `claude` the agent ran so far (`--version`, `agents`, `--bg`, `--resume`). */

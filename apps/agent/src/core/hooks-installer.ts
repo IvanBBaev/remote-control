@@ -46,6 +46,20 @@ export const CODEX_FEED_EVENTS = [
 ] as const;
 /** Codex caps `SessionEnd` hooks at 3 s (04 §2.11). */
 export const CODEX_SESSION_END_TIMEOUT_SECONDS = 3;
+/**
+ * Gemini's `BeforeTool` fires for every tool call, read-only ones too (04 §2.12): the gate
+ * holds only the built-in tools that change files or run commands (ADR 0013).
+ */
+export const GEMINI_GATE_MATCHER = '^(run_shell_command|write_file|replace)$';
+/** Gemini feed events (04 §5.9): never decide, answered at once. */
+export const GEMINI_FEED_EVENTS = [
+  'AfterTool',
+  'Notification',
+  'SessionStart',
+  'SessionEnd',
+] as const;
+/** Gemini hook timeouts are milliseconds, ours are seconds (04 §2.12). */
+export const GEMINI_TIMEOUT_SCALE = 1000;
 /** `~/.codex/hooks.json` (04 §2.11). */
 export const CODEX_HOOKS_FILE = 'hooks.json';
 /** Our hook script, copied into the data directory next to `agent.json`. */
@@ -80,8 +94,19 @@ export function codexHookSpecs(holdSeconds: number): readonly HookSpec[] {
   ];
 }
 
+/**
+ * The Gemini hook set (04 §5.9): the `BeforeTool` gate with `holdSeconds`, four feed hooks.
+ * Timeouts are in seconds here; the installer writes them as milliseconds.
+ */
+export function geminiHookSpecs(holdSeconds: number): readonly HookSpec[] {
+  return [
+    { event: 'BeforeTool', matcher: GEMINI_GATE_MATCHER, timeout: holdSeconds },
+    ...GEMINI_FEED_EVENTS.map((event) => ({ event, timeout: FEED_TIMEOUT_SECONDS })),
+  ];
+}
+
 /** The agents whose hooks `remotectl hooks` manages. */
-export type HooksAgent = 'claude-code' | 'codex';
+export type HooksAgent = 'claude-code' | 'codex' | 'gemini';
 
 /**
  * Our entries are recognised by the script path in the command: `remotectl/hook.cjs`
@@ -99,7 +124,8 @@ export function isOwnCommand(command: string): boolean {
 
 /**
  * `"<node>" "<data>/hook.cjs" <T>`: absolute paths, so the agent's PATH does not matter.
- * Codex hooks add `--adapter codex` so the receiver knows whose hook it holds (M2-01).
+ * Codex and Gemini hooks add `--adapter <id>` so the receiver knows whose hook it holds
+ * (M2-01).
  */
 export function hookCommand(
   execPath: string,
@@ -212,28 +238,30 @@ export function removeOwnHooks(text: string, path: string): string {
   }
 }
 
-function groupFor(spec: HookSpec, command: string): Record<string, unknown> {
+function groupFor(spec: HookSpec, command: string, timeoutScale: number): Record<string, unknown> {
   return {
     ...(spec.matcher !== undefined ? { matcher: spec.matcher } : {}),
-    hooks: [{ type: 'command', command, timeout: spec.timeout }],
+    hooks: [{ type: 'command', command, timeout: spec.timeout * timeoutScale }],
   };
 }
 
 /**
  * Replaces our entries with the given set: our old entries are removed, one matcher
  * group per spec is appended at the end of its event array. Foreign entries keep their
- * bytes. `text` is `undefined` for a missing file.
+ * bytes. `text` is `undefined` for a missing file. `timeoutScale` turns the spec's seconds
+ * into the file's unit (1000 for Gemini's milliseconds).
  */
 export function installOwnHooks(
   text: string | undefined,
   path: string,
   specs: readonly HookSpec[],
   commandFor: (spec: HookSpec) => string,
+  timeoutScale = 1,
 ): string {
   let current = removeOwnHooks(text ?? '{}\n', path);
   for (const spec of specs) {
     const settings = parseSettings(current, path);
-    const group = groupFor(spec, commandFor(spec));
+    const group = groupFor(spec, commandFor(spec), timeoutScale);
     if (settings.hooks === undefined) {
       current = appendObjectMember(current, settings.root, 'hooks', { [spec.event]: [group] });
       continue;
@@ -266,6 +294,7 @@ export function ownHookStates(
   path: string,
   specs: readonly HookSpec[],
   commandFor: (spec: HookSpec) => string,
+  timeoutScale = 1,
 ): readonly HookStateEntry[] {
   const own = text === undefined ? [] : ownHooks(parseSettings(text, path));
   return specs.map((spec) => {
@@ -282,7 +311,7 @@ export function ownHookStates(
       hook.hooks.items.length === 1 &&
       scalarOf(hook.group, 'matcher') === spec.matcher &&
       scalarOf(hook.hook, 'command') === commandFor(spec) &&
-      scalarOf(hook.hook, 'timeout') === spec.timeout;
+      scalarOf(hook.hook, 'timeout') === spec.timeout * timeoutScale;
     return { ...base, state: exact ? 'installed' : 'outdated' };
   });
 }
@@ -291,9 +320,15 @@ export interface HooksInstallerOptions {
   readonly fs: FileSystem;
   readonly paths: PathPort;
   readonly clock: Clock;
-  /** `$CLAUDE_CONFIG_DIR`, else `~/.claude`; for Codex `$CODEX_HOME`, else `~/.codex`. */
+  /**
+   * `$CLAUDE_CONFIG_DIR`, else `~/.claude`; for Codex `$CODEX_HOME`, else `~/.codex`; for
+   * Gemini `~/.gemini`.
+   */
   readonly settingsDir: string;
-  /** Whose hooks: `settings.json` for Claude Code (default), `hooks.json` for Codex. */
+  /**
+   * Whose hooks: `settings.json` for Claude Code (default) and Gemini, `hooks.json` for
+   * Codex.
+   */
   readonly agent?: HooksAgent;
   /** The agent's data dir: `hook.cjs` goes next to `agent.json`. */
   readonly dataDir: string;
@@ -323,7 +358,8 @@ export interface HooksStatus {
 
 /**
  * `settings.json` install, remove and status (D11, 04 §5.6); with `agent: 'codex'` the
- * same for `~/.codex/hooks.json` (04 §5.9, M2-01).
+ * same for `~/.codex/hooks.json` (04 §5.9, M2-01); with `agent: 'gemini'` for
+ * `~/.gemini/settings.json` (04 W14).
  */
 export function createHooksInstaller(options: HooksInstallerOptions) {
   const { fs, paths } = options;
@@ -334,7 +370,12 @@ export function createHooksInstaller(options: HooksInstallerOptions) {
   );
   const scriptPath = paths.join(options.dataDir, HOOK_SCRIPT_FILE);
   const specs =
-    agent === 'codex' ? codexHookSpecs(options.holdSeconds) : hookSpecs(options.holdSeconds);
+    agent === 'codex'
+      ? codexHookSpecs(options.holdSeconds)
+      : agent === 'gemini'
+        ? geminiHookSpecs(options.holdSeconds)
+        : hookSpecs(options.holdSeconds);
+  const timeoutScale = agent === 'gemini' ? GEMINI_TIMEOUT_SCALE : 1;
   const commandFor = (spec: HookSpec): string =>
     hookCommand(options.execPath, scriptPath, spec.timeout, agent);
 
@@ -371,7 +412,7 @@ export function createHooksInstaller(options: HooksInstallerOptions) {
     scriptPath,
     async install(): Promise<HooksChange> {
       const previous = await fs.readText(settingsPath);
-      const next = installOwnHooks(previous, settingsPath, specs, commandFor);
+      const next = installOwnHooks(previous, settingsPath, specs, commandFor, timeoutScale);
       const source = await readSource();
       // The script first: settings never point at a missing file.
       if ((await fs.readText(scriptPath)) !== source) {
@@ -392,7 +433,7 @@ export function createHooksInstaller(options: HooksInstallerOptions) {
     },
     async status(): Promise<HooksStatus> {
       const text = await fs.readText(settingsPath);
-      const hooks = ownHookStates(text, settingsPath, specs, commandFor);
+      const hooks = ownHookStates(text, settingsPath, specs, commandFor, timeoutScale);
       const installed = await fs.readText(scriptPath);
       const source = await fs.readText(options.hookSource);
       const script =

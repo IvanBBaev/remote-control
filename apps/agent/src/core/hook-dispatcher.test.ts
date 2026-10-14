@@ -56,6 +56,16 @@ describe('hook dispatcher', () => {
     ).toBe(undefined);
   });
 
+  it('blocks only on BeforeTool for Gemini (04 §5.9)', () => {
+    const beforeTool = { hook_event_name: 'BeforeTool', session_id: 's', tool_name: 'replace' };
+    expect(blockingKind(beforeTool, 'gemini')).toBe('permission');
+    expect(blockingKind(beforeTool)).toBe(undefined);
+    expect(blockingKind(permission, 'gemini')).toBe(undefined);
+    expect(blockingKind({ hook_event_name: 'AfterTool', session_id: 's' }, 'gemini')).toBe(
+      undefined,
+    );
+  });
+
   it('records the agent on a held Codex request and in onEvent', () => {
     const store = createPendingStore({
       clock: { now: () => 1_000 },
