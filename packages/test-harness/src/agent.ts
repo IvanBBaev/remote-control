@@ -5,7 +5,7 @@ import { delimiter, join } from 'node:path';
 import { FAKE_CLAUDE_BIN, trustWorkspace, writeClaudeShim } from '@remote-control/fake-claude-code';
 import { createLogger, createMemoryDestination } from '@remote-control/log';
 import type { PermissionMode } from '@remote-control/protocol';
-import { createContainer, runCli, type Container } from 'remotectl';
+import { createContainer, runCli, type AgentSdk, type Container } from 'remotectl';
 import { DEFAULT_HOOK_TIMEOUT_SECONDS, runHook } from 'remotectl/hook';
 
 import { eventually } from './eventually.js';
@@ -29,6 +29,11 @@ export interface StartAgentOptions {
   readonly env?: Readonly<Record<string, string>>;
   /** Extra keys for the agent's `config.json` (`{ transcripts: { backfill: true } }`). */
   readonly config?: Readonly<Record<string, unknown>>;
+  /**
+   * Run sessions through this Agent SDK stand-in (`agent.sessions: "sdk"`, ADR 0015)
+   * instead of the `claude` shim.
+   */
+  readonly agentSdk?: AgentSdk;
 }
 
 /** A harness folder: its name, or its name and permission-mode bound (M2-09). */
@@ -161,6 +166,9 @@ export async function startAgent(options: StartAgentOptions): Promise<HarnessAge
     registry: { distTags: () => Promise.reject(new Error('no registry in the harness')) },
     prompt: { confirm: () => Promise.resolve(options.confirm ?? true) },
     hostname: options.name,
+    ...(options.agentSdk !== undefined
+      ? { agentSdk: () => Promise.resolve(options.agentSdk) }
+      : {}),
   });
   const destination = createMemoryDestination();
   const container: Container = {
@@ -177,7 +185,12 @@ export async function startAgent(options: StartAgentOptions): Promise<HarnessAge
   await mkdir(container.paths.config, { recursive: true });
   await writeFile(
     join(container.paths.config, 'config.json'),
-    JSON.stringify({ ...options.config, relay: { url: options.relayUrl }, repositories: entries }),
+    JSON.stringify({
+      ...options.config,
+      relay: { url: options.relayUrl },
+      repositories: entries,
+      ...(options.agentSdk !== undefined ? { agent: { sessions: 'sdk' } } : {}),
+    }),
   );
 
   const cli = (argv: readonly string[], signal = new AbortController().signal) =>

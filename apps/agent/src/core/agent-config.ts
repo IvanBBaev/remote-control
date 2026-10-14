@@ -89,9 +89,14 @@ export const AgentConfig = z
       .object({
         /** What a pending request does at its deadline (D10): `handoff` (default) or `deny`. */
         onExpire: z.enum(['handoff', 'deny']).default('handoff'),
+        /**
+         * How sessions from the phone run (04 W15, ADR 0015): `cli` (default) spawns
+         * `claude --bg`; `sdk` runs them through the Agent SDK on `ANTHROPIC_API_KEY`.
+         */
+        sessions: z.enum(['cli', 'sdk']).default('cli'),
       })
       .strict()
-      .default({ onExpire: 'handoff' }),
+      .default({ onExpire: 'handoff', sessions: 'cli' }),
     always: z
       .object({
         /**

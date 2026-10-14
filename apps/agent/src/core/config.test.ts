@@ -24,7 +24,7 @@ describe('parseConfig', () => {
       config: {
         repositories: [],
         hooks: { holdSeconds: DEFAULT_HOLD_SECONDS, port: 4327 },
-        agent: { onExpire: 'handoff' },
+        agent: { onExpire: 'handoff', sessions: 'cli' },
         always: { destinations: ['session'] },
         notifications: { turnFinished: false, needsInput: false },
         transcripts: { backfill: false },
@@ -43,7 +43,7 @@ describe('parseConfig', () => {
       JSON.stringify({
         repositories: ['/srv/repo'],
         hooks: { holdSeconds: 60 },
-        agent: { onExpire: 'deny' },
+        agent: { onExpire: 'deny', sessions: 'sdk' },
         always: { destinations: ['session', 'localSettings'] },
         notifications: { turnFinished: true },
         relay: { url: 'wss://relay.example.com' },
@@ -55,7 +55,7 @@ describe('parseConfig', () => {
       config: {
         repositories: [{ path: '/srv/repo', maxPermissionMode: 'default' }],
         hooks: { holdSeconds: 60, port: 4327 },
-        agent: { onExpire: 'deny' },
+        agent: { onExpire: 'deny', sessions: 'sdk' },
         always: { destinations: ['session', 'localSettings'] },
         notifications: { turnFinished: true, needsInput: false },
       },
@@ -84,6 +84,9 @@ describe('parseConfig', () => {
     expect(errorsOf('{"hooks":{"holdSeconds":1.5}}')).toHaveLength(1);
     expect(errorsOf('{"agent":{"onExpire":"allow"}}')).toEqual([
       expect.stringMatching(/^agent\.onExpire: /),
+    ]);
+    expect(errorsOf('{"agent":{"sessions":"api"}}')).toEqual([
+      expect.stringMatching(/^agent\.sessions: /),
     ]);
     expect(errorsOf('{"notifications":{"needsInput":"yes"}}')).toEqual([
       expect.stringMatching(/^notifications\.needsInput: /),

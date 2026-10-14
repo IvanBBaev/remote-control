@@ -14,6 +14,7 @@ import {
 } from '@remote-control/fake-claude-code';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { AGENT_SDK_PACKAGE } from './adapters/claude-sdk/load-sdk.js';
 import { runCli } from './cli/main.js';
 import { createContainer } from './container.js';
 import { createHookDispatcher } from './core/hook-dispatcher.js';
@@ -94,12 +95,13 @@ describe('npm package', () => {
     expect(packed.bundled).toEqual([]);
   });
 
-  it('bundles everything except Node builtins', async () => {
+  it('bundles everything except Node builtins and the optional Agent SDK peer', async () => {
     const code = await readFile(BUNDLE, 'utf8');
     expect(code.startsWith('#!/usr/bin/env node\n')).toBe(true);
     const specifiers = bundleSpecifiers(code);
     expect(specifiers.length).toBeGreaterThan(0);
-    expect(specifiers.filter((specifier) => !isBuiltin(specifier))).toEqual([]);
+    // ADR 0015: the SDK stays external and is imported only when `agent.sessions` is "sdk".
+    expect(specifiers.filter((specifier) => !isBuiltin(specifier))).toEqual([AGENT_SDK_PACKAGE]);
   });
 
   it('bundles hook.cjs as CommonJS with Node builtins only', async () => {

@@ -1,3 +1,5 @@
+import type { AgentSdk } from 'remotectl';
+
 import { startAgent, type HarnessAgent, type HarnessRepository } from './agent.js';
 import { createCanaries, type Canaries } from './canaries.js';
 import { createFakeClock, type FakeClock } from './fake-clock.js';
@@ -22,6 +24,8 @@ export interface ScenarioOptions {
   readonly env?: Readonly<Record<string, string>>;
   /** Extra keys for the agent's `config.json` (see `StartAgentOptions`). */
   readonly config?: Readonly<Record<string, unknown>>;
+  /** Sessions run through this Agent SDK stand-in (see `StartAgentOptions`). */
+  readonly agentSdk?: AgentSdk;
   /** The phone runs the relay's passkey check too (default: yes; see `CreatePhoneOptions`). */
   readonly relayCheck?: boolean;
   /**
@@ -83,6 +87,7 @@ export async function scenario(options: ScenarioOptions = {}): Promise<Scenario>
       ...(options.repositories !== undefined ? { repositories: options.repositories } : {}),
       ...(options.env !== undefined ? { env: options.env } : {}),
       ...(options.config !== undefined ? { config: options.config } : {}),
+      ...(options.agentSdk !== undefined ? { agentSdk: options.agentSdk } : {}),
     });
     cleanup.push(() => agent.close());
     const bootMs = performance.now() - started;

@@ -22,6 +22,11 @@ export interface HookContext {
   readonly signal: AbortSignal;
   /** The agent that ran the hook (`hook.js --adapter`); absent means `claude-code`. */
   readonly agent?: AgentAdapterId;
+  /**
+   * `sdk`: the event came from an Agent SDK session's callback, not from `hook.js` (04 W15,
+   * ADR 0015). Absent for every settings-file hook.
+   */
+  readonly origin?: 'sdk';
 }
 
 export type HookHandler = (input: HookInput, context: HookContext) => Promise<HookReply>;
@@ -59,7 +64,7 @@ const HANDOFF: HookReply = { status: 200, body: {} };
 export interface HookDispatcherOptions {
   readonly store: PendingStore;
   /** Every event that reached the agent, blocking or not (registry, logs). */
-  readonly onEvent?: (input: HookInput, agent: AgentAdapterId) => void;
+  readonly onEvent?: (input: HookInput, agent: AgentAdapterId, context: HookContext) => void;
   /**
    * The hook output when a request reaches its deadline (`agent.onExpire: "deny"`, D10);
    * absent = handoff. Every other handoff (replaced, released, disconnected, shutdown)
@@ -92,7 +97,7 @@ export function createHookDispatcher(options: HookDispatcherOptions): HookHandle
   const { store } = options;
   return async (input, context) => {
     const agent = context.agent ?? 'claude-code';
-    options.onEvent?.(input, agent);
+    options.onEvent?.(input, agent, context);
     const kind = blockingKind(input, agent);
     if (kind === undefined) return { status: 204 };
     // Awaited only when a pause check is wired: without one a hook registers synchronously.

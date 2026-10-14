@@ -7,6 +7,7 @@ import { createLogger, createRollingDestination } from '@remote-control/log';
 
 import { createAgentProbe } from './adapters/agent-probe.js';
 import { createClaudeCli } from './adapters/claude-code/claude-cli.js';
+import { loadAgentSdk } from './adapters/claude-sdk/load-sdk.js';
 import { envPaths } from './adapters/env-paths.js';
 import { createFileKeyStore } from './adapters/file-key-store.js';
 import {
@@ -28,6 +29,7 @@ import { systemTimer } from './adapters/system-timer.js';
 import { systemSystemctl } from './adapters/systemd/systemctl.js';
 import { systemSchtasks } from './adapters/windows/schtasks.js';
 import type { AgentPaths } from './ports/agent-paths.js';
+import type { AgentSdk } from './ports/agent-sdk.js';
 import type { ClaudeCli } from './ports/claude-cli.js';
 import type { Clock } from './ports/clock.js';
 import type { FileSystem } from './ports/file-system.js';
@@ -119,6 +121,13 @@ export interface Container {
   readonly hostname: string;
   /** The `claude` CLI that starts sessions and sends follow-ups (M1-04). */
   readonly claude: ClaudeCli;
+  /**
+   * The Agent SDK for `agent.sessions: "sdk"` (04 W15, ADR 0015), imported on first call;
+   * `undefined` when the optional peer is not installed.
+   */
+  agentSdk(): Promise<AgentSdk | undefined>;
+  /** Whether `ANTHROPIC_API_KEY` is set: SDK sessions run on it and on nothing else. */
+  readonly apiKeySet: boolean;
 }
 
 export interface ContainerOptions {
@@ -154,6 +163,8 @@ export interface ContainerOptions {
   readonly hostname?: string;
   /** Default: `claude` from `PATH`, with this environment. */
   readonly claude?: ClaudeCli;
+  /** Default: the installed `@anthropic-ai/claude-agent-sdk`, with this environment. */
+  readonly agentSdk?: () => Promise<AgentSdk | undefined>;
 }
 
 /** `USERDOMAIN\USERNAME` from the Windows environment, or the bare user name. */
@@ -166,6 +177,7 @@ function windowsUser(env: ContainerOptions['env']): string | undefined {
 
 /** Wires the ports to their Node adapters. Host facts are injected (tests use temp dirs). */
 export function createContainer(options: ContainerOptions): Container {
+  let sdk: Promise<AgentSdk | undefined> | undefined;
   const clock = options.clock ?? systemClock;
   const random = options.random ?? systemRandom;
   const paths = envPaths(APP_NAME, options);
@@ -260,5 +272,10 @@ export function createContainer(options: ContainerOptions): Container {
         command: 'claude',
         env: { ...options.env, HOME: options.env['HOME'] ?? options.homedir },
       }),
+    agentSdk:
+      options.agentSdk ??
+      (() =>
+        (sdk ??= loadAgentSdk({ ...options.env, HOME: options.env['HOME'] ?? options.homedir }))),
+    apiKeySet: (options.env['ANTHROPIC_API_KEY'] ?? '') !== '',
   };
 }

@@ -11,6 +11,7 @@ import {
 
 import { CLAUDE_CODE_CAPABILITIES, claudeCodeAdapter } from '../adapters/claude-code/adapter.js';
 import { NO_DECISION_MESSAGE } from '../adapters/claude-code/decide.js';
+import { createSdkClaudeCli } from '../adapters/claude-sdk/sdk-sessions.js';
 import { CODEX_CAPABILITIES, codexAdapter } from '../adapters/codex/adapter.js';
 import {
   CODEX_HOOK_SEEN_FILE,
@@ -282,11 +283,27 @@ async function runCommand(
   });
   const pauseWatch = createPauseWatch({ store, timer: c.timer, paused });
   pending.changed = () => pauseWatch.pendingChanged();
+  // `agent.sessions: "sdk"` (04 W15, ADR 0015): phone sessions run through the Agent SDK,
+  // whose callbacks reach the same dispatcher as `hook.js`.
+  const sdkCli =
+    config.agent.sessions === 'sdk'
+      ? createSdkClaudeCli({
+          sdk: () => c.agentSdk(),
+          cli: c.claude,
+          dispatch: (input, context) => handler(input, context),
+          holdSeconds: config.hooks.holdSeconds,
+          apiKeySet: c.apiKeySet,
+          timer: c.timer,
+          // Event names and ids only (I3).
+          log: (event, fields) => log.logger.info({ ...fields, event }),
+        })
+      : undefined;
+  const claude = sdkCli ?? c.claude;
   // Sessions on this machine, from hooks and the CLI roster (M1-04, 04 §5.3).
   const sessions = createSessionRegistry({
     clock: c.clock,
     timer: c.timer,
-    cli: c.claude,
+    cli: claude,
     onChange: () => link?.hub.sessionsChanged(),
   });
   // The live feed (M1-05): per-session content from hook events, kept in memory only.
@@ -314,7 +331,7 @@ async function runCommand(
   const handler = createHookDispatcher({
     store,
     paused,
-    onEvent: (input, agent) => {
+    onEvent: (input, agent, context) => {
       log.logger.debug({ event: 'hook', hook: input.hook_event_name, agent });
       // `remotectl status --self-test` is a request, not a session: nothing else to track.
       if (input.session_id === SELF_TEST_SESSION_ID) return;
@@ -327,8 +344,8 @@ async function runCommand(
       if (typeof cwd === 'string') {
         sessions.observe(input.session_id, cwd, input.hook_event_name === 'SessionEnd', agent);
         // Claude Code trust is per folder (04 §2.6); Codex trust is per hook (`/hooks`), and
-        // Gemini user hooks need none.
-        if (agent === 'claude-code') {
+        // Gemini user hooks need none. An SDK session runs no settings-file hook at all.
+        if (agent === 'claude-code' && context.origin !== 'sdk') {
           hookSeen.observe(cwd).catch((error: unknown) => {
             log.logger.warn({ event: 'hook_seen_write_failed' }, (error as Error).message);
           });
@@ -369,14 +386,15 @@ async function runCommand(
   if (config.relay !== undefined && credentials !== undefined) {
     const endpoints = relayEndpoints(config.relay.url);
     const lock = createPairingLock(c.fs, c.pathPort.join(c.paths.data, PAIRING_LOCK_FILE), c.clock);
-    // Follow-ups need `--resume <id> --bg` to keep the session id (04 §2.8).
+    // Follow-ups need `--resume <id> --bg` to keep the session id (04 §2.8); an SDK session
+    // takes them as further turns.
     const claudeVersion = await c.claude.version();
-    const followUps = versionAtLeast(claudeVersion, FOLLOW_UP_MIN_VERSION);
+    const followUps = sdkCli !== undefined || versionAtLeast(claudeVersion, FOLLOW_UP_MIN_VERSION);
     log.logger.info({ event: 'claude_cli', version: claudeVersion ?? null, followUps });
     const launcher = createLauncher({
       repositories: config.repositories,
       paths: c.pathPort,
-      cli: c.claude,
+      cli: claude,
       registry: sessions,
       random: c.random,
       followUps,
@@ -487,6 +505,7 @@ async function runCommand(
     return EXIT_ERROR;
   } finally {
     link?.stop();
+    sdkCli?.close();
     sessions.close();
     pauseWatch.stop();
     // Held hooks get `{}` (handoff) instead of a dropped connection.
@@ -515,6 +534,9 @@ async function statusCommand(args: readonly string[], c: Container): Promise<num
     out(`config:          ${loaded.path}`);
     out(`hold seconds:    ${config.hooks.holdSeconds}`);
     out(`on expire:       ${config.agent.onExpire}`);
+    if (config.agent.sessions === 'sdk') {
+      out(`sessions:        sdk (ANTHROPIC_API_KEY ${c.apiKeySet ? 'set' : 'not set'})`);
+    }
     if (config.relay?.url !== undefined) out(`relay:           ${config.relay.url}`);
     out(`repositories:    ${config.repositories.length === 0 ? '(none)' : ''}`.trimEnd());
     const seen = await openHookSeen(c).read();

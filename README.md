@@ -136,10 +136,19 @@ Optional settings in `config.json`:
 | `always.destinations`                       | `["session"]` | Add `localSettings` / `projectSettings` to let "Always" write to Claude Code's settings |
 | `hooks.holdSeconds`                         | `1800`        | How long a request waits for the phone before the terminal takes over                   |
 | `agent.onExpire`                            | `"handoff"`   | At that deadline: hand back to the terminal, or `"deny"`                                |
+| `agent.sessions`                            | `"cli"`       | `"sdk"`: run phone-started sessions through the Agent SDK (API-key users, see below)    |
 | `notifications.turnFinished` / `needsInput` | `false`       | Also push when a turn ends / the agent waits for input                                  |
 | `transcripts.backfill`                      | `false`       | Rebuild a session's view from its Claude Code transcript when the agent first sees it   |
 
 A folder is written as a plain path or as `{ "path": "…", "maxPermissionMode": "plan" }`.
+
+**Agent SDK sessions (API key only).** With `agent.sessions` set to `"sdk"`, sessions
+started from the phone run through the Claude Agent SDK instead of `claude --bg`
+([ADR 0015](docs/adr/0015-claude-sdk-sessions.md)). Install the SDK next to the agent
+(`npm i -g @anthropic-ai/claude-agent-sdk`), and give the agent `ANTHROPIC_API_KEY` in
+its environment. The key is never read from `config.json`. A session that runs on a
+claude.ai login is refused. A request nobody answers is denied, because there is no
+terminal to hand it to.
 
 On the phone, **Computers** lists each paired computer with its setup checks, history
 per repository and paired phones (each with **Revoke**), and **Delete account**, which
