@@ -190,7 +190,7 @@ remote-control/
   packages/fake-claude-code/  executable that reads a temp HOME/.claude/settings.json and fires hooks per the docs
   packages/test-harness/   in-process relay (PGlite, port 0), in-process agent, headless phone, FakeClock, push sink, log capture
 ```
-Pins: Node 22 (`engines >=22`, `.nvmrc` 22; image/CI to Node 24 in H1 2027), pnpm via
+Pins: Node 22 floor (`engines >=22`; `.nvmrc`, image and CI on Node 24 since fb0c67d, ADR 0011), pnpm via
 `packageManager`, TypeScript `^6` (TS 7 when typescript-eslint supports it), vitest 5
 with `test.projects`, Playwright, PGlite, tsx (dev), tsdown (agent bundle), eslint
 (typescript-eslint recommendedTypeChecked) + prettier, drizzle-kit for migrations,
@@ -1068,7 +1068,7 @@ AC: argv test; a mode above the bound is refused before spawn.
 ### M3 — Backlog (unsized, not planned)
 Gemini CLI observe+deny adapter (04 W14); `claude-sdk` adapter for API-key users (04 W15);
 transcript backfill via the agenthropic parser behind a flag (04 W11, 07 W5);
-`PgNotifyHub` + 2 replicas (03 W11); Node 24 image + CI (06 W21); staging environment
+`PgNotifyHub` + 2 replicas (03 W11); Node 24 image + CI (06 W21, `done fb0c67d`, ADR 0011); staging environment
 (06 §5.6); interactive pty fake (07 W22 — only if a pty route is ever chosen); native
 wrappers (01-roles).
 
