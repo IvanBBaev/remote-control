@@ -7,9 +7,10 @@ import { uuidV4 } from './ids.js';
 
 /**
  * Minimal transcript JSONL so `transcript_path` points at a real file (07 §5.3, §5.5).
- * The real format is internal to Claude Code and unstable (04 §2.6); D11 never parses it,
- * so the fake writes only the commonly seen fields: `type`, `uuid`, `parentUuid`,
- * `sessionId`, `timestamp`, `cwd`, `message`.
+ * The real format is internal to Claude Code and unstable (04 §2.6); the live feed never
+ * parses it (D11) and only the optional backfill reads it (ADR 0014), so the fake writes
+ * only the commonly seen fields: `type`, `uuid`, `parentUuid`, `sessionId`, `timestamp`,
+ * `cwd`, `message`.
  */
 export class TranscriptWriter {
   readonly path: string;

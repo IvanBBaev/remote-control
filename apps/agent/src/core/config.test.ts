@@ -27,6 +27,7 @@ describe('parseConfig', () => {
         agent: { onExpire: 'handoff' },
         always: { destinations: ['session'] },
         notifications: { turnFinished: false, needsInput: false },
+        transcripts: { backfill: false },
       },
     });
   });

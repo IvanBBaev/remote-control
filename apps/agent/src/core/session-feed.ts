@@ -11,6 +11,7 @@ import {
   type SessionContent,
 } from '@remote-control/protocol';
 
+import type { TranscriptEntry } from '../ports/transcript-tailer.js';
 import { toolContent, toolLabel } from './approval-view.js';
 import type { HookInput } from './hook-dispatcher.js';
 
@@ -153,30 +154,124 @@ export interface FeedEntry {
   readonly seq: number;
 }
 
+/** What a backfill matches a history event to a live one by: kind and visible text. */
+function eventKey(event: FeedEvent): string {
+  switch (event.kind) {
+    case 'prompt':
+      return `prompt\0${event.text}`;
+    case 'tool':
+      return `tool\0${event.tool}\0${event.input}`;
+    default:
+      return event.kind;
+  }
+}
+
+export interface MergedHistory {
+  /** The session's events: history, then live, each event once. */
+  readonly events: FeedEvent[];
+  /** History events past the live ones: their hooks have not arrived yet. */
+  readonly ahead: FeedEvent[];
+}
+
+/**
+ * `history` and `live` as one run of events. The transcript is read while live events
+ * arrive, so it may already hold some of them, and some it holds may not have arrived
+ * yet: the live events are placed at the latest point of `history` they continue (the
+ * history from there is a head of `live`, or `live` is a head of it).
+ */
+export function mergeHistory(
+  history: readonly FeedEvent[],
+  live: readonly FeedEvent[],
+): MergedHistory {
+  if (live.length === 0) return { events: [...history], ahead: [] };
+  const historyKeys = history.map(eventKey);
+  const liveKeys = live.map(eventKey);
+  for (let start = history.length - 1; start >= 0; start -= 1) {
+    const shared = Math.min(history.length - start, live.length);
+    if (liveKeys.slice(0, shared).every((key, i) => key === historyKeys[start + i])) {
+      const ahead = history.slice(start + live.length);
+      return { events: [...history.slice(0, start), ...live, ...ahead], ahead };
+    }
+  }
+  return { events: [...history, ...live], ahead: [] };
+}
+
 /** Per-session content, built from hook events; lost on restart. */
 export interface SessionFeed {
   /** Applies a hook event; the session's new sequence number, or `undefined` if not shown. */
   observe(input: HookInput): { readonly event: FeedEvent; readonly seq: number } | undefined;
   get(sessionId: string): FeedEntry | undefined;
+  /**
+   * Starts a transcript backfill (M3, 04 W11) for a session the feed has not seen: its
+   * live events are also kept until `backfill`. False when the session is known or a
+   * backfill is already running.
+   */
+  startBackfill(sessionId: string): boolean;
+  /**
+   * Rebuilds the session from its transcript `history` and the live events since
+   * `startBackfill`, under a new sequence number (the phone takes it from a snapshot).
+   * Live events the history already showed are then skipped by `observe`. `undefined`
+   * when the history adds nothing or no backfill was started.
+   */
+  backfill(sessionId: string, history: readonly TranscriptEntry[]): FeedEntry | undefined;
 }
 
 export function createSessionFeed(): SessionFeed {
   const entries = new Map<string, FeedEntry>();
+  // Session id → live events seen while its backfill runs.
+  const pending = new Map<string, FeedEvent[]>();
+  // Session id → keys of history events a backfill showed before their hooks arrived.
+  const ahead = new Map<string, string[]>();
+  const store = (id: string, entry: FeedEntry) => {
+    // Re-inserted, so the map's order is least recently updated first.
+    entries.delete(id);
+    entries.set(id, entry);
+    if (entries.size > MAX_FEED_SESSIONS) entries.delete(entries.keys().next().value!);
+  };
   return {
     observe(input) {
       const event = mapHookEvent(input);
       if (event === undefined) return undefined;
       const id = input.session_id;
+      const expected = ahead.get(id);
+      if (expected !== undefined) {
+        if (expected[0] === eventKey(event)) {
+          expected.shift();
+          if (expected.length === 0) ahead.delete(id);
+          return undefined;
+        }
+        ahead.delete(id);
+      }
+      pending.get(id)?.push(event);
       const before = entries.get(id) ?? { content: EMPTY_CONTENT, seq: 0 };
       const entry = { content: applyFeedEvent(before.content, event), seq: before.seq + 1 };
-      // Re-inserted, so the map's order is least recently updated first.
-      entries.delete(id);
-      entries.set(id, entry);
-      if (entries.size > MAX_FEED_SESSIONS) entries.delete(entries.keys().next().value!);
+      store(id, entry);
       return { event, seq: entry.seq };
     },
     get(sessionId) {
       return entries.get(sessionId);
+    },
+    startBackfill(sessionId) {
+      if (entries.has(sessionId) || pending.has(sessionId)) return false;
+      pending.set(sessionId, []);
+      return true;
+    },
+    backfill(sessionId, history) {
+      const live = pending.get(sessionId);
+      if (live === undefined) return undefined;
+      pending.delete(sessionId);
+      const events = history
+        .map((entry) => mapHookEvent({ ...entry, session_id: sessionId }))
+        .filter((event) => event !== undefined);
+      const merged = mergeHistory(events, live);
+      if (merged.events.length === live.length) return undefined;
+      if (merged.ahead.length > 0) ahead.set(sessionId, merged.ahead.map(eventKey));
+      const entry = {
+        content: merged.events.reduce(applyFeedEvent, EMPTY_CONTENT),
+        seq: (entries.get(sessionId)?.seq ?? 0) + 1,
+      };
+      store(sessionId, entry);
+      return entry;
     },
   };
 }

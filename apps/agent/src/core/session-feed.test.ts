@@ -1,12 +1,14 @@
-import { MAX_SESSION_STEPS } from '@remote-control/protocol';
+import { MAX_SESSION_STEPS, type FeedEvent } from '@remote-control/protocol';
 import { describe, expect, it } from 'vitest';
 
+import type { TranscriptEntry } from '../ports/transcript-tailer.js';
 import type { HookInput } from './hook-dispatcher.js';
 import {
   changedFile,
   createSessionFeed,
   lineCounts,
   mapHookEvent,
+  mergeHistory,
   MAX_FEED_SESSIONS,
 } from './session-feed.js';
 
@@ -241,5 +243,134 @@ describe('createSessionFeed', () => {
     for (let i = 0; i < MAX_FEED_SESSIONS; i += 1) feed.observe(hook('PreCompact', {}, `s${i}`));
     expect(feed.get('abc123')).toBeUndefined();
     expect(feed.get('s0')).toBeDefined();
+  });
+});
+
+describe('mergeHistory (04 W11)', () => {
+  const prompt = (text: string): FeedEvent => ({ kind: 'prompt', text });
+  const tool = (input: string): FeedEvent => ({
+    kind: 'tool',
+    tool: 'Bash',
+    label: 'Run a command',
+    input,
+    response: '',
+    truncated: false,
+  });
+  const stop: FeedEvent = { kind: 'stop', text: 'Done' };
+
+  it('places the live events where they continue the history', () => {
+    // The history's tail is the live head.
+    expect(mergeHistory([prompt('a'), tool('x'), tool('y')], [tool('x'), tool('y'), stop])).toEqual(
+      { events: [prompt('a'), tool('x'), tool('y'), stop], ahead: [] },
+    );
+    // The history runs past the live events: those history events are ahead.
+    expect(mergeHistory([prompt('a'), tool('x'), tool('y')], [tool('x')])).toEqual({
+      events: [prompt('a'), tool('x'), tool('y')],
+      ahead: [tool('y')],
+    });
+    // The latest place wins.
+    expect(mergeHistory([tool('x'), prompt('b'), tool('x')], [tool('x')])).toEqual({
+      events: [tool('x'), prompt('b'), tool('x')],
+      ahead: [],
+    });
+  });
+
+  it('appends the live events when they do not continue the history', () => {
+    expect(mergeHistory([prompt('a'), tool('x')], [tool('y')])).toEqual({
+      events: [prompt('a'), tool('x'), tool('y')],
+      ahead: [],
+    });
+    expect(mergeHistory([stop], [{ kind: 'stop', text: 'other' }]).events).toHaveLength(1);
+    expect(mergeHistory([], [prompt('a')])).toEqual({ events: [prompt('a')], ahead: [] });
+    expect(mergeHistory([prompt('a')], [])).toEqual({ events: [prompt('a')], ahead: [] });
+  });
+});
+
+describe('SessionFeed backfill (04 W11)', () => {
+  const history: TranscriptEntry[] = [
+    { hook_event_name: 'UserPromptSubmit', prompt: 'Earlier' },
+    { hook_event_name: 'Stop', last_assistant_message: 'Earlier answer' },
+    { hook_event_name: 'UserPromptSubmit', prompt: 'Go' },
+    { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'ls' } },
+    { hook_event_name: 'SessionStart' },
+  ];
+
+  it('starts once, for a session the feed has not seen', () => {
+    const feed = createSessionFeed();
+    feed.observe(hook('PreCompact', {}, 'known'));
+    expect(feed.startBackfill('known')).toBe(false);
+    expect(feed.startBackfill('abc123')).toBe(true);
+    expect(feed.startBackfill('abc123')).toBe(false);
+  });
+
+  it('rebuilds the session from history and the live events, without duplicates', () => {
+    const feed = createSessionFeed();
+    expect(feed.startBackfill('abc123')).toBe(true);
+    feed.observe(postToolUse('Bash', { command: 'ls' }, { stdout: 'a' }));
+    feed.observe(hook('Stop', { last_assistant_message: 'Done' }));
+    expect(feed.get('abc123')!.seq).toBe(2);
+    const entry = feed.backfill('abc123', history);
+    expect(entry).toEqual(feed.get('abc123'));
+    expect(entry).toMatchObject({
+      seq: 3,
+      content: { lastPrompt: 'Go', lastAnswer: 'Done', steps: [expect.any(String) as unknown] },
+    });
+    // The backfill is over: later events fold on top and no longer buffer.
+    expect(feed.observe(hook('UserPromptSubmit', { prompt: 'Next' }))?.seq).toBe(4);
+    expect(feed.startBackfill('abc123')).toBe(false);
+  });
+
+  it('skips the live events the history already showed', () => {
+    const feed = createSessionFeed();
+    feed.startBackfill('abc123');
+    feed.observe(hook('UserPromptSubmit', { prompt: 'Go' }));
+    const ahead: TranscriptEntry[] = [
+      { hook_event_name: 'UserPromptSubmit', prompt: 'Go' },
+      { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'ls' } },
+      { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'pwd' } },
+    ];
+    expect(feed.backfill('abc123', ahead)?.content.steps).toHaveLength(2);
+    expect(feed.observe(postToolUse('Bash', { command: 'ls' }, {}))).toBeUndefined();
+    expect(feed.observe(postToolUse('Bash', { command: 'pwd' }, {}))).toBeUndefined();
+    expect(feed.observe(postToolUse('Bash', { command: 'pwd' }, {}))?.seq).toBe(3);
+    expect(feed.get('abc123')!.content.steps).toHaveLength(3);
+  });
+
+  it('stops skipping at the first live event the history did not show', () => {
+    const feed = createSessionFeed();
+    feed.startBackfill('abc123');
+    feed.observe(hook('UserPromptSubmit', { prompt: 'Go' }));
+    feed.backfill('abc123', [
+      { hook_event_name: 'UserPromptSubmit', prompt: 'Go' },
+      { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'ls' } },
+    ]);
+    expect(feed.observe(hook('Stop', { last_assistant_message: 'Done' }))?.seq).toBe(3);
+    expect(feed.observe(postToolUse('Bash', { command: 'ls' }, {}))?.seq).toBe(4);
+  });
+
+  it('builds a session from history alone when nothing live is mapped yet', () => {
+    const feed = createSessionFeed();
+    feed.startBackfill('abc123');
+    expect(feed.backfill('abc123', history.slice(0, 2))).toEqual({
+      seq: 1,
+      content: { lastPrompt: 'Earlier', lastAnswer: 'Earlier answer', steps: [], changedFiles: [] },
+    });
+  });
+
+  it('changes nothing when the history adds nothing', () => {
+    const feed = createSessionFeed();
+    feed.startBackfill('abc123');
+    feed.observe(hook('UserPromptSubmit', { prompt: 'Go' }));
+    expect(feed.backfill('abc123', [{ hook_event_name: 'UserPromptSubmit', prompt: 'Go' }])).toBe(
+      undefined,
+    );
+    // Not started (or already over): the session is left as it is.
+    expect(feed.backfill('abc123', history)).toBeUndefined();
+    expect(feed.backfill('other', history)).toBeUndefined();
+    feed.startBackfill('empty');
+    expect(feed.backfill('empty', [{ hook_event_name: 'SessionStart' }])).toBeUndefined();
+    expect(feed.get('abc123')!.seq).toBe(1);
+    expect(feed.get('other')).toBeUndefined();
+    expect(feed.get('empty')).toBeUndefined();
   });
 });

@@ -27,6 +27,8 @@ export interface StartAgentOptions {
   readonly repositories?: readonly HarnessRepository[];
   /** Extra environment for the agent and every `claude` it runs (`FAKE_CLAUDE_SCENARIO`). */
   readonly env?: Readonly<Record<string, string>>;
+  /** Extra keys for the agent's `config.json` (`{ transcripts: { backfill: true } }`). */
+  readonly config?: Readonly<Record<string, unknown>>;
 }
 
 /** A harness folder: its name, or its name and permission-mode bound (M2-09). */
@@ -175,7 +177,7 @@ export async function startAgent(options: StartAgentOptions): Promise<HarnessAge
   await mkdir(container.paths.config, { recursive: true });
   await writeFile(
     join(container.paths.config, 'config.json'),
-    JSON.stringify({ relay: { url: options.relayUrl }, repositories: entries }),
+    JSON.stringify({ ...options.config, relay: { url: options.relayUrl }, repositories: entries }),
   );
 
   const cli = (argv: readonly string[], signal = new AbortController().signal) =>

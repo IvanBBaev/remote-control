@@ -137,6 +137,7 @@ Optional settings in `config.json`:
 | `hooks.holdSeconds`                         | `1800`        | How long a request waits for the phone before the terminal takes over                   |
 | `agent.onExpire`                            | `"handoff"`   | At that deadline: hand back to the terminal, or `"deny"`                                |
 | `notifications.turnFinished` / `needsInput` | `false`       | Also push when a turn ends / the agent waits for input                                  |
+| `transcripts.backfill`                      | `false`       | Rebuild a session's view from its Claude Code transcript when the agent first sees it   |
 
 A folder is written as a plain path or as `{ "path": "…", "maxPermissionMode": "plan" }`.
 

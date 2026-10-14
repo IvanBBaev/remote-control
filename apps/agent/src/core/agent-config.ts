@@ -116,6 +116,17 @@ export const AgentConfig = z
       })
       .strict()
       .default({ turnFinished: false, needsInput: false }),
+    transcripts: z
+      .object({
+        /**
+         * Rebuild a session's feed from its Claude Code transcript when the agent first sees
+         * it (M3, 04 W11). Off by default: the format is unstable (04 §2.6) and the live
+         * feed comes from hooks only (D11).
+         */
+        backfill: z.boolean().default(false),
+      })
+      .strict()
+      .default({ backfill: false }),
     relay: z
       .object({
         /** Relay WebSocket origin; `wss:` (or `ws:` on loopback for development). */

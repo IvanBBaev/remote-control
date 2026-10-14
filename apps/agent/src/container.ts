@@ -15,6 +15,7 @@ import {
   startHookReceiver,
 } from './adapters/hook-receiver.js';
 import { LOG_FILE, fileSize, newestLogFile, readRange } from './adapters/log-files.js';
+import { createTranscriptTailer } from './adapters/claude-code/transcript.js';
 import { systemLaunchctl } from './adapters/launchd/launchctl.js';
 import { createNodeFileSystem, nodePaths } from './adapters/node-file-system.js';
 import { createNpmRegistry, type FetchFn } from './adapters/npm-registry.js';
@@ -43,6 +44,7 @@ import type { Schtasks } from './ports/schtasks.js';
 import type { ServiceHost } from './ports/service-host.js';
 import type { Systemctl } from './ports/systemctl.js';
 import type { Timer } from './ports/timer.js';
+import type { TranscriptTailer } from './ports/transcript-tailer.js';
 import type { WebSocketFactory } from './ports/web-socket.js';
 import { AGENT_VERSION } from './version.js';
 
@@ -84,6 +86,13 @@ export interface Container {
   startHookReceiver(options: HookReceiverOptions): Promise<HookReceiver>;
   /** Whether a running agent answers on its published hook endpoint (M1-07). */
   agentAlive(): Promise<boolean>;
+  /**
+   * Reads Claude Code transcripts under `claudeConfigDir` for the feed backfill (M3,
+   * 04 W11); `log` gets counts and codes only.
+   */
+  transcripts(
+    log: (event: string, fields: Readonly<Record<string, unknown>>) => void,
+  ): TranscriptTailer;
   /** Opens the rolling agent log (pino-roll, 10 MB × 5) in `paths.log`. */
   openLog(): Promise<AgentLog>;
   /** Waits `ms`; rejects with an `AbortError` when `signal` fires. */
@@ -163,6 +172,8 @@ export function createContainer(options: ContainerOptions): Container {
   const fs = options.fs ?? createNodeFileSystem(random);
   const pathPort = options.pathPort ?? nodePaths;
   const output = options.output;
+  const claudeConfigDir =
+    options.env['CLAUDE_CONFIG_DIR'] || pathPort.join(options.homedir, '.claude');
   const fetchFn: FetchFn = options.fetch ?? ((url, init) => fetch(url, init));
   const keyStore = createFileKeyStore({
     dir: paths.data,
@@ -184,7 +195,7 @@ export function createContainer(options: ContainerOptions): Container {
     random,
     timer: options.timer ?? systemTimer,
     output,
-    claudeConfigDir: options.env['CLAUDE_CONFIG_DIR'] || pathPort.join(options.homedir, '.claude'),
+    claudeConfigDir,
     codexConfigDir: options.env['CODEX_HOME'] || pathPort.join(options.homedir, '.codex'),
     geminiConfigDir: pathPort.join(options.homedir, '.gemini'),
     hookSource: options.hookSource ?? fileURLToPath(new URL('./hook.cjs', import.meta.url)),
@@ -196,6 +207,14 @@ export function createContainer(options: ContainerOptions): Container {
       size: fileSize,
       read: readRange,
     },
+    transcripts: (log) =>
+      createTranscriptTailer({
+        claudeConfigDir,
+        paths: pathPort,
+        size: fileSize,
+        read: readRange,
+        log,
+      }),
     async openLog() {
       await fs.ensureDir(paths.log, 0o700);
       const destination = await createRollingDestination({ file: join(paths.log, LOG_FILE) });

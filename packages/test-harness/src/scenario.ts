@@ -20,6 +20,8 @@ export interface ScenarioOptions {
   readonly repositories?: readonly HarnessRepository[];
   /** Extra environment for the agent and its `claude` runs. */
   readonly env?: Readonly<Record<string, string>>;
+  /** Extra keys for the agent's `config.json` (see `StartAgentOptions`). */
+  readonly config?: Readonly<Record<string, unknown>>;
   /** The phone runs the relay's passkey check too (default: yes; see `CreatePhoneOptions`). */
   readonly relayCheck?: boolean;
   /**
@@ -80,6 +82,7 @@ export async function scenario(options: ScenarioOptions = {}): Promise<Scenario>
       name: options.agentName ?? 'harness-mac',
       ...(options.repositories !== undefined ? { repositories: options.repositories } : {}),
       ...(options.env !== undefined ? { env: options.env } : {}),
+      ...(options.config !== undefined ? { config: options.config } : {}),
     });
     cleanup.push(() => agent.close());
     const bootMs = performance.now() - started;

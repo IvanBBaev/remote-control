@@ -291,6 +291,10 @@ async function runCommand(
   });
   // The live feed (M1-05): per-session content from hook events, kept in memory only.
   const feed = createSessionFeed();
+  // The transcript backfill (M3, 04 W11): off unless the config turns it on.
+  const transcripts = config.transcripts.backfill
+    ? c.transcripts((event, fields) => log.logger.info({ ...fields, event }))
+    : undefined;
   // Which repositories Claude Code runs the hooks in, i.e. trusts (M1-07, 04 §2.6).
   const hookSeen = createHookSeenTracker({
     roots: config.repositories.map((entry) => entry.path),
@@ -330,8 +334,22 @@ async function runCommand(
           });
         }
       }
+      // A Claude Code session the feed has not seen yet: its history is in the transcript.
+      const transcriptPath = input['transcript_path'];
+      const backfill =
+        transcripts !== undefined &&
+        agent === 'claude-code' &&
+        typeof transcriptPath === 'string' &&
+        transcriptPath !== '' &&
+        feed.startBackfill(input.session_id);
       const update = feed.observe(input);
       if (update !== undefined) link?.hub.feedEvent(input.session_id, update.seq, update.event);
+      if (backfill) {
+        const sessionId = input.session_id;
+        void transcripts.history(transcriptPath).then((history) => {
+          if (feed.backfill(sessionId, history) !== undefined) link?.hub.sessionsChanged();
+        });
+      }
       diffs.observe(input);
       const delta = activity.observe(input, c.clock.now());
       if (delta !== undefined) count(cwd, delta);
