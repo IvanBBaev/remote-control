@@ -19,7 +19,7 @@ describe('two relay replicas (M3, ADR 0012)', () => {
 
   it(
     'pairs and exchanges E2E frames with the phone and the agent on different replicas',
-    { timeout: 30_000 },
+    { timeout: 60_000 },
     async () => {
       const canaries = createCanaries();
       const machine = canaries.mint('machine');
@@ -45,7 +45,7 @@ describe('two relay replicas (M3, ADR 0012)', () => {
 
   it(
     'verifies a decision and deletes the account with HTTP calls spread over both replicas',
-    { timeout: 30_000 },
+    { timeout: 60_000 },
     async () => {
       // The phone's HTTP calls alternate between the replicas, as a load balancer would
       // spread them: registration, the decision challenge and its verify, and the account

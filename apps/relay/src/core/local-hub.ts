@@ -14,6 +14,7 @@ export class LocalHub implements HubPort {
   constructor(
     private readonly clock: Clock,
     private readonly deviceCap: number,
+    private readonly maxPresenceEntries = MAX_PRESENCE_ENTRIES,
   ) {}
 
   attach(connection: HubConnection): AttachResult {
@@ -81,7 +82,7 @@ export class LocalHub implements HubPort {
   #touch(deviceId: string): void {
     this.#changedAt.delete(deviceId);
     this.#changedAt.set(deviceId, this.clock.now());
-    if (this.#changedAt.size > MAX_PRESENCE_ENTRIES) {
+    if (this.#changedAt.size > this.maxPresenceEntries) {
       const oldest = this.#changedAt.keys().next().value as string;
       this.#changedAt.delete(oldest);
     }

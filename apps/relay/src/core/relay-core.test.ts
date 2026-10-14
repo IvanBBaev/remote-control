@@ -170,14 +170,15 @@ describe('LocalHub', () => {
   });
 
   it('bounds the presence change log', () => {
-    const hub = new LocalHub(createFakeTime().clock, DEVICE_CAP);
-    for (let n = 0; n <= 100_000; n += 1) {
+    const hub = new LocalHub(createFakeTime().clock, DEVICE_CAP, 100);
+    for (let n = 0; n <= 100; n += 1) {
       const conn = connection({ userId: USER, deviceId: `d${n}`, kind: 'agent' });
       hub.attach(conn);
       hub.detach(conn);
     }
     expect(hub.presenceChangedAt('d0')).toBeUndefined();
-    expect(hub.presenceChangedAt('d100000')).toBeDefined();
+    expect(hub.presenceChangedAt('d1')).toBeDefined();
+    expect(hub.presenceChangedAt('d100')).toBeDefined();
   });
 });
 

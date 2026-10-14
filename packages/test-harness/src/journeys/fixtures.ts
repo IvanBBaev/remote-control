@@ -5,8 +5,11 @@ import type { Canaries } from '../canaries.js';
 import { eventually } from '../eventually.js';
 import type { HeadlessPhone } from '../phone.js';
 
-/** Per-journey budget: PGlite migrations plus the run (the AC is < 60 s for all six). */
-export const JOURNEY = { timeout: 30_000 } as const;
+/**
+ * Per-journey hang bound: PGlite migrations plus the run. A journey takes a few seconds
+ * (the M0-22 AC is < 60 s for all six); the slack is for a machine loaded by parallel runs.
+ */
+export const JOURNEY = { timeout: 60_000 } as const;
 
 /** The Claude Code session every journey's requests come from. */
 export const JOURNEY_SESSION_ID = '5d3c9a1e-7b2f-4c8d-9e6a-1f0b2c3d4e5f';

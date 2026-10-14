@@ -19,7 +19,7 @@ describe('harness smoke (M0-17)', () => {
   it(
     'pairs the headless phone with the in-process agent and exchanges E2E frames',
     {
-      timeout: 30_000,
+      timeout: 60_000,
     },
     async () => {
       const started = performance.now();

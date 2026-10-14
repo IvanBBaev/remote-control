@@ -32,6 +32,10 @@ export default defineConfig({
         test: {
           name: 'node',
           environment: 'node',
+          // PGlite boots, `npm pack` and agent child processes are CPU-bound: the vitest
+          // defaults (5 s test, 10 s hook) time out when parallel sessions load the machine.
+          testTimeout: 20_000,
+          hookTimeout: 20_000,
           include: ['{apps,packages}/*/src/**/*.test.ts', 'tools/**/*.test.ts'],
           exclude: ['apps/web/**', '**/node_modules/**', '**/*.pg-real.test.ts'],
         },
