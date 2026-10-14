@@ -1066,7 +1066,7 @@ module extended by one literal flag; gate updated.
 AC: argv test; a mode above the bound is refused before spawn.
 
 ### M3 — Backlog (unsized, not planned)
-Gemini CLI observe+deny adapter (04 W14); `claude-sdk` adapter for API-key users (04 W15);
+Gemini CLI observe+deny adapter (04 W14, `done 9ba3054`, ADR 0013; real-CLI check pending); `claude-sdk` adapter for API-key users (04 W15);
 transcript backfill via the agenthropic parser behind a flag (04 W11, 07 W5);
 `PgNotifyHub` + 2 replicas (03 W11); Node 24 image + CI (06 W21, `done fb0c67d`, ADR 0011); staging environment
 (06 §5.6); interactive pty fake (07 W22 — only if a pty route is ever chosen); native
