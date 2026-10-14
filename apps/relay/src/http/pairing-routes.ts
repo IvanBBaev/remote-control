@@ -8,7 +8,7 @@ import type { DeviceAuth, RouteLimit } from './device-auth.js';
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
-/** Rate limits of the enrolment and pairing endpoints; in process, one replica (D15). */
+/** Rate limits of the enrolment and pairing endpoints; in process, per replica (ADR 0016). */
 export interface PairingRateLimits {
   /** `POST /api/devices/phone`, per account. */
   readonly bindPhone: RateLimit;

@@ -212,3 +212,6 @@ process exits within 25 s. `railway.json` records these values; Railway's Config
 Code is deprecated (new services cannot opt in, files stop being read on 2026-12-01),
 so set them in the dashboard until `.railway/railway.ts` (IaC) replaces it. The
 pre-deploy `node dist/migrate.js` is added with the migrations work package.
+The `staging` environment runs 2 replicas with `RC_HUB=pg`, which shares the hub and
+the WebAuthn challenges through Postgres (ADR 0012, ADR 0016); see the runbook's
+Staging section.

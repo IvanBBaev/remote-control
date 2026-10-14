@@ -10,7 +10,7 @@ import type { DeviceIdentity } from './device-directory.js';
  * tests that do not exercise the gate. It sees routing headers only, never the payload (I3).
  */
 export interface CommandGate {
-  admit(envelope: Envelope, sender: DeviceIdentity): boolean;
+  admit(envelope: Envelope, sender: DeviceIdentity): boolean | Promise<boolean>;
 }
 
 export const admitAllCommands: CommandGate = { admit: () => true };

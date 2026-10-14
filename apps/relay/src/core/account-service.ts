@@ -2,6 +2,7 @@ import { sha256, utf8 } from '@remote-control/crypto';
 import { toBase64Url, type Clock, type Random } from '@remote-control/protocol';
 
 import type { AccountStore, NewSession } from '../ports/account-store.js';
+import type { ChallengeLedger, PendingChallenge } from '../ports/challenge-ledger.js';
 import type { SecretHasher } from '../ports/secret-hasher.js';
 import type {
   AuthenticationResponseJSON,
@@ -10,7 +11,7 @@ import type {
   RegistrationResponseJSON,
   WebAuthnPort,
 } from '../ports/webauthn.js';
-import { ChallengeStore } from './challenge-store.js';
+import { MemoryChallengeLedger } from './memory-challenge-ledger.js';
 import type { RateLimitResult } from './rate-limiter.js';
 import { inviteCodeHash, newRecoveryCode, parseRecoveryCode } from './secret-codes.js';
 
@@ -31,15 +32,7 @@ const CHALLENGE_BYTES = 32;
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const DEFAULT_USER_NAME = 'remote-control';
 
-type Pending =
-  | {
-      readonly kind: 'register';
-      readonly inviteId: string;
-      readonly webauthnUserId: string;
-      readonly displayName: string | null;
-    }
-  | { readonly kind: 'login' }
-  | { readonly kind: 'recovery'; readonly userId: string; readonly recoveryCodeId: string };
+type Pending = Exclude<PendingChallenge, { kind: 'decision' }>;
 
 export type Failure<R extends string> =
   | { readonly ok: false; readonly reason: R }
@@ -87,6 +80,8 @@ export interface AccountServiceDeps {
   readonly hasher: SecretHasher;
   readonly clock: Clock;
   readonly random: Random;
+  /** Shared across replicas (ADR 0016); a fresh in-memory ledger by default. */
+  readonly ledger?: ChallengeLedger;
 }
 
 const allowAll: UserGuard = () => ({ allowed: true });
@@ -103,15 +98,10 @@ function fromBase64Url(text: string): Uint8Array {
  * store before verification, so a replayed response finds nothing.
  */
 export class AccountService {
-  readonly #challenges: ChallengeStore<Pending>;
+  readonly #challenges: ChallengeLedger;
 
   constructor(private readonly deps: AccountServiceDeps) {
-    this.#challenges = new ChallengeStore<Pending>(deps.clock, CHALLENGE_TTL_MS);
-  }
-
-  /** Outstanding challenges (tests, metrics). */
-  get pendingChallenges(): number {
-    return this.#challenges.size;
+    this.#challenges = deps.ledger ?? new MemoryChallengeLedger();
   }
 
   async startRegistration(
@@ -125,7 +115,7 @@ export class AccountService {
     const invite = hash && (await this.deps.store.findUsableInvite(hash, this.deps.clock.now()));
     if (!invite) return { ok: false, reason: 'invalid_invite' };
     const userId = this.deps.random.bytes(WEBAUTHN_USER_ID_BYTES);
-    const challenge = this.#newChallenge({
+    const challenge = await this.#newChallenge({
       kind: 'register',
       inviteId: invite.id,
       webauthnUserId: toBase64Url(userId),
@@ -143,7 +133,7 @@ export class AccountService {
   async finishRegistration(
     response: RegistrationResponseJSON,
   ): Promise<Registered | Failure<ChallengeFailure | 'invalid_invite'>> {
-    const taken = this.#take(response, 'register');
+    const taken = await this.#take(response, 'register');
     if (taken === undefined) return { ok: false, reason: 'unknown_challenge' };
     const passkey = await this.deps.webauthn.verifyRegistration(response, taken.challenge);
     if (passkey === null) return { ok: false, reason: 'verification_failed' };
@@ -174,15 +164,15 @@ export class AccountService {
   }
 
   /** Options for a discoverable-credential login (conditional UI, no user hint). */
-  startLogin(): Promise<PublicKeyCredentialRequestOptionsJSON> {
-    return this.deps.webauthn.authenticationOptions(this.#newChallenge({ kind: 'login' }));
+  async startLogin(): Promise<PublicKeyCredentialRequestOptionsJSON> {
+    return this.deps.webauthn.authenticationOptions(await this.#newChallenge({ kind: 'login' }));
   }
 
   async finishLogin(
     response: AuthenticationResponseJSON,
     guard: UserGuard = allowAll,
   ): Promise<LoggedIn | Failure<ChallengeFailure | 'unknown_credential'>> {
-    const taken = this.#take(response, 'login');
+    const taken = await this.#take(response, 'login');
     if (taken === undefined) return { ok: false, reason: 'unknown_challenge' };
     const passkey = await this.deps.store.findPasskey(response.id);
     if (passkey === undefined) return { ok: false, reason: 'unknown_credential' };
@@ -231,7 +221,7 @@ export class AccountService {
     }
     const user = await this.deps.store.findUser(stored.userId);
     if (user === undefined) return { ok: false, reason: 'invalid_code' };
-    const challenge = this.#newChallenge({
+    const challenge = await this.#newChallenge({
       kind: 'recovery',
       userId: stored.userId,
       recoveryCodeId: stored.id,
@@ -249,7 +239,7 @@ export class AccountService {
   async finishRecovery(
     response: RegistrationResponseJSON,
   ): Promise<Registered | Failure<ChallengeFailure | 'invalid_code'>> {
-    const taken = this.#take(response, 'recovery');
+    const taken = await this.#take(response, 'recovery');
     if (taken === undefined) return { ok: false, reason: 'unknown_challenge' };
     const passkey = await this.deps.webauthn.verifyRegistration(response, taken.challenge);
     if (passkey === null) return { ok: false, reason: 'verification_failed' };
@@ -306,19 +296,20 @@ export class AccountService {
     return this.deps.store.revokeSession(session.sessionId, session.userId, this.deps.clock.now());
   }
 
-  #newChallenge(pending: Pending): Uint8Array {
+  async #newChallenge(pending: Pending): Promise<Uint8Array> {
     const challenge = this.deps.random.bytes(CHALLENGE_BYTES);
-    this.#challenges.put(toBase64Url(challenge), pending);
+    const now = this.deps.clock.now();
+    await this.#challenges.put(toBase64Url(challenge), pending, now + CHALLENGE_TTL_MS, now);
     return challenge;
   }
 
-  #take<K extends Pending['kind']>(
+  async #take<K extends Pending['kind']>(
     response: RegistrationResponseJSON | AuthenticationResponseJSON,
     kind: K,
-  ): { challenge: string; pending: Extract<Pending, { kind: K }> } | undefined {
+  ): Promise<{ challenge: string; pending: Extract<Pending, { kind: K }> } | undefined> {
     const challenge = this.deps.webauthn.challengeOf(response);
     if (challenge === null) return undefined;
-    const pending = this.#challenges.take(challenge);
+    const pending = await this.#challenges.take(challenge, this.deps.clock.now());
     if (pending?.kind !== kind) return undefined;
     return { challenge, pending: pending as Extract<Pending, { kind: K }> };
   }

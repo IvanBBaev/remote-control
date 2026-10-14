@@ -68,6 +68,57 @@ runs `node dist/migrate.js` (pre-deploy), starts the new container, waits for
 3. A failed migration or healthcheck leaves the previous deployment serving; fix
    forward on `main`.
 
+## Staging
+
+Two relay replicas on one Postgres, to exercise `RC_HUB=pg` (ADR 0012, ADR 0016) before
+production ever runs more than one. Production stays on one replica.
+
+Setup (once, dashboard):
+
+1. Project → **New environment** `staging`, with its own Postgres service.
+2. `relay` in `staging`:
+   - Settings → Source → branch `staging`;
+   - Settings → Deploy → **Replicas 2**. `railway.json` records this under
+     `environments.staging`, but Config as Code stops being read on 2026-12-01.
+3. Variables, all distinct from production:
+   - `RC_HUB=pg`;
+   - `RC_DATABASE_URL`, a reference to the staging Postgres;
+   - `RC_RP_ID` and `RC_ORIGIN` for the staging domain;
+   - new `RC_VAPID_PUBLIC` and `RC_VAPID_PRIVATE` (`node dist/admin.js vapid-keys`);
+   - a new `RC_ADMIN_TOKEN` if the counters are wanted;
+   - no `RC_SENTRY_DSN`, or a separate Sentry environment.
+
+   Never copy a production value.
+
+4. Usage: the project's alert and hard limit cover staging too. Remove the replicas, or
+   the environment, when no run is planned.
+
+A run:
+
+1. `git push origin main:staging` deploys the current `main` to staging.
+2. `curl -s https://<staging-domain>/health` a few times: both replicas answer `200`
+   with the same `commit`.
+3. From a phone, against staging:
+   - register with an invite;
+   - pair an agent;
+   - approve one request and deny one.
+
+   Requests land on either replica, so this covers the shared challenges and the
+   cross-replica hub.
+
+4. `railway logs` (staging): no `hub_replica_lost`, `hub_publish_failed` or
+   `command_refused`.
+5. Redeploy once while the phone is connected. Sockets close with `1012` and
+   reconnect, and a pending request still reaches the phone.
+6. Record the run:
+
+| Date          | Commit | Register | Pair | Approve / deny | Redeploy | By  |
+| ------------- | ------ | -------- | ---- | -------------- | -------- | --- |
+| _not run yet_ |        |          |      |                |          |     |
+
+Locally, `RC_HUB=pg docker compose --profile replicas up --build` runs the same shape on
+`:3000` and `:3001`.
+
 ## Rollback
 
 1. Dashboard → `relay` → Deployments → the last good deployment → **Redeploy**

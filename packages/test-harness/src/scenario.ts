@@ -96,6 +96,7 @@ export async function scenario(options: ScenarioOptions = {}): Promise<Scenario>
       clock,
       name: options.phoneName ?? 'harness-phone',
       ...(options.relayCheck !== undefined && { relayCheck: options.relayCheck }),
+      ...(replica !== undefined && { replicas: [replica] }),
     });
     cleanup.push(() => Promise.resolve(phone.disconnect()));
 

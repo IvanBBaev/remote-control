@@ -44,8 +44,8 @@ describe('DecisionVerifier', () => {
   it('admits a verified hash for 5 minutes, and a command without a hash always', async () => {
     const { time, verifier } = harness();
     const hash = hashOf(1);
-    expect(verifier.admit(command(), PHONE)).toBe(true);
-    expect(verifier.admit(command(hash), PHONE)).toBe(false);
+    expect(await verifier.admit(command(), PHONE)).toBe(true);
+    expect(await verifier.admit(command(hash), PHONE)).toBe(false);
 
     await verifier.challenge(PHONE, hash);
     expect(await verifier.verify(PHONE, response(hash))).toEqual({
@@ -53,28 +53,28 @@ describe('DecisionVerifier', () => {
       decisionHash: hash,
       verifiedUntil: time.clock.now() + VERIFIED_TTL_MS,
     });
-    expect(verifier.admit(command(hash), PHONE)).toBe(true);
-    expect(verifier.admit(command(hash), { ...PHONE, deviceId: 'p2' })).toBe(false);
+    expect(await verifier.admit(command(hash), PHONE)).toBe(true);
+    expect(await verifier.admit(command(hash), { ...PHONE, deviceId: 'p2' })).toBe(false);
     time.advance(VERIFIED_TTL_MS);
-    expect(verifier.admit(command(hash), PHONE)).toBe(false);
+    expect(await verifier.admit(command(hash), PHONE)).toBe(false);
   });
 
   it('consumes a verified hash once, only for the phone that verified it, within 5 minutes', async () => {
     const { time, verifier } = harness();
     const hash = hashOf(9);
-    expect(verifier.consume(PHONE, hash)).toBe(false);
+    expect(await verifier.consume(PHONE, hash)).toBe(false);
     await verifier.challenge(PHONE, hash);
     await verifier.verify(PHONE, response(hash));
-    expect(verifier.consume({ ...PHONE, deviceId: 'p2' }, hash)).toBe(false);
-    expect(verifier.consume(PHONE, hash)).toBe(true);
-    expect(verifier.consume(PHONE, hash)).toBe(false);
-    expect(verifier.admit(command(hash), PHONE)).toBe(false);
+    expect(await verifier.consume({ ...PHONE, deviceId: 'p2' }, hash)).toBe(false);
+    expect(await verifier.consume(PHONE, hash)).toBe(true);
+    expect(await verifier.consume(PHONE, hash)).toBe(false);
+    expect(await verifier.admit(command(hash), PHONE)).toBe(false);
 
     const late = hashOf(10);
     await verifier.challenge(PHONE, late);
     await verifier.verify(PHONE, response(late));
     time.advance(VERIFIED_TTL_MS);
-    expect(verifier.consume(PHONE, late)).toBe(false);
+    expect(await verifier.consume(PHONE, late)).toBe(false);
   });
 
   it('refuses a used hash for 10 minutes', async () => {
@@ -104,8 +104,8 @@ describe('DecisionVerifier', () => {
     // The used entry of hash 5 is expired (room), the verified one too but still present.
     await verifier.challenge(PHONE, hashOf(6));
     await verifier.verify(PHONE, response(hashOf(6)));
-    expect(verifier.admit(command(hashOf(6)), PHONE)).toBe(true);
-    expect(verifier.admit(command(hashOf(5)), PHONE)).toBe(false);
+    expect(await verifier.admit(command(hashOf(6)), PHONE)).toBe(true);
+    expect(await verifier.admit(command(hashOf(5)), PHONE)).toBe(false);
   });
 
   it('lets only one of two concurrent verifications of the same assertion win', async () => {

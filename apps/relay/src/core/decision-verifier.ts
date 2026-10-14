@@ -2,6 +2,7 @@ import { fromHex } from '@remote-control/crypto';
 import { toBase64Url, type Clock, type Envelope } from '@remote-control/protocol';
 
 import type { AccountStore } from '../ports/account-store.js';
+import type { ChallengeLedger } from '../ports/challenge-ledger.js';
 import type { DeviceIdentity } from '../ports/device-directory.js';
 import type { CommandGate } from '../ports/relay-seams.js';
 import type {
@@ -10,7 +11,7 @@ import type {
   WebAuthnPort,
 } from '../ports/webauthn.js';
 import { CHALLENGE_TTL_MS } from './account-service.js';
-import { ChallengeStore } from './challenge-store.js';
+import { MemoryChallengeLedger } from './memory-challenge-ledger.js';
 
 const MINUTE = 60_000;
 
@@ -18,8 +19,6 @@ const MINUTE = 60_000;
 export const USED_CHALLENGE_TTL_MS = 10 * MINUTE;
 /** How long a verified hash admits its `cls: command` envelope: the decision's validity (D7). */
 export const VERIFIED_TTL_MS = 5 * MINUTE;
-const DEFAULT_CAPACITY = 10_000;
-
 export type VerifyFailure =
   'unknown_challenge' | 'replayed' | 'unknown_credential' | 'verification_failed';
 
@@ -30,13 +29,10 @@ export interface DecisionVerifierDeps {
     'authenticationOptions' | 'challengeOf' | 'verifyAuthentication'
   >;
   readonly clock: Clock;
-  /** Bound of each in-memory table (pending, used, verified). */
+  /** Shared across replicas (ADR 0016); a fresh in-memory ledger by default. */
+  readonly ledger?: ChallengeLedger;
+  /** Bound of each table of the default in-memory ledger. */
   readonly capacity?: number;
-}
-
-interface PendingDecision {
-  readonly userId: string;
-  readonly decisionHash: string;
 }
 
 /**
@@ -50,19 +46,14 @@ interface PendingDecision {
  * Commands without a `decisionHash` (deny, stop) pass: they need no assertion (02 §5.4)
  * and the agent refuses an assertion-requiring kind without one.
  *
- * In memory, which is enough for one replica (D15); a restart only forces another tap.
+ * Challenges and verified hashes live in a {@link ChallengeLedger}: in memory with one
+ * replica (D15), in Postgres when replicas share devices (ADR 0016).
  */
 export class DecisionVerifier implements CommandGate {
-  readonly #pending: ChallengeStore<PendingDecision>;
-  /** base64url challenge → end of its replay window. */
-  readonly #used = new Map<string, number>();
-  /** `user:device:hash` → end of its admission window. */
-  readonly #verified = new Map<string, number>();
-  readonly #capacity: number;
+  readonly #ledger: ChallengeLedger;
 
   constructor(private readonly deps: DecisionVerifierDeps) {
-    this.#capacity = deps.capacity ?? DEFAULT_CAPACITY;
-    this.#pending = new ChallengeStore(deps.clock, CHALLENGE_TTL_MS, this.#capacity);
+    this.#ledger = deps.ledger ?? new MemoryChallengeLedger(deps.capacity);
   }
 
   /** WebAuthn request options whose challenge is the 32 bytes of `decisionHash` (hex). */
@@ -74,11 +65,17 @@ export class DecisionVerifier implements CommandGate {
     | { readonly ok: false; readonly reason: 'replayed' | 'busy' }
   > {
     const bytes = fromHex(decisionHash);
-    const challenge = toBase64Url(bytes);
+    const hash = toHex(bytes);
     const now = this.deps.clock.now();
-    if (this.#isUsed(challenge, now)) return { ok: false, reason: 'replayed' };
-    if (!this.#room(this.#used, now)) return { ok: false, reason: 'busy' };
-    this.#pending.put(this.#pendingKey(phone, challenge), { userId: phone.userId, decisionHash });
+    const usage = await this.#ledger.usage(hash, now);
+    if (usage === 'used') return { ok: false, reason: 'replayed' };
+    if (usage === 'busy') return { ok: false, reason: 'busy' };
+    await this.#ledger.put(
+      this.#pendingKey(phone, toBase64Url(bytes)),
+      { kind: 'decision', userId: phone.userId, deviceId: phone.deviceId, decisionHash: hash },
+      now + CHALLENGE_TTL_MS,
+      now,
+    );
     return { ok: true, options: await this.deps.webauthn.authenticationOptions(bytes) };
   }
 
@@ -92,9 +89,15 @@ export class DecisionVerifier implements CommandGate {
   > {
     const challenge = this.deps.webauthn.challengeOf(response);
     if (challenge === null) return { ok: false, reason: 'unknown_challenge' };
-    if (this.#isUsed(challenge, this.deps.clock.now())) return { ok: false, reason: 'replayed' };
-    const pending = this.#pending.take(this.#pendingKey(phone, challenge));
-    if (pending === undefined) return { ok: false, reason: 'unknown_challenge' };
+    const hash = hashOfChallenge(challenge);
+    if (hash !== null && (await this.#ledger.usage(hash, this.deps.clock.now())) === 'used') {
+      return { ok: false, reason: 'replayed' };
+    }
+    const pending = await this.#ledger.take(
+      this.#pendingKey(phone, challenge),
+      this.deps.clock.now(),
+    );
+    if (pending?.kind !== 'decision') return { ok: false, reason: 'unknown_challenge' };
     const passkey = await this.deps.store.findPasskey(response.id);
     if (passkey === undefined || passkey.userId !== phone.userId) {
       return { ok: false, reason: 'unknown_credential' };
@@ -104,56 +107,63 @@ export class DecisionVerifier implements CommandGate {
     }
     const verified = await this.deps.webauthn.verifyAuthentication(response, challenge, passkey);
     if (verified === null) return { ok: false, reason: 'verification_failed' };
-    // Re-check after the awaits: a concurrent verify of the same assertion lost the race.
+    // The ledger refuses a hash already used: a concurrent verify of the same assertion won.
     const now = this.deps.clock.now();
-    if (this.#isUsed(challenge, now)) return { ok: false, reason: 'replayed' };
-    this.#used.set(challenge, now + USED_CHALLENGE_TTL_MS);
     const verifiedUntil = now + VERIFIED_TTL_MS;
-    if (!this.#room(this.#verified, now)) this.#dropOldest(this.#verified);
-    this.#verified.set(this.#verifiedKey(phone, pending.decisionHash), verifiedUntil);
+    const won = await this.#ledger.markVerified(
+      {
+        userId: phone.userId,
+        deviceId: phone.deviceId,
+        decisionHash: pending.decisionHash,
+        usedUntil: now + USED_CHALLENGE_TTL_MS,
+        verifiedUntil,
+      },
+      now,
+    );
+    if (!won) return { ok: false, reason: 'replayed' };
     await this.deps.store.recordPasskeyUse(passkey.id, verified.newCounter, verified.backedUp, now);
     return { ok: true, decisionHash: pending.decisionHash, verifiedUntil };
   }
 
-  admit(envelope: Envelope, sender: DeviceIdentity): boolean {
+  admit(envelope: Envelope, sender: DeviceIdentity): boolean | Promise<boolean> {
     if (envelope.decisionHash === undefined) return true;
-    const until = this.#verified.get(this.#verifiedKey(sender, envelope.decisionHash));
-    return until !== undefined && this.deps.clock.now() < until;
+    return this.#ledger.isVerified(
+      sender.userId,
+      sender.deviceId,
+      normalized(envelope.decisionHash),
+      this.deps.clock.now(),
+    );
   }
 
   /**
    * Spends a hash this phone verified, for an HTTP action that needs UV (account
    * deletion, M1-10); `false` if it was never verified or its window passed.
    */
-  consume(phone: DeviceIdentity, hash: string): boolean {
-    const key = this.#verifiedKey(phone, hash);
-    const until = this.#verified.get(key);
-    this.#verified.delete(key);
-    return until !== undefined && this.deps.clock.now() < until;
-  }
-
-  #isUsed(challenge: string, now: number): boolean {
-    const until = this.#used.get(challenge);
-    return until !== undefined && now < until;
-  }
-
-  /** Drops expired entries when the table is full; `false` if it is still full. */
-  #room(table: Map<string, number>, now: number): boolean {
-    if (table.size < this.#capacity) return true;
-    for (const [key, until] of table) if (now >= until) table.delete(key);
-    return table.size < this.#capacity;
-  }
-
-  #dropOldest(table: Map<string, number>): void {
-    const oldest = table.keys().next();
-    if (oldest.done !== true) table.delete(oldest.value);
+  consume(phone: DeviceIdentity, hash: string): Promise<boolean> {
+    return this.#ledger.consume(
+      phone.userId,
+      phone.deviceId,
+      normalized(hash),
+      this.deps.clock.now(),
+    );
   }
 
   #pendingKey(phone: DeviceIdentity, challenge: string): string {
-    return `${phone.userId}:${phone.deviceId}:${challenge}`;
+    return `decision:${phone.userId}:${phone.deviceId}:${challenge}`;
   }
+}
 
-  #verifiedKey(device: DeviceIdentity, decisionHash: string): string {
-    return `${device.userId}:${device.deviceId}:${decisionHash}`;
-  }
+/** Lower-case hex, so the same hash always names the same ledger entry. */
+function normalized(hash: string): string {
+  return hash.toLowerCase();
+}
+
+/** The hex decision hash behind a base64url challenge; `null` if it is not 32 bytes. */
+function hashOfChallenge(challenge: string): string | null {
+  const bytes = Buffer.from(challenge, 'base64url');
+  return bytes.length === 32 ? toHex(bytes) : null;
+}
+
+function toHex(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString('hex');
 }

@@ -8,7 +8,7 @@ import { sessionCookie } from '../core/session-cookie.js';
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
-/** Rate limits of the account endpoints (02 §5.7); in process, one replica (D15). */
+/** Rate limits of the account endpoints (02 §5.7); in process, per replica (ADR 0016). */
 export interface AuthRateLimits {
   /** Every `/api/auth/*` request, per IP. */
   readonly anyPerIp: RateLimit;

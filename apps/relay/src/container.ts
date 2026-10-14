@@ -6,6 +6,7 @@ import type { DestinationStream, Logger } from 'pino';
 import { disabledDatabaseHealth } from './adapters/disabled-database-health.js';
 import { createDrizzleAccountStore } from './adapters/drizzle-account-store.js';
 import { createDrizzleAuditLog } from './adapters/drizzle-audit-log.js';
+import { createDrizzleChallengeLedger } from './adapters/drizzle-challenge-ledger.js';
 import { createPgDb } from './adapters/pg-db.js';
 import { createPgNotifyBus } from './adapters/pg-notify-bus.js';
 import { createScryptSecretHasher } from './adapters/scrypt-secret-hasher.js';
@@ -122,7 +123,10 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
   const hub: HubPort = pgHub ?? new LocalHub(clock, DEVICE_CAP);
   const store = db && createDrizzleAccountStore(db.orm);
   const webauthn = createSimpleWebAuthn({ id: config.rpId, origin: config.origin, name: RP_NAME });
-  const decisions = store && new DecisionVerifier({ store, webauthn, clock });
+  // Replicas share challenges through Postgres (ADR 0016); one replica keeps them in memory.
+  const ledger = pgHub && db && createDrizzleChallengeLedger(db.orm);
+  const decisions =
+    store && new DecisionVerifier({ store, webauthn, clock, ...(ledger && { ledger }) });
   const revocationStore = db && createDrizzleDeviceRevocations(db.orm);
   const auditLog = db && createDrizzleAuditLog(db.orm);
   const audit = auditLog && new AuditRecorder({ clock, store: auditLog, logger });
@@ -171,6 +175,7 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
         hasher: createScryptSecretHasher(random),
         clock,
         random,
+        ...(ledger && { ledger }),
       }),
     relay: db &&
       directory &&

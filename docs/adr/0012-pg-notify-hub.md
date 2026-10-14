@@ -81,4 +81,7 @@ and every check stays where it was.
 - **Dead replicas.** Presence for a dead replica's devices can lag by up to 15 s.
 - **No staging run yet.** Two real replicas on Railway have not been exercised. The
   harness runs two relays on one PGlite (`replicas.test.ts`). `pg-real` runs two hubs
-  on a real Postgres 17, each with its own `LISTEN` and `NOTIFY` connections.
+  on a real Postgres 17, each with its own `LISTEN` and `NOTIFY` connections. ADR 0016
+  adds the staging environment and its runbook procedure.
+- **WebAuthn state was per replica.** A ceremony or decision step-up whose calls landed
+  on two replicas failed. ADR 0016 moves it into Postgres under `RC_HUB=pg`.

@@ -75,6 +75,12 @@ export interface CreatePhoneOptions {
    * check (phase 2, M2-03) as the only one: the relay forwards with no `verified` flag.
    */
   readonly relayCheck?: boolean;
+  /**
+   * More relays on the same database: HTTP calls rotate across `relay` and these, as
+   * Railway's load balancer spreads requests over replicas (ADR 0016). The socket stays
+   * on `relay`.
+   */
+  readonly replicas?: readonly HarnessRelay[];
 }
 
 export interface DecideOptions {
@@ -212,8 +218,12 @@ export async function createPhone(options: CreatePhoneOptions): Promise<Headless
   const messages: Received[] = [];
   const doorbells: Envelope[] = [];
 
+  const httpRelays = [relay, ...(options.replicas ?? [])];
+  let calls = 0;
+
   async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const response = await fetch(`${relay.url}${path}`, {
+    const target = httpRelays[calls++ % httpRelays.length]!;
+    const response = await fetch(`${target.url}${path}`, {
       method,
       headers: {
         origin: relay.origin,

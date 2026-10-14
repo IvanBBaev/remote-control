@@ -14,8 +14,8 @@ const PRUNE_THRESHOLD = 10_000;
 
 /**
  * In-process fixed-window counters keyed by an arbitrary string (`ip:…`, `user:…`), on
- * the Clock port so tests drive time. One relay replica (D15) makes in-process state
- * sufficient; a second replica would need a shared store.
+ * the Clock port so tests drive time. Each replica counts on its own (ADR 0016): with
+ * N replicas a client gets at most N times a limit, which these abuse bounds tolerate.
  */
 export class FixedWindowRateLimiter {
   readonly #windows = new Map<string, { count: number; resetAt: number }>();

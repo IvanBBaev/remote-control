@@ -14,5 +14,12 @@
     "numReplicas": 1,
     "overlapSeconds": 20,
     "drainingSeconds": 30
+  },
+  "environments": {
+    "staging": {
+      "deploy": {
+        "numReplicas": 2
+      }
+    }
   }
 }

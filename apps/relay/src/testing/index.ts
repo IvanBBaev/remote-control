@@ -4,6 +4,7 @@
  */
 export { createDrizzleAccountStore } from '../adapters/drizzle-account-store.js';
 export { createDrizzleAuditLog } from '../adapters/drizzle-audit-log.js';
+export { createDrizzleChallengeLedger } from '../adapters/drizzle-challenge-ledger.js';
 export { createDrizzleDeviceDirectory } from '../adapters/drizzle-device-directory.js';
 export { createDrizzleDeviceRegistry } from '../adapters/drizzle-device-registry.js';
 export { createDrizzleDeviceRevocations } from '../adapters/drizzle-device-revocations.js';

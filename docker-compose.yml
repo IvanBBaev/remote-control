@@ -1,5 +1,7 @@
 # Local stack: Postgres + the relay image, mirroring the Railway service (06 §5.1).
 #   docker compose up --build   →  http://localhost:3000/health
+# Two replicas on one database, as staging runs them (ADR 0016):
+#   RC_HUB=pg docker compose --profile replicas up --build   →  :3000 and :3001
 services:
   postgres:
     image: postgres:17-bookworm
@@ -17,7 +19,7 @@ services:
       timeout: 2s
       retries: 15
 
-  relay:
+  relay: &relay
     build: .
     depends_on:
       postgres:
@@ -26,6 +28,7 @@ services:
       PORT: '3000'
       RC_DATABASE_URL: postgres://rc:rc@postgres:5432/rc
       RC_LOG_LEVEL: info
+      RC_HUB: ${RC_HUB:-local}
     ports:
       - '3000:3000'
     # Matches Railway's drainingSeconds 30: SIGTERM, then up to 30 s before SIGKILL (D15).
@@ -39,6 +42,17 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  relay-b:
+    <<: *relay
+    profiles: [replicas]
+    environment:
+      PORT: '3000'
+      RC_DATABASE_URL: postgres://rc:rc@postgres:5432/rc
+      RC_LOG_LEVEL: info
+      RC_HUB: pg
+    ports:
+      - '3001:3000'
 
 volumes:
   postgres-data:

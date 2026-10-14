@@ -3,8 +3,8 @@ import type { Random } from '@remote-control/protocol';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AccountStore } from '../ports/account-store.js';
-import { ChallengeStore } from './challenge-store.js';
 import { crockfordBase32 } from './crockford-base32.js';
+import { MemoryChallengeLedger } from './memory-challenge-ledger.js';
 import { MAX_INVITES_PER_RUN, mintInvites } from './invites.js';
 import { checkOrigin } from './origin-guard.js';
 import { FixedWindowRateLimiter } from './rate-limiter.js';
@@ -69,42 +69,39 @@ describe('secret codes', () => {
   });
 });
 
-describe('ChallengeStore', () => {
-  it('hands a challenge out once and only before it expires', () => {
-    const clock = fakeClock();
-    const store = new ChallengeStore<string>(clock, 100);
-    store.put('a', 'A');
-    store.put('b', 'B');
-    expect(store.take('a')).toBe('A');
-    expect(store.take('a')).toBeUndefined();
-    expect(store.take('unknown')).toBeUndefined();
-    clock.advance(100);
-    expect(store.take('b')).toBeUndefined();
-    expect(store.size).toBe(0);
+describe('MemoryChallengeLedger challenges', () => {
+  const login = { kind: 'login' } as const;
+
+  it('hands a challenge out once and only before it expires', async () => {
+    const ledger = new MemoryChallengeLedger();
+    await ledger.put('a', login, 100, 0);
+    await ledger.put('b', { kind: 'recovery', userId: 'u', recoveryCodeId: 'r' }, 100, 0);
+    expect(await ledger.take('a', 0)).toEqual(login);
+    expect(await ledger.take('a', 0)).toBeUndefined();
+    expect(await ledger.take('unknown', 0)).toBeUndefined();
+    expect(await ledger.take('b', 100)).toBeUndefined();
+    expect(ledger.size).toBe(0);
   });
 
-  it('evicts expired entries first, then the oldest live one, when full', () => {
-    const clock = fakeClock();
-    const store = new ChallengeStore<number>(clock, 100, 2);
-    store.put('old', 1);
-    clock.advance(50);
-    store.put('mid', 2);
-    clock.advance(60);
-    store.put('new', 3); // `old` expired and is dropped; nothing live is evicted
-    expect(store.size).toBe(2);
-    expect(store.take('mid')).toBe(2);
-    store.put('newer', 4);
-    store.put('newest', 5); // full of live entries: `new` (oldest) goes
-    expect(store.size).toBe(2);
-    expect(store.take('new')).toBeUndefined();
-    expect(store.take('newer')).toBe(4);
-    expect(store.take('newest')).toBe(5);
+  it('evicts expired entries first, then the oldest live one, when full', async () => {
+    const ledger = new MemoryChallengeLedger(2);
+    await ledger.put('old', login, 100, 0);
+    await ledger.put('mid', login, 150, 50);
+    await ledger.put('new', login, 210, 110); // `old` expired and is dropped
+    expect(ledger.size).toBe(2);
+    expect(await ledger.take('mid', 110)).toEqual(login);
+    await ledger.put('newer', login, 210, 110);
+    await ledger.put('newest', login, 210, 110); // full of live entries: `new` (oldest) goes
+    expect(ledger.size).toBe(2);
+    expect(await ledger.take('new', 110)).toBeUndefined();
+    expect(await ledger.take('newer', 110)).toEqual(login);
+    expect(await ledger.take('newest', 110)).toEqual(login);
   });
 
-  it('copes with a zero capacity', () => {
-    const store = new ChallengeStore<number>(fakeClock(), 100, 0);
-    store.put('a', 1);
-    expect(store.take('a')).toBe(1);
+  it('copes with a zero capacity', async () => {
+    const ledger = new MemoryChallengeLedger(0);
+    await ledger.put('a', login, 100, 0);
+    expect(await ledger.take('a', 0)).toEqual(login);
   });
 });
 

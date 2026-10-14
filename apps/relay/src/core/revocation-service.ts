@@ -69,7 +69,8 @@ export class RevocationService {
    */
   async deleteAccount(phone: DeviceIdentity): Promise<DeleteAccountResult> {
     const hash = await accountDeletionHash(phone.userId);
-    if (!this.deps.verifier.consume(phone, hash)) return { ok: false, reason: 'not_verified' };
+    if (!(await this.deps.verifier.consume(phone, hash)))
+      return { ok: false, reason: 'not_verified' };
     if (!(await this.deps.store.deleteAccount(phone.userId))) {
       return { ok: false, reason: 'unknown_account' };
     }

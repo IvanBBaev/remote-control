@@ -259,3 +259,50 @@ export const auditLog = pgTable(
     index('audit_log_event_at_idx').on(table.event, table.at),
   ],
 );
+
+/**
+ * Outstanding WebAuthn challenges, shared by relay replicas (ADR 0016): single-use,
+ * deleted when taken, expiring with the 5-minute ceremony. One typed column per field a
+ * ceremony needs — ids and a decision hash, never a payload (I3). No foreign keys: a
+ * row lives minutes, and a ceremony for a deleted account fails at its next lookup.
+ */
+export const webauthnChallenges = pgTable(
+  'webauthn_challenges',
+  {
+    /** The base64url challenge, prefixed with the phone for decision step-up. */
+    key: text('key').primaryKey(),
+    kind: text('kind').notNull(),
+    userId: text('user_id'),
+    deviceId: text('device_id'),
+    inviteId: text('invite_id'),
+    webauthnUserId: text('webauthn_user_id'),
+    displayName: text('display_name'),
+    recoveryCodeId: text('recovery_code_id'),
+    decisionHash: bytea('decision_hash'),
+    expiresAt: at('expires_at').notNull(),
+  },
+  (table) => [
+    index('webauthn_challenges_expires_at_idx').on(table.expiresAt),
+    check(
+      'webauthn_challenges_kind_check',
+      sql`${table.kind} in ('register', 'login', 'recovery', 'decision')`,
+    ),
+  ],
+);
+
+/**
+ * Decision hashes a phone verified with UV (D7, ADR 0016): `used_until` closes the
+ * 10-minute replay window, `verified_until` the 5-minute admission window (null once
+ * spent). Read by every replica's command gate; the hash only, never the decision.
+ */
+export const verifiedDecisions = pgTable(
+  'verified_decisions',
+  {
+    decisionHash: bytea('decision_hash').primaryKey(),
+    userId: text('user_id').notNull(),
+    deviceId: text('device_id').notNull(),
+    usedUntil: at('used_until').notNull(),
+    verifiedUntil: at('verified_until'),
+  },
+  (table) => [index('verified_decisions_used_until_idx').on(table.usedUntil)],
+);

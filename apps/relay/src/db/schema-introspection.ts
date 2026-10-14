@@ -1,4 +1,7 @@
-/** The ten tables of 02 §5.6, plus `invite_codes` (02 §5.7, M0-09). */
+/**
+ * The ten tables of 02 §5.6, plus `invite_codes` (02 §5.7, M0-09) and the challenge
+ * tables replicas share (ADR 0016).
+ */
 export const RELAY_TABLES = [
   'users',
   'passkeys',
@@ -11,6 +14,8 @@ export const RELAY_TABLES = [
   'pairing_slots',
   'audit_log',
   'invite_codes',
+  'webauthn_challenges',
+  'verified_decisions',
 ] as const;
 
 /** Column names that would suggest a stored payload (invariant I3). */

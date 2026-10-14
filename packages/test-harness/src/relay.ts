@@ -8,6 +8,7 @@ import {
   DEFAULT_AUTH_RATE_LIMITS,
   createDrizzleAccountStore,
   createDrizzleAuditLog,
+  createDrizzleChallengeLedger,
   createDrizzleDeviceDirectory,
   createDrizzleDeviceRegistry,
   createDrizzleDeviceRevocations,
@@ -80,6 +81,8 @@ export interface HarnessRelay {
   connected(userId: string, deviceId: string): boolean;
   /** The fake Web Push service the relay delivers to (VAPID and aes128gcm checked). */
   readonly push: FakePushService;
+  /** The VAPID keys the relay signs pushes with (shared with its replicas). */
+  readonly vapid: Parameters<typeof createWebPushSender>[0];
   /** Every relay log line (JSON), for canary scans. */
   logs(): string[];
   /** The relay log lines since the last call, then forgets them (the soak, M1-15). */
@@ -131,8 +134,12 @@ export async function startRelay(options: StartRelayOptions): Promise<HarnessRel
   const client = shared ?? new PGlite();
   const db = createPgliteDb(client, { migrationsFolder: MIGRATIONS_DIR });
   if (shared === undefined) await db.migrate();
-  const vapid = { ...generateVapidKeys(), subject: 'mailto:harness@example.test' };
-  const push = await FakePushService.start(vapid.publicKey);
+  // Replicas share the VAPID keys (one `RC_VAPID_*` in production) and so the push service.
+  const vapid = options.replicaOf?.vapid ?? {
+    ...generateVapidKeys(),
+    subject: 'mailto:harness@example.test',
+  };
+  const push = options.replicaOf?.push ?? (await FakePushService.start(vapid.publicKey));
   const destination = createMemoryDestination();
   const logger = createLogger({ level: 'debug', destination });
   const random = webCryptoRandom;
@@ -155,7 +162,14 @@ export async function startRelay(options: StartRelayOptions): Promise<HarnessRel
   const hub: HubPort = pgHub ?? new LocalHub(clock, DEVICE_CAP);
   const audit = new AuditRecorder({ clock, store: createDrizzleAuditLog(db.orm), logger });
   const webauthn = createSimpleWebAuthn({ id: rpId, origin, name: 'rc' });
-  const decisions = new DecisionVerifier({ store: accountStore, webauthn, clock });
+  // Replicas share challenges through Postgres (ADR 0016), as in production.
+  const ledger = pgHub && createDrizzleChallengeLedger(db.orm);
+  const decisions = new DecisionVerifier({
+    store: accountStore,
+    webauthn,
+    clock,
+    ...(ledger && { ledger }),
+  });
   const revocationStore = createDrizzleDeviceRevocations(db.orm);
   const notifier = new PushNotifier({
     clock,
@@ -189,6 +203,7 @@ export async function startRelay(options: StartRelayOptions): Promise<HarnessRel
     hasher: createScryptSecretHasher(random),
     clock,
     random,
+    ...(ledger && { ledger }),
   });
   const pairing = new PairingService({
     registry: createDrizzleDeviceRegistry(db.orm),
@@ -229,6 +244,7 @@ export async function startRelay(options: StartRelayOptions): Promise<HarnessRel
     database: client,
     connected: (userId, deviceId) => hub.connection(userId, deviceId) !== undefined,
     push,
+    vapid,
     logs: () => destination.lines(),
     takeLogs: () => destination.take(),
     drop(userId, deviceId, code) {
@@ -248,8 +264,10 @@ export async function startRelay(options: StartRelayOptions): Promise<HarnessRel
       await pgHub?.stop();
       await notifier.idle();
       await audit.idle();
-      await push.close();
-      if (shared === undefined) await client.close();
+      if (shared === undefined) {
+        await push.close();
+        await client.close();
+      }
     },
   };
 }
