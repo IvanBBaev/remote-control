@@ -5,7 +5,7 @@ import { defineConfig } from 'tsdown';
 export default defineConfig({
   entry: { server: 'src/server.ts', migrate: 'src/db/migrate.ts', admin: 'src/admin.ts' },
   platform: 'node',
-  target: 'node22',
+  target: 'node24',
   format: 'esm',
   fixedExtension: false,
   // `tsc -b` writes declarations into dist/ as well; keep them.

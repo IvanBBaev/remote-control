@@ -1,7 +1,7 @@
 # Relay image (06 §5.1): one origin serves the API, the WebSocket hub and the PWA.
-# Base image pinned by digest (multi-arch index of node:22-bookworm-slim, Node 22.23.3,
-# resolved 2026-10-12). Bump the tag and the digest together.
-ARG NODE_IMAGE=node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
+# Base image pinned by digest (multi-arch index of node:24-bookworm-slim, Node 24.21.0,
+# resolved 2026-10-14; ADR 0011). Bump the tag and the digest together.
+ARG NODE_IMAGE=node:24-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20
 
 FROM ${NODE_IMAGE} AS build
 WORKDIR /repo

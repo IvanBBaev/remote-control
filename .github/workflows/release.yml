@@ -33,9 +33,9 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
 
-      # Trusted publishing needs npm >= 11.5.1; Node 22 ships npm 10.
-      - name: Upgrade npm
-        run: npm install -g npm@11
+      # Trusted publishing needs npm >= 11.5.1; Node 24 (.nvmrc) ships npm 11.
+      - name: Check npm for trusted publishing
+        run: node -e "const [a,b]=process.argv[1].split('.').map(Number);if(a<11||(a===11&&b<5)){console.error('npm '+process.argv[1]+' < 11.5.1');process.exit(1)}" "$(npm --version)"
 
       - run: pnpm install --frozen-lockfile
 

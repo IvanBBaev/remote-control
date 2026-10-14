@@ -162,7 +162,8 @@ states are described in [docs/product/screens.md](docs/product/screens.md).
 
 ## Development
 
-Requirements: Node 22 (see `.nvmrc`), pnpm 11 (via corepack).
+Requirements: Node 24 (see `.nvmrc`; `remotectl` itself runs on Node 22 or later), pnpm 11
+(via corepack).
 
 ```sh
 corepack enable
