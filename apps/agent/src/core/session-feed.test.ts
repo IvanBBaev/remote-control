@@ -8,6 +8,7 @@ import {
   createSessionFeed,
   lineCounts,
   mapHookEvent,
+  MAX_AHEAD_EVENTS,
   mergeHistory,
   MAX_FEED_SESSIONS,
 } from './session-feed.js';
@@ -282,6 +283,16 @@ describe('mergeHistory (04 W11)', () => {
     });
     expect(mergeHistory([stop], [{ kind: 'stop', text: 'other' }]).events).toHaveLength(1);
     expect(mergeHistory([], [prompt('a')])).toEqual({ events: [prompt('a')], ahead: [] });
+    // A live prompt repeating an older one does not pull the later history ahead of it.
+    const older = [prompt('continue'), tool('x'), stop, prompt('add docs'), tool('y'), stop];
+    expect(mergeHistory(older, [prompt('continue')])).toEqual({
+      events: [...older, prompt('continue')],
+      ahead: [],
+    });
+    // Nor does a match further back than the ahead window.
+    const long = [tool('x'), ...Array.from({ length: MAX_AHEAD_EVENTS + 1 }, () => tool('z'))];
+    expect(mergeHistory(long, [tool('x')]).ahead).toEqual([]);
+    expect(mergeHistory(long.slice(0, -1), [tool('x')]).ahead).toHaveLength(MAX_AHEAD_EVENTS);
     expect(mergeHistory([prompt('a')], [])).toEqual({ events: [prompt('a')], ahead: [] });
   });
 });

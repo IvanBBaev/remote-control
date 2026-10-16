@@ -174,10 +174,19 @@ export interface MergedHistory {
 }
 
 /**
+ * History events a backfill may place past the live ones: the transcript is read while
+ * hooks arrive, so only the few written in that window can be ahead of their hooks.
+ */
+export const MAX_AHEAD_EVENTS = 8;
+
+/**
  * `history` and `live` as one run of events. The transcript is read while live events
  * arrive, so it may already hold some of them, and some it holds may not have arrived
- * yet: the live events are placed at the latest point of `history` they continue (the
- * history from there is a head of `live`, or `live` is a head of it).
+ * yet. The live events continue the end of `history` where its tail is a head of
+ * `live` (the longest such overlap); failing that, they may sit just before a short
+ * tail of at most {@link MAX_AHEAD_EVENTS} history events that are ahead of their
+ * hooks — all of the current turn, so no prompt among them. Otherwise they come after the whole history: keys are coarse (a stop has
+ * none), so matching an older turn would hide the live one.
  */
 export function mergeHistory(
   history: readonly FeedEvent[],
@@ -186,10 +195,17 @@ export function mergeHistory(
   if (live.length === 0) return { events: [...history], ahead: [] };
   const historyKeys = history.map(eventKey);
   const liveKeys = live.map(eventKey);
-  for (let start = history.length - 1; start >= 0; start -= 1) {
-    const shared = Math.min(history.length - start, live.length);
-    if (liveKeys.slice(0, shared).every((key, i) => key === historyKeys[start + i])) {
-      const ahead = history.slice(start + live.length);
+  const matches = (start: number, length: number) =>
+    liveKeys.slice(0, length).every((key, i) => key === historyKeys[start + i]);
+  for (let start = Math.max(0, history.length - live.length); start < history.length; start += 1) {
+    if (matches(start, history.length - start)) {
+      return { events: [...history.slice(0, start), ...live], ahead: [] };
+    }
+  }
+  const earliest = Math.max(0, history.length - live.length - MAX_AHEAD_EVENTS);
+  for (let start = history.length - live.length - 1; start >= earliest; start -= 1) {
+    const ahead = history.slice(start + live.length);
+    if (matches(start, live.length) && ahead.every((event) => event.kind !== 'prompt')) {
       return { events: [...history.slice(0, start), ...live, ...ahead], ahead };
     }
   }
