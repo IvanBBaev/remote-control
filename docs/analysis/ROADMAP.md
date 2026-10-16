@@ -61,7 +61,7 @@ named, so nobody re-derives it.
 | M0-26b | Railway backups + restore drill, UptimeRobot, usage alert, Sentry DSN | §4 M0-26 | `blocked-owner` | 1 |
 | M0-27a | SECURITY.md, README v0, publish settings (repo part) | §4 M0-27 | `done` | 1 |
 | M0-27b | remotectl@0.0.1 placeholder on npm | §4 M0-27, §6 Q15 | `blocked-owner` | 0.5 |
-| M0-EXIT | M0 exit record (real approval from outside home) | §4 M0 exit record | `blocked-owner` | 1 |
+| M0-EXIT | M0 exit record (real approval from outside home; template 8bed3cf) | §4 M0 exit record | `blocked-owner` | 1 |
 | M1-01 | AskUserQuestion end-to-end | §4 M1-01 | `done` | 2 |
 | M1-02 | "Always" from the phone (session scope) | §4 M1-02 | `done` | 1 |
 | M1-03 | "Reply in terminal", early handoff, remotectl pause | §4 M1-03 | `done` | 1 |
@@ -83,7 +83,7 @@ named, so nobody re-derives it.
 | M1-14b | Second-user run logged in `docs/verification/second-user.md` — deps M0-02b, M1-09b, Q13 | §4 M1-14, §6 Q13 | `blocked-owner` | 0.5 |
 | M1-15a | Soak harness, `pnpm soak` and CI load smoke (code part, 287eb9c) | §4 M1-15 | `done` | 1 |
 | M1-15b | 24 h soak run logged in `docs/verification/soak.md` | §4 M1-15 | `blocked-owner` | 0.5 |
-| M1-EXIT | M1 exit record: two weeks, ≥ 20 approvals from outside home | §4 M1 exit record, §3 M1 (4) | `blocked-owner` | 1 |
+| M1-EXIT | M1 exit record: two weeks, ≥ 20 approvals from outside home (templates 8bed3cf) | §4 M1 exit record, §3 M1 (4) | `blocked-owner` | 1 |
 
 ### History
 - 2026-10-13 `727195e` — 65.3 %, 33.5 h left (first run; target M1 exit; M2-04 and M2-08 are done but outside the target and not counted)
@@ -861,7 +861,7 @@ settings, `remotectl@0.0.1` placeholder published manually (owner's npm account,
 AC: files exist and are linked; `npm view remotectl` shows 0.0.1 owned by the owner.
 
 **M0 exit record**: `docs/verification/m0-exit.md` — the owner's real approval from
-outside home (date, network, device), journeys and gates green (CI run links).
+outside home (date, network, device), journeys and gates green (CI run links). Template ready 8bed3cf; record pending owner.
 
 ### M1 — Second user
 
@@ -1005,7 +1005,7 @@ reconnects, no duplicate decisions); CI `continue-on-error` service load smoke p
 AC: soak log in `docs/verification/soak.md` with RSS flat and zero duplicate decisions.
 
 **M1 exit record**: `docs/verification/m1-usage.md` — two weeks, ≥ 20 approvals from
-outside home, hangs = 0; second-user log; release checklist link.
+outside home, hangs = 0; second-user log; release checklist link. Templates ready 8bed3cf (`m1-usage.md` + criteria checklist `m1-exit.md`); record pending owner.
 
 ### M2 — Beyond Claude Code
 
