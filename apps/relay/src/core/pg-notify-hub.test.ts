@@ -330,6 +330,36 @@ describe('PgNotifyHub', () => {
     expect([a.count(USER), b.count(USER)]).toEqual([1, 1]);
   });
 
+  it('closes a displaced socket whose supersede was lost', async () => {
+    const c = cluster();
+    const { hub: a } = c.hub();
+    const { hub: b, bus: busB } = c.hub();
+    await a.start();
+    await b.start();
+    const first = connection(agentIdentity);
+    a.attach(first);
+    await flushNotifications();
+    c.time.advance(10);
+    const second = connection(agentIdentity);
+    const result = b.attach(second);
+    await flushNotifications();
+    // a heard the newer claim, but the close that follows it is lost.
+    c.network.partition(busB, true);
+    if (result.ok) result.superseded?.close(4000, 'superseded');
+    await flushNotifications();
+    c.network.partition(busB, false);
+    expect(first.close).not.toHaveBeenCalled();
+    for (let at = 0; at <= HUB_REPLICA_TIMEOUT_MS; at += HUB_HEARTBEAT_MS) {
+      c.time.advance(HUB_HEARTBEAT_MS);
+      await flushNotifications();
+    }
+    expect(first.close).toHaveBeenCalledExactlyOnceWith(4000, 'superseded');
+    a.detach(first);
+    await flushNotifications();
+    expect(b.connection(USER, AGENT)).toBe(second);
+    expect([a.count(USER), b.count(USER)]).toEqual([1, 1]);
+  });
+
   it('settles two attaches of one device on the later one', async () => {
     const c = cluster();
     const [a, b] = await started(c, 2);

@@ -12,6 +12,7 @@ import type {
 } from '../ports/hub.js';
 import type { Notification, NotifyBus } from '../ports/notify-bus.js';
 import type { Timer, TimerHandle } from '../ports/timer.js';
+import { CloseCode } from './hub-limits.js';
 import { LocalHub, MAX_PRESENCE_ENTRIES } from './local-hub.js';
 
 /** The channel every replica listens on; each also listens on `<base>_<replica id>`. */
@@ -118,9 +119,10 @@ export class PgNotifyHub implements HubPort, HubCluster {
   readonly #partial = new Map<string, PartialFrame>();
   /**
    * Local sockets of devices that moved to another replica, until that replica's
-   * `close` (the supersede) reaches them or they detach on their own.
+   * `close` (the supersede) reaches them or they detach on their own. A heartbeat closes
+   * one still waiting after {@link HUB_REPLICA_TIMEOUT_MS}: its `close` was lost.
    */
-  readonly #displaced = new Map<string, HubConnection>();
+  readonly #displaced = new Map<string, { connection: HubConnection; at: number }>();
   /** When each local socket attached, for the `on` that announces it. */
   readonly #attachedAt = new WeakMap<HubConnection, number>();
   #handlers: ClusterHandlers | undefined;
@@ -181,7 +183,7 @@ export class PgNotifyHub implements HubPort, HubCluster {
   detach(connection: HubConnection): boolean {
     const { userId, deviceId } = connection.identity;
     const key = displacedKey(userId, deviceId);
-    if (this.#displaced.get(key) === connection) this.#displaced.delete(key);
+    if (this.#displaced.get(key)?.connection === connection) this.#displaced.delete(key);
     if (!this.#local.detach(connection)) return false;
     this.#publish([this.#broadcast({ t: 'off', r: this.replicaId, u: userId, d: deviceId })]);
     return true;
@@ -297,7 +299,8 @@ export class PgNotifyHub implements HubPort, HubCluster {
       case 'close': {
         // A displaced socket first: the close is the supersede aimed at it.
         const key = displacedKey(message.u, message.d);
-        const target = this.#displaced.get(key) ?? this.#local.connection(message.u, message.d);
+        const target =
+          this.#displaced.get(key)?.connection ?? this.#local.connection(message.u, message.d);
         this.#displaced.delete(key);
         target?.close(message.code, message.why);
         return;
@@ -334,7 +337,10 @@ export class PgNotifyHub implements HubPort, HubCluster {
     // close (the `superseded` notification that follows) does not report it offline.
     if (local !== undefined) {
       this.#local.detach(local);
-      this.#displaced.set(displacedKey(userId, deviceId), local);
+      this.#displaced.set(displacedKey(userId, deviceId), {
+        connection: local,
+        at: this.deps.clock.now(),
+      });
     }
     let devices = this.#remote.get(userId);
     if (devices === undefined) {
@@ -475,6 +481,11 @@ export class PgNotifyHub implements HubPort, HubCluster {
         this.deps.logger.warn({ event: 'hub_replica_lost', replica }, 'relay replica went silent');
         this.#replicas.delete(replica);
         this.#dropReplica(replica, true);
+      }
+      for (const [key, { connection, at }] of [...this.#displaced]) {
+        if (now - at < HUB_REPLICA_TIMEOUT_MS) continue;
+        this.#displaced.delete(key);
+        connection.close(CloseCode.superseded, 'superseded');
       }
       this.#scheduleHeartbeat();
     });

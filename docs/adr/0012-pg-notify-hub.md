@@ -43,6 +43,9 @@ commit, in order (03 F24–F26).
   When two claims meet, the later `a` wins and a tie goes to the larger replica id;
   a replica whose local socket is newer answers a stale `on` with its own `on`
   instead of giving the socket up, so both sides settle on the same holder.
+  _(Amended after review.)_ The `close` can be lost (a failed publish, or a listening
+  connection that was down). A displaced socket still open after 15 s is closed with
+  4000 by the heartbeat.
 - **Device cap.** It counts local and remote devices (D15's cap of 10 per user holds
   cluster-wide).
 - **Liveness.**
