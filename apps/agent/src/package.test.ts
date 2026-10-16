@@ -21,6 +21,8 @@ import { createHookDispatcher } from './core/hook-dispatcher.js';
 import { createPendingStore } from './core/pending-store.js';
 
 const run = promisify(execFile);
+// pnpm and npm are `.cmd` shims on Windows, which execFile only runs through a shell.
+const SHELL = process.platform === 'win32';
 const PACKAGE_DIR = fileURLToPath(new URL('..', import.meta.url));
 const BUNDLE = join(PACKAGE_DIR, 'dist', 'cli.mjs');
 const HOOK_BUNDLE = join(PACKAGE_DIR, 'dist', 'hook.cjs');
@@ -49,7 +51,7 @@ function isBuiltin(specifier: string): boolean {
 }
 
 beforeAll(async () => {
-  await run('pnpm', ['run', 'build'], { cwd: PACKAGE_DIR });
+  await run('pnpm', ['run', 'build'], { cwd: PACKAGE_DIR, shell: SHELL });
 }, 120_000);
 
 /** AC: the published package is bundled with no runtime dependency (D22, R13). */
@@ -83,6 +85,7 @@ describe('npm package', () => {
   it('packs only the bundles, the source map, the README and package.json', async () => {
     const { stdout } = await run('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
       cwd: PACKAGE_DIR,
+      shell: SHELL,
     });
     const [packed] = JSON.parse(stdout) as [{ files: PackFile[]; bundled: string[] }];
     expect(packed.files.map((file) => file.path).sort()).toEqual([

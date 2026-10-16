@@ -49,7 +49,11 @@ class FakeLaunchctl implements Launchctl {
   }
 }
 
-describe('remotectl install / uninstall / status (launchd)', () => {
+// The suite runs the darwin code on the host's real temp directory, so it needs POSIX paths;
+// Windows hosts cover their own service in service-windows.test.ts.
+const describePosix = describe.skipIf(process.platform === 'win32');
+
+describePosix('remotectl install / uninstall / status (launchd)', () => {
   let base: string;
   let home: string;
   let script: string;

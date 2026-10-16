@@ -42,12 +42,24 @@ export function manualTime(start = 1_760_000_000_000): ManualTime {
 
 /**
  * Lets queued promise work run (WebCrypto resolves outside the microtask queue) until
- * `predicate` holds; throws after `rounds` event-loop turns.
+ * `predicate` holds. The first `rounds` turns are bare event-loop turns (fast on an idle
+ * machine); after them it polls every 5 ms for up to `slowRounds` more, because a turn
+ * takes microseconds while one X25519 operation on a loaded CI runner's threadpool can
+ * take tens of milliseconds. Deadlines under test stay on the manual clock; this only
+ * bounds the wait, and the test timeout stays the real bound on a hang.
  */
-export async function waitFor(predicate: () => boolean, rounds = 2_000): Promise<void> {
+export async function waitFor(
+  predicate: () => boolean,
+  rounds = 2_000,
+  slowRounds = 4_000,
+): Promise<void> {
   for (let i = 0; i < rounds; i++) {
     if (predicate()) return;
     await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  for (let i = 0; i < slowRounds; i++) {
+    if (predicate()) return;
+    await new Promise<void>((resolve) => setTimeout(resolve, 5));
   }
   throw new Error('waitFor: condition not met');
 }

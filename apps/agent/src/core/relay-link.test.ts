@@ -883,7 +883,7 @@ describe('relay link (fake relay, fake phones)', () => {
     const [paired, stranger] = t.phones as [FakePhone, FakePhone];
     t.setPeers([paired.peer(1)]);
     await stranger.connect();
-    const handshake = stranger.handshake(t.agentId, t.deviceKey.publicKey);
+    const handshake = stranger.handshake(t.agentId, t.deviceKey.publicKey, 0);
     await expect(handshake).rejects.toThrow('waitFor');
     expect(t.logs).toContainEqual({
       event: 'handshake_refused',

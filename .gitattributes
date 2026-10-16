@@ -1,0 +1,3 @@
+# LF everywhere: tests compare source text and generated files byte for byte, and a
+# Windows checkout with core.autocrlf would turn them into CRLF.
+* text=auto eol=lf

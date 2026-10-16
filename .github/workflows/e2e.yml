@@ -2,7 +2,7 @@ name: e2e
 
 # Browser-level checks: the crypto known-answer vectors in Chromium and WebKit (07 W9) and the
 # Playwright journeys P1–P9 + WebKit W1–W2 (M1-12). Runs on `main`, nightly, and on PRs
-# labelled `e2e`.
+# labelled `e2e`. Chromium runs on Linux, WebKit on macOS (see the `webkit` job).
 on:
   push:
     branches: [main]
@@ -36,10 +36,10 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Install Chromium and WebKit
-        run: pnpm exec playwright install --with-deps chromium webkit
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
 
-      - run: pnpm test:browser
+      - run: pnpm test:browser --project 'browser-crypto (chromium)'
 
   playwright:
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'e2e')
@@ -58,15 +58,50 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Install Chromium and WebKit
-        run: pnpm --filter @remote-control/e2e exec playwright install --with-deps chromium webkit
+      - name: Install Chromium
+        run: pnpm --filter @remote-control/e2e exec playwright install --with-deps chromium
 
-      - run: pnpm test:e2e
+      - run: pnpm test:e2e --project mobile-chromium --project desktop-chromium
 
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
           name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 14
+
+  # WebKit on macOS: Linux WebKitGTK is not the engine iOS Safari ships (its WebCrypto
+  # refuses the X25519 vectors and its WebAuthn differs), so it would test the wrong thing.
+  webkit:
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'e2e')
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Enable corepack (pnpm from packageManager field)
+        run: corepack enable
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install WebKit
+        run: pnpm --filter @remote-control/e2e exec playwright install webkit
+
+      - run: pnpm test:browser --project 'browser-crypto (webkit)'
+
+      - run: pnpm test:e2e --project mobile-webkit
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report-webkit
           path: |
             e2e/playwright-report
             e2e/test-results

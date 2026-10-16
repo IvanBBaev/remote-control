@@ -161,8 +161,11 @@ describe('update check', () => {
       latest: NEWER,
       etag: 'W/"1"',
     });
-    expect((await stat(cacheFile())).mode & 0o777).toBe(0o600);
-    expect((await stat(join(home, '.cache', 'remotectl'))).mode & 0o777).toBe(0o700);
+    // Windows has no POSIX permission bits; the files are protected by the user profile ACL.
+    if (process.platform !== 'win32') {
+      expect((await stat(cacheFile())).mode & 0o777).toBe(0o600);
+      expect((await stat(join(home, '.cache', 'remotectl'))).mode & 0o777).toBe(0o700);
+    }
   });
 
   it('says the running version is the latest', async () => {

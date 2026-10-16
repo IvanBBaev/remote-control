@@ -66,8 +66,11 @@ export interface FakePhone {
   readonly doorbells: Envelope[];
   connect(): Promise<void>;
   disconnect(): void;
-  /** Runs the KK initiator against the agent (D3) and waits for the snapshot. */
-  handshake(agentDeviceId: string, agentPublicKey: Uint8Array): Promise<void>;
+  /**
+   * Runs the KK initiator against the agent (D3) and waits for the snapshot. A test that
+   * expects a refusal passes `slowRounds: 0`, so the wait gives up after the fast turns.
+   */
+  handshake(agentDeviceId: string, agentPublicKey: Uint8Array, slowRounds?: number): Promise<void>;
   /** Sends a decision on the open session; returns the command envelope id. */
   decide(
     kind: DecisionKind,
@@ -264,7 +267,7 @@ export async function createFakePhone(
       socket = undefined;
       transport = undefined;
     },
-    async handshake(agentDeviceId, agentPublicKey) {
+    async handshake(agentDeviceId, agentPublicKey, slowRounds) {
       agentId = agentDeviceId;
       transport = undefined;
       const before = messages.length;
@@ -281,7 +284,11 @@ export async function createFakePhone(
         remoteStaticPublicKey: agentPublicKey,
       });
       control(agentDeviceId, HANDSHAKE_TAG.kk, await kk.writeMessage());
-      await waitFor(() => messages.slice(before).some((r) => r.message.t === 'snapshot'));
+      await waitFor(
+        () => messages.slice(before).some((r) => r.message.t === 'snapshot'),
+        undefined,
+        slowRounds,
+      );
     },
     decide(kind, request, overrides = {}) {
       return command(kind, request.id, request.requestHash, null, {}, overrides);

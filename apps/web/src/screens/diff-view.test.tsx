@@ -11,6 +11,15 @@ import { click, renderApp, settle } from '../test-render.js';
 import type { RenderedApp } from '../test-render.js';
 import { parseHunks } from './diff-view.js';
 
+/** CPU time this test process has used, in ms (jsdom runs in Node; the app types omit it). */
+function cpuMs(): number {
+  const { process } = globalThis as unknown as {
+    process: { cpuUsage(): { user: number; system: number } };
+  };
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
+
 const MAC = '0d6f8a52-3c5e-4f0b-9a4e-222222222222';
 const FILE = '/Users/me/code/api/src/a.ts';
 const KEY = diffKey(MAC, 'sess-1', FILE);
@@ -130,17 +139,19 @@ describe('diff view (M2-02)', () => {
     const lines = Array.from({ length: 2600 }, (_, i) => `${i % 2 ? '+' : '-'}line ${String(i)}`);
     const patch = [`@@ -1,1300 +1,1300 @@`, ...lines].join('\n');
     const { answer } = await openFile();
-    // Best of three after a warm-up: one slow run under a loaded test pool is noise.
+    // Best of three after a warm-up. It counts the CPU time the render takes, not the wall
+    // clock: on a loaded machine or CI runner the scheduler, not the render, owns the wall
+    // clock, while the render's own work is what the phone pays.
     answer({ status: 'ready', patch: FIXTURE_PATCH, truncated: false });
     await settle();
     let best = Infinity;
     for (const variant of [patch, `${patch}\n+end`, patch]) {
       answer({ status: 'unavailable' });
       await settle();
-      const started = performance.now();
+      const started = cpuMs();
       answer({ status: 'ready', patch: variant, truncated: true });
       await settle();
-      best = Math.min(best, performance.now() - started);
+      best = Math.min(best, cpuMs() - started);
     }
     expect(best).toBeLessThan(200);
     const shown = all('pre.diff span').map((span) => span.textContent);

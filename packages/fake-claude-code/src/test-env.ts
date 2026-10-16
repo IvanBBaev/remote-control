@@ -106,7 +106,8 @@ export class TempEnv {
   }
 
   cleanup(): void {
-    rmSync(this.root, { recursive: true, force: true });
+    // Windows keeps a killed hook's working directory locked for a moment (EBUSY).
+    rmSync(this.root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 
   #writeSettings(file: string, settings: object | string): void {

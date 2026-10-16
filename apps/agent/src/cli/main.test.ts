@@ -307,21 +307,24 @@ describe('runCli', () => {
       expect((await postHook({ hook_event_name: 'PostToolUse', tool_name: 'Bash' })).ok).toBe(true);
       expect((await postHook({ hook_event_name: 'UserPromptSubmit', prompt: 'go' })).ok).toBe(true);
       expect((await postHook({ hook_event_name: 'Stop' })).ok).toBe(true);
-      await vi.waitFor(async () => {
-        expect(JSON.parse(await readFile(join(h.c.paths.data, 'stats.json'), 'utf8'))).toEqual({
-          version: 2,
-          projects: {
-            'remote-control': {
-              approvals: 1,
-              denials: 0,
-              sessionsStarted: 1,
-              toolCalls: 1,
-              activeMs: expect.any(Number) as number,
-              lastActiveAt: expect.any(Number) as number,
+      await vi.waitFor(
+        async () => {
+          expect(JSON.parse(await readFile(join(h.c.paths.data, 'stats.json'), 'utf8'))).toEqual({
+            version: 2,
+            projects: {
+              'remote-control': {
+                approvals: 1,
+                denials: 0,
+                sessionsStarted: 1,
+                toolCalls: 1,
+                activeMs: expect.any(Number) as number,
+                lastActiveAt: expect.any(Number) as number,
+              },
             },
-          },
-        });
-      });
+          });
+        },
+        { timeout: 10_000 },
+      );
       // M2-06: the phone gets the history on the handshake and after each turn.
       expect(phone.of('history')[0]!.projects).toEqual([]);
       await waitFor(() =>
