@@ -54,6 +54,17 @@ export const CLAUDE_CODE_TOOL_NAMES: readonly ClaudeCodeTool[] = Object.freeze(
   Object.keys(CLAUDE_CODE_TOOLS) as ClaudeCodeTool[],
 );
 
+/**
+ * Built-in tools of the other agents that reach the phone (04 §2.11–2.12): Codex's `shell`
+ * and the tools Gemini's `BeforeTool` gate matches. Claude Code names win on a clash.
+ */
+const OTHER_AGENT_TOOLS: ReadonlyMap<string, ToolInfo> = new Map<string, ToolInfo>([
+  ['shell', { label: 'Run a command', kind: 'command' }],
+  ['run_shell_command', { label: 'Run a command', kind: 'command' }],
+  ['write_file', { label: 'Write a file', kind: 'file' }],
+  ['replace', { label: 'Edit a file', kind: 'file' }],
+]);
+
 const MCP_PREFIX = 'mcp__';
 
 /** `mcp__<server>__<tool>` split into its parts; `undefined` for any other name. */
@@ -84,9 +95,14 @@ function isBuiltIn(name: string): name is ClaudeCodeTool {
   return Object.hasOwn(CLAUDE_CODE_TOOLS, name);
 }
 
-/** Label and kind for a tool name: built-in, MCP (by server name), or the raw-name fallback. */
+/**
+ * Label and kind for a tool name: Claude Code built-in, Codex or Gemini built-in, MCP (by
+ * server name), or the raw-name fallback.
+ */
 export function toolInfo(name: string): ToolInfo {
   if (isBuiltIn(name)) return CLAUDE_CODE_TOOLS[name];
+  const other = OTHER_AGENT_TOOLS.get(name);
+  if (other !== undefined) return other;
   const mcp = mcpToolName(name);
   if (mcp !== undefined) {
     const server = words(mcp.server) || mcp.server;

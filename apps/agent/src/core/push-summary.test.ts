@@ -92,6 +92,18 @@ describe('pushSummaryLine', () => {
     ).toBe('Review the diff');
   });
 
+  it('shows Codex and Gemini commands and files the same way (01 W4)', () => {
+    expect(pushSummaryLine('shell', { command: ['rm', '-rf', 'node_modules'] }, cwd)).toBe(
+      'rm -rf node_modules',
+    );
+    expect(pushSummaryLine('run_shell_command', { command: 'API_KEY=abc make' }, cwd)).toBe(
+      'API_KEY=*** make',
+    );
+    expect(
+      pushSummaryLine('write_file', { file_path: `${cwd}/src/a.ts`, content: 'SECRET' }, cwd),
+    ).toBe('src/a.ts');
+  });
+
   it('has no line for other tools or a blank field', () => {
     expect(pushSummaryLine('TodoWrite', { todos: [] }, cwd)).toBeUndefined();
     expect(pushSummaryLine('mcp__github__create_issue', { title: 'x' }, cwd)).toBeUndefined();

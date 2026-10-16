@@ -68,6 +68,21 @@ describe('CLAUDE_CODE_TOOLS', () => {
   });
 });
 
+describe('Codex and Gemini tools (01 W4)', () => {
+  it.each([
+    ['shell', 'Run a command', 'command'],
+    ['run_shell_command', 'Run a command', 'command'],
+    ['write_file', 'Write a file', 'file'],
+    ['replace', 'Edit a file', 'file'],
+  ])('%s -> %s (%s)', (name, label, kind) => {
+    expect(toolInfo(name)).toEqual({ label, kind });
+  });
+
+  it('leaves other snake_case names to the fallback', () => {
+    expect(toolInfo('read_file')).toEqual({ label: 'Use tool read_file', kind: 'other' });
+  });
+});
+
 describe('MCP tools', () => {
   it('splits server and tool', () => {
     expect(mcpToolName('mcp__github__create_issue')).toEqual({

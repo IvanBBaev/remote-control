@@ -49,6 +49,22 @@ function stringField(input: unknown, key: string): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+/**
+ * A command input as one line: Claude Code and Gemini send a string, Codex an argv array
+ * (`["rm", "-rf", "dist"]`), joined with an argument that holds spaces or quotes quoted.
+ */
+export function commandText(input: unknown): string | undefined {
+  const command = stringField(input, 'command');
+  if (command !== undefined) return command;
+  if (typeof input !== 'object' || input === null) return undefined;
+  const argv = (input as Record<string, unknown>)['command'];
+  if (!Array.isArray(argv) || argv.length === 0) return undefined;
+  if (!argv.every((arg): arg is string => typeof arg === 'string')) return undefined;
+  return argv
+    .map((arg) => (arg === '' || /[\s"'\\]/.test(arg) ? JSON.stringify(arg) : arg))
+    .join(' ');
+}
+
 /** Input fields that say what each kind of tool will do, most telling first. */
 const CONTENT_FIELDS: Readonly<Record<ToolKind, readonly string[]>> = {
   command: ['command'],
@@ -69,7 +85,7 @@ const CONTENT_FIELDS: Readonly<Record<ToolKind, readonly string[]>> = {
 export function toolContent(toolInput: unknown, toolName = ''): string {
   const { kind } = toolInfo(toolName);
   for (const field of CONTENT_FIELDS[kind]) {
-    const value = stringField(toolInput, field);
+    const value = field === 'command' ? commandText(toolInput) : stringField(toolInput, field);
     if (value === undefined) continue;
     const where = kind === 'search' ? stringField(toolInput, 'path') : undefined;
     return where === undefined ? value : `${value}\nin ${where}`;

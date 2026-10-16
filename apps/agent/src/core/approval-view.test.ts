@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_CONTENT_LENGTH,
   approvalView,
+  commandText,
   pendingRequestHash,
   projectName,
   toolContent,
@@ -61,6 +62,28 @@ describe('projectName', () => {
   });
 });
 
+describe('commandText', () => {
+  it('takes a command string as is', () => {
+    expect(commandText({ command: 'rm -rf dist' })).toBe('rm -rf dist');
+  });
+
+  it("joins Codex's argv array, quoting what holds spaces, quotes or nothing", () => {
+    expect(commandText({ command: ['rm', '-rf', 'node_modules'] })).toBe('rm -rf node_modules');
+    expect(commandText({ command: ['bash', '-lc', 'echo "hi there"'] })).toBe(
+      'bash -lc "echo \\"hi there\\""',
+    );
+    expect(commandText({ command: ['git', 'commit', '-m', ''] })).toBe('git commit -m ""');
+  });
+
+  it('has nothing for an empty, mixed or missing command', () => {
+    expect(commandText({ command: [] })).toBeUndefined();
+    expect(commandText({ command: ['ls', 1] })).toBeUndefined();
+    expect(commandText({ file_path: '/a' })).toBeUndefined();
+    expect(commandText(null)).toBeUndefined();
+    expect(commandText('ls')).toBeUndefined();
+  });
+});
+
 describe('toolContent', () => {
   it('falls back through command, file path and url for unknown tools, then JSON', () => {
     expect(toolContent({ command: 'ls', file_path: '/a' })).toBe('ls');
@@ -87,6 +110,10 @@ describe('toolContent', () => {
     ['mcp__github__create_issue', { title: 'Bug' }, '{"title":"Bug"}'],
     ['AskUserQuestion', { questions: [] }, '{"questions":[]}'],
     ['Edit', { old_string: 'a' }, '{"old_string":"a"}'],
+    ['shell', { command: ['rm', '-rf', 'node_modules'] }, 'rm -rf node_modules'],
+    ['run_shell_command', { command: 'rm -rf node_modules' }, 'rm -rf node_modules'],
+    ['write_file', { file_path: '/repo/a.ts', content: 'x' }, '/repo/a.ts'],
+    ['replace', { file_path: '/repo/a.ts', old_string: 'a', new_string: 'b' }, '/repo/a.ts'],
   ])('%s shows what it will do', (name, input, content) => {
     expect(toolContent(input, name)).toBe(content);
   });

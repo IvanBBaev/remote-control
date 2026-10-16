@@ -7,7 +7,7 @@ import {
 } from '@remote-control/protocol';
 
 import type { Peer } from '../ports/key-store.js';
-import { projectName, toolCall, toolLabel } from './approval-view.js';
+import { commandText, projectName, toolCall, toolLabel } from './approval-view.js';
 import { fromBase64Url } from './from-base64url.js';
 import type { HookInput } from './hook-dispatcher.js';
 import type { PendingRequest } from './pending-store.js';
@@ -90,7 +90,7 @@ export function pushSummaryLine(
   let line: string | undefined;
   switch (toolInfo(toolName).kind) {
     case 'command':
-      line = field('command');
+      line = commandText(toolInput);
       break;
     case 'file': {
       const path = field('file_path') ?? field('notebook_path') ?? field('path');
@@ -111,7 +111,7 @@ export function pushSummaryLine(
     default:
       line = undefined;
   }
-  return line === undefined ? undefined : shortLine(line);
+  return line === undefined || line.trim() === '' ? undefined : shortLine(line);
 }
 
 /** The first non-empty line, secrets masked, cut to {@link MAX_LINE_LENGTH} code points. */

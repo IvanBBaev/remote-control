@@ -172,7 +172,7 @@ describe('approval card', () => {
     const labels = [...(mounted?.container.querySelectorAll('.approval-card button') ?? [])].map(
       (button) => button.textContent,
     );
-    expect(labels).toEqual(['Show details', 'Deny', 'Reply in terminal']);
+    expect(labels).toEqual(['Show command', 'Deny', 'Reply in terminal']);
     expect(mounted?.container.querySelector('.deny-only')?.textContent).toBe(
       'Observe and deny only. This agent takes approvals in the terminal.',
     );
