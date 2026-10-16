@@ -163,6 +163,33 @@ describe('approval card', () => {
     expect(labels).toEqual(['Show command', 'Deny', 'Allow', 'Reply in terminal']);
   });
 
+  it('labels a deny-only request and offers no Allow (Gemini, 04 A6)', async () => {
+    const { test, decide } = await open(`/requests/${ID}`, (t) => [
+      view(t, ID, {
+        request: approval(ID, { toolName: 'run_shell_command', allowSupported: false }),
+      }),
+    ]);
+    const labels = [...(mounted?.container.querySelectorAll('.approval-card button') ?? [])].map(
+      (button) => button.textContent,
+    );
+    expect(labels).toEqual(['Show details', 'Deny', 'Reply in terminal']);
+    expect(mounted?.container.querySelector('.deny-only')?.textContent).toBe(
+      'Observe and deny only. This agent takes approvals in the terminal.',
+    );
+    tick(test, TAP_GUARD_MS);
+    decide.mockResolvedValue({ ok: true, decisionHash: 'h', asserted: false });
+    await click(mounted!.button('Deny'));
+    expect(decide).toHaveBeenCalledWith(AGENT, expect.objectContaining({ id: ID }), 'deny');
+  });
+
+  it('shows no deny-only label when the agent can allow', async () => {
+    await open(`/requests/${ID}`, (t) => [
+      view(t, ID, { request: approval(ID, { allowSupported: true }) }),
+    ]);
+    expect(mounted?.container.querySelector('.deny-only')).toBeNull();
+    expect(mounted!.button('Allow').disabled).toBe(false);
+  });
+
   describe('"Always" for this session (M1-02, D24)', () => {
     const offered = (t: TestPhone, change: Partial<ApprovalRequest> = {}) =>
       view(t, ID, {

@@ -89,10 +89,11 @@ describe('geminiHookEvent', () => {
 });
 
 describe('geminiAdapter', () => {
-  it('offers nothing beyond deny (04 A6: no questions, always, follow-up or start)', () => {
+  it('offers nothing beyond deny (04 A6: no allow, questions, always, follow-up or start)', () => {
     expect(geminiAdapter.id).toBe('gemini');
     expect(GEMINI_CAPABILITIES).toEqual({
       agent: 'gemini',
+      allow: false,
       always: false,
       questions: false,
       instructions: false,

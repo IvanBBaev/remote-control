@@ -49,6 +49,8 @@ code does not wait for it.
 - The phone shows Allow and Deny for a Gemini request. Allow acts as "decide in the
   terminal". The PWA does not yet show the "observe and deny only" label. That needs a
   capability flag in the protocol, which is a separate change.
+  Update: the optional capability `allow: false` and `ApprovalRequest.allowSupported:
+false` now mark a Gemini request deny-only. The card shows the label and no Allow.
 - A new mutating built-in tool in Gemini is not gated until the matcher lists it.
 - A real-CLI result that contradicts this ADR becomes a follow-up ADR. Only
   `decideGemini`, the matcher and their tests change.

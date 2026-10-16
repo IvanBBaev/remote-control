@@ -82,18 +82,20 @@ export function toolContent(toolInput: unknown, toolName = ''): string {
  * cannot be shown as an `ApprovalRequest` (no tool name, a session id the protocol does
  * not accept); such a request stays with the terminal. `destinations` is the agent's
  * `always.destinations` (M2-07); the request lists them only when there is a choice.
+ * `allow: false` marks an observe-and-deny agent (Gemini): the phone offers no Allow.
  */
 export function approvalView(
   request: PendingRequest,
   hash: string,
   destinations: readonly AlwaysDestination[] = ['session'],
+  allow = true,
 ): ApprovalRequest | undefined {
   const { toolName, toolInput } = toolCall(request);
   const content = toolContent(toolInput, toolName);
   const project = projectName(request.payload['cwd']);
   const truncated = content.length > MAX_CONTENT_LENGTH;
   // The rules "Always (this session)" would grant, shown in full on the card (D24).
-  const suggestions = alwaysRuleLabels(alwaysRules(request));
+  const suggestions = allow ? alwaysRuleLabels(alwaysRules(request)) : [];
   const parsed = ApprovalRequest.safeParse({
     id: request.id,
     sessionId: request.sessionId,
@@ -105,6 +107,7 @@ export function approvalView(
     truncated,
     suggestions,
     expiresAt: request.deadline,
+    ...(allow ? {} : { allowSupported: false }),
     alwaysSupported: suggestions.length > 0,
     ...(suggestions.length > 0 && destinations.length > 1
       ? { alwaysDestinations: [...destinations] }

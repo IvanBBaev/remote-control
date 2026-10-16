@@ -6,6 +6,14 @@
       "questions": true,
       "instructions": true,
       "startSession": true
+    },
+    {
+      "agent": "gemini",
+      "always": false,
+      "allow": false,
+      "questions": false,
+      "instructions": false,
+      "startSession": false
     }
   ],
   "invalid": [
@@ -21,7 +29,23 @@
     },
     {
       "reason": "missing startSession",
-      "value": { "agent": "codex", "always": false, "questions": false, "instructions": true }
+      "value": {
+        "agent": "codex",
+        "always": false,
+        "questions": false,
+        "instructions": true
+      }
+    },
+    {
+      "reason": "allow not a boolean",
+      "value": {
+        "agent": "gemini",
+        "always": false,
+        "allow": "no",
+        "questions": false,
+        "instructions": false,
+        "startSession": false
+      }
     }
   ]
 }

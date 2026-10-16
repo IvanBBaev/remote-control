@@ -38,7 +38,12 @@ describe('J2/J3 — Gemini BeforeTool: observe and deny only (04 W14)', () => {
 
     const hook = agent.fire(geminiBeforeTool(canaries), HOLD_SECONDS, 'gemini');
     const { request } = await nextRequest(phone);
-    expect(request).toMatchObject({ sessionId: GEMINI_SESSION_ID });
+    // The phone learns the request is deny-only, so it offers no Allow.
+    expect(request).toMatchObject({
+      sessionId: GEMINI_SESSION_ID,
+      allowSupported: false,
+      alwaysSupported: false,
+    });
     await phone.decide('deny', request);
 
     expect(await decisionResult(phone, request.id)).toMatchObject({ result: 'accepted' });

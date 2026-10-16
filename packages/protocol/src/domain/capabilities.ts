@@ -7,6 +7,12 @@ export const Capabilities = z.strictObject({
   agent: AgentId,
   /** "Always" from the phone (D24). */
   always: z.boolean(),
+  /**
+   * Allow from the phone answers the request. `false` for an observe-and-deny agent
+   * (Gemini, 04 A6): the phone offers Deny and the terminal only. Absent: `true`
+   * (agents before this flag).
+   */
+  allow: z.boolean().optional(),
   /** Answering `AskUserQuestion`-style questions. */
   questions: z.boolean(),
   /** Follow-up instructions to a running session. */

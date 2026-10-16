@@ -31,7 +31,7 @@ import {
   type StartSession,
 } from '@remote-control/protocol';
 
-import type { AdapterDecision, QuestionAnswers } from '../ports/agent-adapter.js';
+import type { AdapterDecision, AgentAdapterId, QuestionAnswers } from '../ports/agent-adapter.js';
 import type { Clock } from '../ports/clock.js';
 import type { Peer, PeerPasskey } from '../ports/key-store.js';
 import type { Random } from '../ports/random.js';
@@ -84,6 +84,11 @@ export interface SessionHubOptions {
    * An `always` decision naming any other destination is refused (`wrong_kind`).
    */
   readonly alwaysDestinations?: readonly AlwaysDestination[];
+  /**
+   * Whether a phone Allow answers this agent's requests (capability `allow`); `false`
+   * marks the request deny-only (Gemini, 04 A6). Every agent allows when absent.
+   */
+  readonly allowSupported?: (agent: AgentAdapterId) => boolean;
   /** The machine as the snapshot shows it; `id` comes from the relay's `hello_ok`. */
   readonly machine: Omit<Machine, 'id' | 'agents'>;
   readonly capabilities: readonly Capabilities[];
@@ -468,7 +473,8 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
       const question = questionView(request, hash);
       return question === undefined ? undefined : { t: 'question', question, ttlMs };
     }
-    const view = approvalView(request, hash, alwaysAllowed);
+    const allow = options.allowSupported?.(request.agent ?? 'claude-code') ?? true;
+    const view = approvalView(request, hash, alwaysAllowed, allow);
     return view === undefined ? undefined : { t: 'request', request: view, ttlMs };
   }
 

@@ -24,6 +24,20 @@
       "suggestions": [],
       "expiresAt": 1791764990000,
       "alwaysSupported": false
+    },
+    {
+      "id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+      "sessionId": "5b7c1e2a-9d3f-4e8a-b6c4-2f1d0e9a8b7c",
+      "requestHash": "4196590ec41b976c1c2f586f398945a01bf0e4c11b18bab7809211a4c8025bcf",
+      "toolLabel": "Run a command",
+      "toolName": "run_shell_command",
+      "project": "remote-control",
+      "content": "ls",
+      "truncated": false,
+      "suggestions": [],
+      "expiresAt": 1791764990000,
+      "alwaysSupported": false,
+      "allowSupported": false
     }
   ],
   "invalid": [
@@ -72,6 +86,23 @@
         "suggestions": [],
         "expiresAt": 1791764990000,
         "alwaysSupported": false
+      }
+    },
+    {
+      "reason": "allowSupported not a boolean",
+      "value": {
+        "id": "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+        "sessionId": "5b7c1e2a-9d3f-4e8a-b6c4-2f1d0e9a8b7c",
+        "requestHash": "4196590ec41b976c1c2f586f398945a01bf0e4c11b18bab7809211a4c8025bcf",
+        "toolLabel": "Run a command",
+        "toolName": "run_shell_command",
+        "project": "remote-control",
+        "content": "ls",
+        "truncated": false,
+        "suggestions": [],
+        "expiresAt": 1791764990000,
+        "alwaysSupported": false,
+        "allowSupported": "false"
       }
     }
   ]

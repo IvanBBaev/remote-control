@@ -241,6 +241,22 @@ describe('Allow/Deny keys (M2-05)', () => {
     expect(decide).toHaveBeenCalledWith(MAC, expect.anything(), 'deny');
   });
 
+  it('never allows a deny-only request by key, but still denies (04 A6)', async () => {
+    const { test, decide } = await open(
+      `/requests/${REQUEST}`,
+      1280,
+      approval({ allowSupported: false }),
+    );
+    tick(test, TAP_GUARD_MS);
+    expect(mounted!.container.querySelector('.keyboard-hint')?.textContent).toBe(
+      'Keyboard: D denies.',
+    );
+    await press('a');
+    expect(decide).not.toHaveBeenCalled();
+    await press('d');
+    expect(decide).toHaveBeenCalledWith(MAC, expect.anything(), 'deny');
+  });
+
   it('names the keys on the buttons and shows the hint only on a wide screen', async () => {
     const { screen } = await open(`/requests/${REQUEST}`, 1280, approval());
     expect(mounted!.button('Allow').getAttribute('aria-keyshortcuts')).toBe('A');

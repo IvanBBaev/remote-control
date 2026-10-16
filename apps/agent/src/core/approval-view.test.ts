@@ -151,6 +151,20 @@ describe('approvalView', () => {
     expect(none).not.toHaveProperty('alwaysDestinations');
   });
 
+  it('marks a deny-only request and grants no "Always" rules (04 A6)', () => {
+    const payload = {
+      tool_name: 'run_shell_command',
+      tool_input: { command: 'ls' },
+      permission_suggestions: [
+        { type: 'addRules', rules: [{ toolName: 'Bash' }], behavior: 'allow' },
+      ],
+    };
+    const view = approvalView(pending(payload), HASH, ['session', 'projectSettings'], false);
+    expect(view).toMatchObject({ allowSupported: false, alwaysSupported: false, suggestions: [] });
+    expect(view).not.toHaveProperty('alwaysDestinations');
+    expect(approvalView(pending(payload), HASH)).not.toHaveProperty('allowSupported');
+  });
+
   it('names the project by its folder, never the full path (D21)', () => {
     const view = approvalView(
       pending({

@@ -119,6 +119,11 @@ screens through their accessible names, which are part of the screen contract:
   only me)", "Always (this project, everyone)" — under the heading "Always allow:". The
   chosen destination is signed in the decision `payload` (`null` = session); the agent
   rejects a destination outside its config as `wrong_kind` and emits nothing.
+- Deny-only agents (Gemini observe and deny, 04 A6, ADR 0013): the request carries
+  `allowSupported: false` (from the agent's capability `allow: false`). The card says
+  "Observe and deny only. This agent takes approvals in the terminal." under the tool
+  label and offers Deny and "Reply in terminal" only — no Allow, no "Always", and the
+  `A` key does nothing. A request without the field allows as before.
 - Taps in the first 600 ms are ignored; an expired, decided or refused card has no
   Deny/Allow/Always buttons.
 

@@ -74,7 +74,9 @@ export function revealNoun(toolName: string): string {
  * is disabled with it while the content is truncated. When the agent's
  * `always.destinations` adds settings files (M2-07), there is one "Always" button per
  * destination, and the picked one is signed. "Reply in terminal" (M1-03) hands
- * the request back to Claude Code's own prompt, without the passkey.
+ * the request back to Claude Code's own prompt, without the passkey. A deny-only request
+ * (`allowSupported: false`, Gemini's observe and deny, 04 A6) is labelled so and offers
+ * Deny and "Reply in terminal" only: its Allow would answer nothing.
  */
 export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
   const { phone } = useAppState();
@@ -88,6 +90,7 @@ export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
   const [failure, setFailure] = useState<Failure>();
   const busy = useRef(false);
   const { request } = view;
+  const allowSupported = request.allowSupported !== false;
 
   const left = view.deadline - now;
   useEffect(() => {
@@ -136,7 +139,7 @@ export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
       if (key === DENY_KEY) {
         event.preventDefault();
         void decide('deny');
-      } else if (key === ALLOW_KEY && !request.truncated) {
+      } else if (key === ALLOW_KEY && allowSupported && !request.truncated) {
         event.preventDefault();
         void decide('allow');
       }
@@ -160,6 +163,11 @@ export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
         )}
       </p>
       <h2>{request.toolLabel}</h2>
+      {!allowSupported && (
+        <p className="meta deny-only">
+          Observe and deny only. This agent takes approvals in the terminal.
+        </p>
+      )}
       <button type="button" aria-expanded={details} onClick={() => setDetails((d) => !d)}>
         {details ? `Hide ${noun}` : `Show ${noun}`}
       </button>
@@ -190,20 +198,30 @@ export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
           >
             Deny
           </button>
-          <button
-            type="button"
-            className="primary"
-            disabled={sending || request.truncated}
-            aria-keyshortcuts="A"
-            onClick={() => void decide('allow')}
-          >
-            Allow
-          </button>
+          {allowSupported && (
+            <button
+              type="button"
+              className="primary"
+              disabled={sending || request.truncated}
+              aria-keyshortcuts="A"
+              onClick={() => void decide('allow')}
+            >
+              Allow
+            </button>
+          )}
         </div>
       )}
       {deciding && wide && (
         <p className="meta keyboard-hint">
-          Keyboard: <kbd>A</kbd> allows, <kbd>D</kbd> denies. Your passkey still confirms.
+          {allowSupported ? (
+            <>
+              Keyboard: <kbd>A</kbd> allows, <kbd>D</kbd> denies. Your passkey still confirms.
+            </>
+          ) : (
+            <>
+              Keyboard: <kbd>D</kbd> denies.
+            </>
+          )}
         </p>
       )}
       {open && sent === undefined && request.alwaysSupported && (

@@ -121,6 +121,7 @@ describe('01 W2 field lists', () => {
     expect(keys(StartSession)).toEqual(['machineId', 'permissionMode', 'prompt', 'repositoryId']);
     expect(keys(Capabilities)).toEqual([
       'agent',
+      'allow',
       'always',
       'instructions',
       'questions',

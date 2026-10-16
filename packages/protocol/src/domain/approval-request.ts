@@ -26,6 +26,11 @@ export const ApprovalRequest = z.strictObject({
   suggestions: z.array(z.string().max(200)).max(10),
   /** End of the hold, epoch ms; the phone counts down from here (D10). */
   expiresAt: EpochMs,
+  /**
+   * `false` when the agent can only deny (its capability `allow` is `false`): the phone
+   * shows no Allow and labels the card "observe and deny only". Absent: `true`.
+   */
+  allowSupported: z.boolean().optional(),
   alwaysSupported: z.boolean(),
   /**
    * Where "Always" may store its rules, set by the agent's `always.destinations` (M2-07).

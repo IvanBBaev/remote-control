@@ -436,6 +436,7 @@ async function runCommand(
       feed: (sessionId) => feed.get(sessionId),
       diff: (sessionId, file) => diffs.get(sessionId, file),
       alwaysDestinations: config.always.destinations,
+      allowSupported: (agent) => adapterFor(agent).capabilities.allow !== false,
       history: async () => statsHistory(await stats.read()),
       setup: async () => ({
         hookSeen: await hookSeen.seen(),

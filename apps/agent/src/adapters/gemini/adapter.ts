@@ -12,6 +12,7 @@ import { DEFAULT_DENY_MESSAGE } from '../claude-code/decide.js';
  */
 export const GEMINI_CAPABILITIES: Capabilities = Object.freeze({
   agent: 'gemini',
+  allow: false,
   always: false,
   questions: false,
   instructions: false,
