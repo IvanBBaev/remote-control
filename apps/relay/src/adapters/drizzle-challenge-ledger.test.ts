@@ -22,12 +22,14 @@ describe('createDrizzleChallengeLedger (ADR 0016)', () => {
   // Two replicas: separate ledgers over one database.
   let a: ChallengeLedger;
   let b: ChallengeLedger;
+  let capped: ChallengeLedger;
 
   beforeAll(async () => {
     const db = createPgliteDb(client, { migrationsFolder: MIGRATIONS_DIR });
     await db.migrate();
     a = createDrizzleChallengeLedger(db.orm);
     b = createDrizzleChallengeLedger(db.orm);
+    capped = createDrizzleChallengeLedger(db.orm, 2);
   });
 
   beforeEach(async () => {
@@ -124,5 +126,36 @@ describe('createDrizzleChallengeLedger (ADR 0016)', () => {
       ),
     ).toBe(true);
     expect(await a.isVerified('u1', 'p1', HASH, later)).toBe(true);
+  });
+
+  describe('when full', () => {
+    it('drops the challenge closest to expiry to make room', async () => {
+      await capped.put('soon', { kind: 'login' }, NOW + 1_000, NOW);
+      await capped.put('later', { kind: 'login' }, NOW + 9_000, NOW);
+      await capped.put('new', { kind: 'login' }, NOW + 5_000, NOW);
+      const keys = await client.query<{ key: string }>(
+        'SELECT key FROM webauthn_challenges ORDER BY key',
+      );
+      expect(keys.rows).toEqual([{ key: 'later' }, { key: 'new' }]);
+      expect(await capped.take('soon', NOW)).toBeUndefined();
+    });
+
+    it('answers busy and refuses a new hash while the table holds only live hashes', async () => {
+      const hash = (n: number) => String(n).padStart(2, '0').repeat(32);
+      expect(await capped.markVerified({ ...verified(), decisionHash: hash(1) }, NOW)).toBe(true);
+      expect(await capped.markVerified({ ...verified(), decisionHash: hash(2) }, NOW)).toBe(true);
+      expect(await capped.usage(hash(3), NOW)).toBe('busy');
+      expect(await capped.usage(hash(1), NOW)).toBe('used');
+      expect(await capped.markVerified({ ...verified(), decisionHash: hash(3) }, NOW)).toBe(false);
+
+      const later = NOW + 600_000;
+      expect(await capped.usage(hash(3), later)).toBe('free');
+      expect(
+        await capped.markVerified(
+          verified({ usedUntil: later + 600_000, verifiedUntil: later + 300_000 }),
+          later,
+        ),
+      ).toBe(true);
+    });
   });
 });

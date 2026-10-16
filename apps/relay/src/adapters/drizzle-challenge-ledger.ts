@@ -1,9 +1,11 @@
 import { fromHex } from '@remote-control/crypto';
-import { and, eq, gt, lte } from 'drizzle-orm';
+import { and, asc, count, eq, gt, inArray, lte } from 'drizzle-orm';
 
 import { verifiedDecisions, webauthnChallenges } from '../db/schema.js';
 import type { ChallengeLedger, PendingChallenge } from '../ports/challenge-ledger.js';
 import type { RelayDatabase } from '../ports/db.js';
+
+const DEFAULT_CAPACITY = 10_000;
 
 const date = (ms: number) => new Date(ms);
 const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString('hex');
@@ -79,11 +81,39 @@ function pendingOf(row: ChallengeRow): PendingChallenge | undefined {
  * (ADR 0016). Single use rests on row-level atomicity: `take` is a `DELETE … RETURNING`
  * and `markVerified` an upsert that only overwrites an expired hash. Expired rows are
  * swept on write. Timestamps come from the Clock port, never `now()`.
+ *
+ * Each table is capped like the in-memory ledger, against unauthenticated option
+ * requests: a full challenge table drops the challenges closest to expiry, a full hash
+ * table answers `busy` until its rows expire. The count is read before the insert, so
+ * concurrent replicas can overshoot the cap by a few rows; it bounds the table, it is
+ * not exact.
  */
-export function createDrizzleChallengeLedger(orm: RelayDatabase): ChallengeLedger {
+export function createDrizzleChallengeLedger(
+  orm: RelayDatabase,
+  capacity = DEFAULT_CAPACITY,
+): ChallengeLedger {
+  const challengeCount = async () =>
+    (await orm.select({ n: count() }).from(webauthnChallenges))[0]?.n ?? 0;
+  const hashesFull = async (now: number) => {
+    const [row] = await orm
+      .select({ n: count() })
+      .from(verifiedDecisions)
+      .where(gt(verifiedDecisions.usedUntil, date(now)));
+    return (row?.n ?? 0) >= capacity;
+  };
+
   return {
     async put(key, pending, expiresAt, now) {
       await orm.delete(webauthnChallenges).where(lte(webauthnChallenges.expiresAt, date(now)));
+      const excess = (await challengeCount()) - capacity + 1;
+      if (excess > 0) {
+        const oldest = orm
+          .select({ key: webauthnChallenges.key })
+          .from(webauthnChallenges)
+          .orderBy(asc(webauthnChallenges.expiresAt))
+          .limit(excess);
+        await orm.delete(webauthnChallenges).where(inArray(webauthnChallenges.key, oldest));
+      }
       const row = { kind: pending.kind, ...columnsOf(pending), expiresAt: date(expiresAt) };
       await orm
         .insert(webauthnChallenges)
@@ -104,12 +134,15 @@ export function createDrizzleChallengeLedger(orm: RelayDatabase): ChallengeLedge
         .select({ usedUntil: verifiedDecisions.usedUntil })
         .from(verifiedDecisions)
         .where(eq(verifiedDecisions.decisionHash, fromHex(decisionHash)));
-      return row !== undefined && now < row.usedUntil.getTime() ? 'used' : 'free';
+      if (row !== undefined && now < row.usedUntil.getTime()) return 'used';
+      return (await hashesFull(now)) ? 'busy' : 'free';
     },
 
     async markVerified(verified, now) {
       const hash = fromHex(verified.decisionHash);
       await orm.delete(verifiedDecisions).where(lte(verifiedDecisions.usedUntil, date(now)));
+      // Evicting a live hash would reopen its replay window; a full table refuses instead.
+      if (await hashesFull(now)) return false;
       const values = {
         userId: verified.userId,
         deviceId: verified.deviceId,

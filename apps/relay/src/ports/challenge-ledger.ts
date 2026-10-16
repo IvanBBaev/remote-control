@@ -42,13 +42,13 @@ export interface ChallengeLedger {
   /** The live challenge under `key`, removed; `undefined` if unknown, used or expired. */
   take(key: string, now: number): Promise<PendingChallenge | undefined>;
   /**
-   * `used` while the hash is inside its replay window; `busy` when an in-memory ledger
-   * is full of live hashes; otherwise `free`.
+   * `used` while the hash is inside its replay window; `busy` when the ledger is full of
+   * live hashes; otherwise `free`.
    */
   usage(decisionHash: string, now: number): Promise<'free' | 'used' | 'busy'>;
   /**
    * Records a verification; `false` if the hash is already used (a concurrent verify won)
-   * or an in-memory ledger is full of live hashes.
+   * or the ledger is full of live hashes.
    */
   markVerified(verified: VerifiedDecision, now: number): Promise<boolean>;
   /** Whether this phone verified this hash and its admission window is open. */

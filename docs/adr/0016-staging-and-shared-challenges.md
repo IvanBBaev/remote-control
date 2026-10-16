@@ -62,6 +62,10 @@ Railway cannot pin a client to a replica, and D15 rules out Redis.
   - `consume` is an `UPDATE … WHERE` the admission window is open `RETURNING`, so a
     hash is spent once.
   - Expired rows are swept before each insert.
+  - Each table is capped at 10,000 rows, as in the in-memory ledger: a full challenge
+    table drops the challenges closest to expiry, a full hash table answers `busy`.
+    The count is read before the insert, so concurrent replicas can overshoot by a few
+    rows. (Added after review.)
   - Every time comes from the Clock port, never from the database's `now()`.
 - **Admission.** `CommandGate.admit` may now return a `Promise`. `RelayRouter` awaits it
   only then, and each socket routes one frame at a time, so a frame waits for the
