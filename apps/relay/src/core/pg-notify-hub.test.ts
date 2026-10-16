@@ -284,6 +284,104 @@ describe('PgNotifyHub', () => {
     expect(resent.map((m) => m.t)).toEqual(expect.arrayContaining(['hello', 'on']));
     expect(b?.connection(USER, AGENT)?.identity).toEqual(agentIdentity);
   });
+
+  it('forgets the devices that left while its listening connection was down', async () => {
+    const c = cluster();
+    const { hub: a } = c.hub();
+    const { hub: b, bus: busB } = c.hub();
+    await a.start();
+    await b.start();
+    const agent = connection(agentIdentity);
+    a.attach(agent);
+    await flushNotifications();
+    c.network.deafen(busB, true);
+    a.detach(agent);
+    await flushNotifications();
+    expect(b.connection(USER, AGENT)).toBeDefined();
+    c.network.deafen(busB, false);
+    c.network.reconnect(busB);
+    await flushNotifications();
+    expect(b.connection(USER, AGENT)).toBeUndefined();
+    expect(b.count(USER)).toBe(0);
+  });
+
+  it('keeps a device that moved while the old replica was not listening', async () => {
+    const c = cluster();
+    const { hub: a, bus: busA } = c.hub();
+    const { hub: b } = c.hub();
+    await a.start();
+    await b.start();
+    const first = connection(agentIdentity);
+    a.attach(first);
+    await flushNotifications();
+    c.network.deafen(busA, true);
+    c.time.advance(10);
+    const second = connection(agentIdentity);
+    const result = b.attach(second);
+    if (result.ok) result.superseded?.close(4000, 'superseded');
+    await flushNotifications();
+    c.network.deafen(busA, false);
+    c.network.reconnect(busA);
+    await flushNotifications();
+    await flushNotifications();
+    expect(b.connection(USER, AGENT)).toBe(second);
+    expect(a.connection(USER, AGENT)).not.toBe(first);
+    expect(a.connection(USER, AGENT)?.identity).toEqual(agentIdentity);
+    expect([a.count(USER), b.count(USER)]).toEqual([1, 1]);
+  });
+
+  it('settles two attaches of one device on the later one', async () => {
+    const c = cluster();
+    const [a, b] = await started(c, 2);
+    const first = connection(agentIdentity);
+    a?.attach(first);
+    c.time.advance(1);
+    const second = connection(agentIdentity);
+    b?.attach(second);
+    await flushNotifications();
+    await flushNotifications();
+    expect(b?.connection(USER, AGENT)).toBe(second);
+    expect(a?.connection(USER, AGENT)).not.toBe(first);
+    expect(a?.connection(USER, AGENT)?.identity).toEqual(agentIdentity);
+  });
+
+  it('re-announces its devices to a replica that took it for gone', async () => {
+    const c = cluster();
+    const { hub: a, bus: busA } = c.hub();
+    const { hub: b, bus: busB } = c.hub();
+    await a.start();
+    await b.start();
+    handlers(b);
+    a.attach(connection(agentIdentity));
+    await flushNotifications();
+    const silence = async (cut: (on: boolean) => void) => {
+      cut(true);
+      for (let at = 0; at <= HUB_REPLICA_TIMEOUT_MS; at += HUB_HEARTBEAT_MS) {
+        c.time.advance(HUB_HEARTBEAT_MS);
+        await flushNotifications();
+      }
+      expect(b.connection(USER, AGENT)).toBeUndefined();
+      cut(false);
+      c.time.advance(HUB_HEARTBEAT_MS);
+      await flushNotifications();
+      await flushNotifications();
+      expect(b.connection(USER, AGENT)?.identity).toEqual(agentIdentity);
+    };
+    // a's notifications are lost (failed publishes): it announces again once they work.
+    await silence((on) => c.network.partition(busA, on));
+    // b stops hearing a: it asks a again when a is heard from.
+    await silence((on) => c.network.deafen(busB, on));
+  });
+
+  it('opens no notification once stopped', async () => {
+    const c = cluster();
+    const [a] = await started(c, 1);
+    await a?.stop();
+    const before = c.network.published.length;
+    a?.publishAck(USER, PHONE, [envelopeId(1)]);
+    expect(c.network.published).toHaveLength(before);
+    expect(c.logs.lines().join('\n')).not.toContain('hub_publish_failed');
+  });
 });
 
 // ── Two routers, one per replica ──────────────────────────────────────────────────

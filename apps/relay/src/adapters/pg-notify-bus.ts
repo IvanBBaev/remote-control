@@ -36,14 +36,25 @@ export function createPgNotifyBus(connectionString: string, logger: Logger): Not
         reopen();
       }
     });
-    await next.connect();
-    for (const channel of channels) await next.query(`LISTEN ${quote(channel)}`);
+    try {
+      await next.connect();
+      for (const channel of channels) await next.query(`LISTEN ${quote(channel)}`);
+    } catch (error) {
+      await next.end().catch(() => undefined);
+      throw error;
+    }
+    // Closed while connecting: nothing would end this connection later.
+    if (closed) {
+      await next.end().catch(() => undefined);
+      throw new Error('notify bus closed');
+    }
     client = next;
   };
 
   const reopen = (): void => {
     if (closed) return;
     setTimeout(() => {
+      if (closed) return;
       open().then(
         () => {
           logger.info({ event: 'hub_listen_restored' }, 'listen restored');
@@ -61,6 +72,8 @@ export function createPgNotifyBus(connectionString: string, logger: Logger): Not
       await open();
     },
     publish(notifications: readonly Notification[]) {
+      // Asked after `close`: a new publisher would outlive the bus. Earlier ones still flush.
+      if (closed) return Promise.reject(new Error('notify bus closed'));
       const run = queue.then(async () => {
         if (publisher === undefined) {
           const next = new pg.Client({

@@ -33,12 +33,22 @@ const displacedKey = (userId: string, deviceId: string) => `${userId}:${deviceId
 
 const identityFields = { u: z.string(), d: z.string() };
 const Message = z.discriminatedUnion('t', [
-  /** A replica started (or re-listened); the others reply with their devices. */
+  /**
+   * A replica started or re-listened: the others drop what they knew of its devices (its
+   * `on`s follow in the same transaction) and reply with their own.
+   */
   z.object({ t: z.literal('hello'), r: z.string() }),
   z.object({ t: z.literal('hb'), r: z.string() }),
   /** The replica is shutting down; its devices reconnect elsewhere. */
   z.object({ t: z.literal('bye'), r: z.string() }),
-  z.object({ t: z.literal('on'), r: z.string(), ...identityFields, k: z.enum(['phone', 'agent']) }),
+  /** `a`: when the socket attached (relay clock); the later attach of a device wins. */
+  z.object({
+    t: z.literal('on'),
+    r: z.string(),
+    ...identityFields,
+    k: z.enum(['phone', 'agent']),
+    a: z.number().optional(),
+  }),
   z.object({ t: z.literal('off'), r: z.string(), ...identityFields }),
   /** A frame for a device of the receiving replica: whole (`x`) or one chunk of it. */
   z.object({
@@ -64,7 +74,15 @@ type Message = z.infer<typeof Message>;
 interface RemoteDevice {
   readonly replica: string;
   readonly connection: HubConnection;
+  readonly attachedAt: number | undefined;
 }
+
+/**
+ * Whether an attach on `replica` at `at` came after one on `other` at `otherAt`; equal
+ * times fall to the larger replica id, so every replica picks the same winner.
+ */
+const newer = (at: number, replica: string, otherAt: number, other: string) =>
+  at > otherAt || (at === otherAt && replica > other);
 
 interface PartialFrame {
   readonly parts: string[];
@@ -103,10 +121,14 @@ export class PgNotifyHub implements HubPort, HubCluster {
    * `close` (the supersede) reaches them or they detach on their own.
    */
   readonly #displaced = new Map<string, HubConnection>();
+  /** When each local socket attached, for the `on` that announces it. */
+  readonly #attachedAt = new WeakMap<HubConnection, number>();
   #handlers: ClusterHandlers | undefined;
   #heartbeat: TimerHandle | undefined;
   #chunkSeq = 0;
   #stopped = false;
+  /** A notification was lost: the next heartbeat announces this replica's devices again. */
+  #announceDue = false;
 
   constructor(private readonly deps: PgNotifyHubDeps) {
     this.replicaId = toHex(deps.random.bytes(8));
@@ -121,7 +143,7 @@ export class PgNotifyHub implements HubPort, HubCluster {
       [HUB_CHANNEL, this.#channelOf(this.replicaId)],
       (_channel, payload) => this.#receive(payload),
     );
-    this.#publish([this.#broadcast({ t: 'hello', r: this.replicaId })]);
+    this.#announce();
     this.#scheduleHeartbeat();
   }
 
@@ -141,17 +163,18 @@ export class PgNotifyHub implements HubPort, HubCluster {
   // ── HubPort ──────────────────────────────────────────────────────────────────────
 
   attach(connection: HubConnection): AttachResult {
-    const { userId, deviceId, kind } = connection.identity;
+    const { userId, deviceId } = connection.identity;
     const remote = this.#remote.get(userId)?.get(deviceId);
     const local = this.#local.connection(userId, deviceId);
     if (local === undefined && remote === undefined && this.count(userId) >= this.deps.deviceCap) {
       return { ok: false, reason: 'device_cap' };
     }
     this.#local.attach(connection);
+    // After the attach it supersedes, even on a replica whose clock is behind.
+    const after = remote?.attachedAt === undefined ? 0 : remote.attachedAt + 1;
+    this.#attachedAt.set(connection, Math.max(this.deps.clock.now(), after));
     if (remote !== undefined) this.#forgetRemote(userId, deviceId);
-    this.#publish([
-      this.#broadcast({ t: 'on', r: this.replicaId, u: userId, d: deviceId, k: kind }),
-    ]);
+    this.#publish([this.#broadcast(this.#on(connection))]);
     return { ok: true, superseded: local ?? remote?.connection };
   }
 
@@ -245,19 +268,23 @@ export class PgNotifyHub implements HubPort, HubCluster {
       this.#dropReplica(message.r, false);
       return;
     }
+    const known = this.#replicas.has(message.r);
     this.#replicas.set(message.r, this.deps.clock.now());
+    // Heard again after it was taken for gone: each side dropped the other's devices.
+    if (!known && message.t !== 'hello') this.#announce(message.r);
     switch (message.t) {
       case 'hello':
+        this.#dropReplica(message.r, false);
         this.#announceTo(message.r);
         return;
       case 'hb':
         return;
       case 'on':
-        this.#remoteAttached(message.r, {
-          userId: message.u,
-          deviceId: message.d,
-          kind: message.k,
-        });
+        this.#remoteAttached(
+          message.r,
+          { userId: message.u, deviceId: message.d, kind: message.k },
+          message.a,
+        );
         return;
       case 'off':
         if (this.#remote.get(message.u)?.get(message.d)?.replica === message.r) {
@@ -281,11 +308,30 @@ export class PgNotifyHub implements HubPort, HubCluster {
     }
   }
 
-  #remoteAttached(replica: string, identity: DeviceIdentity): void {
+  #remoteAttached(replica: string, identity: DeviceIdentity, at: number | undefined): void {
     const { userId, deviceId } = identity;
+    const local = this.#local.connection(userId, deviceId);
+    const localAt = local === undefined ? undefined : this.#attachedAt.get(local);
+    // A claim older than the socket here (sent before a missed notification, or raced
+    // with this attach) is stale: keep the socket and tell that replica it lost.
+    if (local !== undefined && at !== undefined && localAt !== undefined) {
+      if (newer(localAt, this.replicaId, at, replica)) {
+        this.#publish([this.#direct(replica, this.#on(local))]);
+        return;
+      }
+    }
+    const current = this.#remote.get(userId)?.get(deviceId);
+    if (
+      current !== undefined &&
+      current.replica !== replica &&
+      at !== undefined &&
+      current.attachedAt !== undefined &&
+      newer(current.attachedAt, current.replica, at, replica)
+    ) {
+      return;
+    }
     // The device moved here from this replica: forget the local socket now, so its
     // close (the `superseded` notification that follows) does not report it offline.
-    const local = this.#local.connection(userId, deviceId);
     if (local !== undefined) {
       this.#local.detach(local);
       this.#displaced.set(displacedKey(userId, deviceId), local);
@@ -295,7 +341,11 @@ export class PgNotifyHub implements HubPort, HubCluster {
       devices = new Map();
       this.#remote.set(userId, devices);
     }
-    devices.set(deviceId, { replica, connection: this.#proxy(replica, identity) });
+    devices.set(deviceId, {
+      replica,
+      connection: this.#proxy(replica, identity),
+      attachedAt: at,
+    });
     this.#touch(deviceId);
   }
 
@@ -364,40 +414,61 @@ export class PgNotifyHub implements HubPort, HubCluster {
 
   /** Answers a `hello`: this replica's devices, on the asking replica's channel. */
   #announceTo(replica: string): void {
-    const messages = this.#localIdentities().map((identity) =>
-      this.#direct(replica, this.#on(identity)),
-    );
+    const messages = this.#local
+      .all()
+      .map((connection) => this.#direct(replica, this.#on(connection)));
     if (messages.length > 0) this.#publish(messages);
   }
 
-  /** After the listening connection came back: re-ask and re-announce everything. */
-  #resync(): void {
-    if (this.#stopped) return;
-    this.#partial.clear();
+  /**
+   * A `hello` and this replica's devices, to every replica or to one: the receivers
+   * replace what they knew of them, and reply with their own.
+   */
+  #announce(replica?: string): void {
+    const to = (message: Message) =>
+      replica === undefined ? this.#broadcast(message) : this.#direct(replica, message);
     this.#publish([
-      this.#broadcast({ t: 'hello', r: this.replicaId }),
-      ...this.#localIdentities().map((identity) => this.#broadcast(this.#on(identity))),
+      to({ t: 'hello', r: this.replicaId }),
+      ...this.#local.all().map((connection) => to(this.#on(connection))),
     ]);
   }
 
-  #localIdentities(): DeviceIdentity[] {
-    return this.#local.all().map((connection) => connection.identity);
+  /**
+   * After the listening connection came back: notifications were missed, so the remote
+   * devices known here may be gone. Forget them; the replies to the `hello` re-add the
+   * ones still connected.
+   */
+  #resync(): void {
+    if (this.#stopped) return;
+    this.#partial.clear();
+    for (const [userId, devices] of [...this.#remote]) {
+      for (const deviceId of [...devices.keys()]) this.#forgetRemote(userId, deviceId);
+    }
+    this.#announce();
   }
 
-  #on(identity: DeviceIdentity): Message {
+  #on(connection: HubConnection): Message {
+    const { userId, deviceId, kind } = connection.identity;
+    const at = this.#attachedAt.get(connection);
     return {
       t: 'on',
       r: this.replicaId,
-      u: identity.userId,
-      d: identity.deviceId,
-      k: identity.kind,
+      u: userId,
+      d: deviceId,
+      k: kind,
+      ...(at === undefined ? {} : { a: at }),
     };
   }
 
   #scheduleHeartbeat(): void {
     this.#heartbeat = this.deps.timer.after(HUB_HEARTBEAT_MS, () => {
       if (this.#stopped) return;
-      this.#publish([this.#broadcast({ t: 'hb', r: this.replicaId })]);
+      if (this.#announceDue) {
+        this.#announceDue = false;
+        this.#announce();
+      } else {
+        this.#publish([this.#broadcast({ t: 'hb', r: this.replicaId })]);
+      }
       const now = this.deps.clock.now();
       for (const [replica, heardAt] of this.#replicas) {
         if (now - heardAt < HUB_REPLICA_TIMEOUT_MS) continue;
@@ -441,10 +512,13 @@ export class PgNotifyHub implements HubPort, HubCluster {
   }
 
   #publish(notifications: readonly Notification[]): void {
+    if (this.#stopped) return;
     this.deps.bus.publish(notifications).catch((error: unknown) => this.#publishFailed(error));
   }
 
   #publishFailed(error: unknown): void {
+    // An `on` or `off` may be among the lost ones; `stop` has nothing left to fix.
+    if (!this.#stopped) this.#announceDue = true;
     this.deps.logger.warn(
       { event: 'hub_publish_failed', code: (error as { code?: string }).code ?? 'unknown' },
       'hub notification not sent',

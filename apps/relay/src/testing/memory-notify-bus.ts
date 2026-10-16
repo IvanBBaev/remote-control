@@ -13,6 +13,9 @@ export class MemoryNotifyNetwork {
   /** Every payload published so far. */
   readonly published: Notification[] = [];
   readonly #partitioned = new Set<NotifyBus>();
+  /** Listeners that receive nothing, as while a `LISTEN` connection is down. */
+  readonly #deaf = new Set<Handler>();
+  readonly #busReconnects = new Map<NotifyBus, (() => void)[]>();
 
   bus(): NotifyBus {
     const own: { channels: Set<string>; handler: Handler }[] = [];
@@ -31,7 +34,11 @@ export class MemoryNotifyNetwork {
         queueMicrotask(() => {
           for (const { channel, payload } of notifications) {
             for (const target of targets) {
-              if (this.#listeners.has(target) && target.channels.has(channel)) {
+              if (
+                this.#listeners.has(target) &&
+                !this.#deaf.has(target.handler) &&
+                target.channels.has(channel)
+              ) {
                 target.handler(channel, payload);
               }
             }
@@ -49,7 +56,24 @@ export class MemoryNotifyNetwork {
         return Promise.resolve();
       },
     };
+    this.#busReconnects.set(bus, reconnects);
+    this.#handlers.set(bus, own);
     return bus;
+  }
+
+  readonly #handlers = new Map<NotifyBus, readonly { handler: Handler }[]>();
+
+  /** Makes `bus` miss every notification (`true`), or hear them again (`false`). */
+  deafen(bus: NotifyBus, deaf: boolean): void {
+    for (const { handler } of this.#handlers.get(bus) ?? []) {
+      if (deaf) this.#deaf.add(handler);
+      else this.#deaf.delete(handler);
+    }
+  }
+
+  /** Runs `bus`'s reconnect listeners, as after its `LISTEN` connection came back. */
+  reconnect(bus: NotifyBus): void {
+    for (const listener of this.#busReconnects.get(bus) ?? []) listener();
   }
 
   /** Makes `bus` fail every publish (`true`) or work again (`false`). */

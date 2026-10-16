@@ -37,6 +37,12 @@ commit, in order (03 F24–F26).
   forgets the local socket silently and keeps it as _displaced_. The new replica's
   4000 `close` then reaches that socket, and its own `closed()` reports no offline
   presence.
+  _(Amended after the M3 review, 2026-10-16.)_ Each `on` carries its attach time `a`.
+  A replica that attaches a device another replica already holds stamps it
+  `max(now, remote a + 1)`, so a supersede is always later than what it replaces.
+  When two claims meet, the later `a` wins and a tie goes to the larger replica id;
+  a replica whose local socket is newer answers a stale `on` with its own `on`
+  instead of giving the socket up, so both sides settle on the same holder.
 - **Device cap.** It counts local and remote devices (D15's cap of 10 per user holds
   cluster-wide).
 - **Liveness.**
@@ -45,8 +51,13 @@ commit, in order (03 F24–F26).
   - On `SIGTERM` the replica says `bye` before the database closes, and the others
     drop its devices without presence noise. The devices reconnect, and they are
     announced again from wherever they land.
-  - After a `LISTEN` reconnect, the replica sends `hello` again and re-announces its
-    devices.
+  - After a `LISTEN` reconnect, the replica forgets every remote device it knew and
+    sends `hello` followed by its `on`s in one transaction. A `hello` replaces the
+    receiver's view of the sender: devices the sender no longer announces are
+    dropped, and the receiver answers with its own `hello` and `on`s directly.
+  - A replica that hears anything but `hello` from a replica it does not know (it
+    had dropped it as silent) announces itself to that replica directly. A failed
+    publish makes the next heartbeat a full announce instead of `hb`.
 - **Configuration.** `RC_HUB=pg` (requires a database URL) selects it; the default
   stays `local`.
 
