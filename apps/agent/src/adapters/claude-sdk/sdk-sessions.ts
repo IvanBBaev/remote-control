@@ -159,6 +159,8 @@ export function createSdkClaudeCli(options: SdkSessionsOptions): SdkClaudeCli {
   const startTimeoutMs = options.startTimeoutMs ?? SDK_START_TIMEOUT_MS;
   const sessions = new Map<string, SdkSession>();
   const starting = new Set<SdkSession>();
+  /** Resumes still waiting for `init`, by session id: a second one waits its turn. */
+  const resuming = new Map<string, Promise<number>>();
 
   function context(signal: AbortSignal, hookTimeoutMs: number): HookContext {
     return { hookTimeoutMs, signal, agent: 'claude-code', origin: 'sdk' };
@@ -249,8 +251,14 @@ export function createSdkClaudeCli(options: SdkSessionsOptions): SdkClaudeCli {
       });
       return false;
     }
-    // A resumed session takes over its id from the query that ended.
+    // A resumed session takes over its id; a query still live under it (asked from
+    // another repository) ends, so one process at a time writes its transcript.
     if (typeof message.session_id === 'string') {
+      const previous = sessions.get(message.session_id);
+      if (previous !== undefined && previous !== session) {
+        previous.input.end();
+        previous.query?.close();
+      }
       session.id = message.session_id;
       sessions.set(session.id, session);
     }
@@ -332,13 +340,24 @@ export function createSdkClaudeCli(options: SdkSessionsOptions): SdkClaudeCli {
     start: (repository, name, prompt, permissionMode) =>
       run(repository, name, prompt, permissionMode, undefined),
     async resume(repository, sessionId, prompt) {
+      // A follow-up sent while the session is being resumed goes into that query.
+      for (let pending = resuming.get(sessionId); pending !== undefined;) {
+        await pending.catch(() => 1);
+        pending = resuming.get(sessionId);
+      }
       const known = sessions.get(sessionId);
       if (known?.query !== undefined && known.cwd === repository.realPath) {
         known.input.push(userMessage(prompt, sessionId));
         known.status = 'busy';
         return 0;
       }
-      return run(repository, known?.name, prompt, known?.permissionMode, sessionId);
+      const resumed = run(repository, known?.name, prompt, known?.permissionMode, sessionId);
+      resuming.set(sessionId, resumed);
+      try {
+        return await resumed;
+      } finally {
+        if (resuming.get(sessionId) === resumed) resuming.delete(sessionId);
+      }
     },
     close() {
       for (const session of [...sessions.values(), ...starting]) {

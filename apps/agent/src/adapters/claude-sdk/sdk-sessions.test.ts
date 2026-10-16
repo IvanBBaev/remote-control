@@ -301,7 +301,22 @@ describe('createSdkClaudeCli', () => {
     await cli.start(REPO, 'a', 'First');
     await cli.resume(OTHER, 'sdk-1', 'Elsewhere');
     expect(calls).toHaveLength(2);
+    // The earlier query ends: one process at a time writes the session.
+    expect(calls[0]!.closed).toBe(true);
+    expect(calls[1]!.closed).toBe(false);
     cli.close();
+  });
+
+  it('sends a follow-up asked during a resume into the resumed query', async () => {
+    const { cli, calls } = setup();
+    const first = cli.resume(REPO, 'cli-session', 'One');
+    const second = cli.resume(REPO, 'cli-session', 'Two');
+    expect(await Promise.all([first, second])).toEqual([0, 0]);
+    await waitFor(() => calls[0]!.prompts.length === 2);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.prompts).toEqual(['One', 'Two']);
+    cli.close();
+    expect(calls[0]!.closed).toBe(true);
   });
 
   it('merges its sessions after the CLI roster', async () => {
