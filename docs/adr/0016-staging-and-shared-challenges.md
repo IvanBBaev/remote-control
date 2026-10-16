@@ -64,9 +64,11 @@ Railway cannot pin a client to a replica, and D15 rules out Redis.
   - Expired rows are swept before each insert.
   - Every time comes from the Clock port, never from the database's `now()`.
 - **Admission.** `CommandGate.admit` may now return a `Promise`. `RelayRouter` awaits it
-  only then. A command without a `decisionHash` (deny, stop) and every command under
-  the in-memory ledger stay synchronous, so on one replica the order of frames does not
-  change.
+  only then, and each socket routes one frame at a time, so a frame waits for the
+  admission of the frame before it and the order of a sender's frames does not change.
+  A failed admission query answers `unverified` and the next frame is routed.
+  (Amended after review: the in-memory ledger answers with a `Promise` too, so the
+  first version reordered frames on one replica as well.)
 
 ### Rate limits
 
@@ -109,12 +111,8 @@ on every request.
 
 - **Database round trips under `RC_HUB=pg`**: one per command that names a
   `decisionHash`, and a few per WebAuthn ceremony.
-- **Commands can be reordered under `RC_HUB=pg`.** A command that names a hash can be
-  overtaken by the next frame from the same phone while its admission query runs.
-  - Both frames are E2E envelopes the agent orders and de-duplicates itself.
-  - A deny can overtake an allow for the same request, but the agent's decide-once
-    keeps the first one it sees. Racing two answers to one request was always a user
-    race.
+- **A slow admission query holds the sender's later frames** under `RC_HUB=pg`: they
+  wait for it instead of overtaking it, so a deny never overtakes an allow it followed.
 - **A database outage blocks sign-in and step-up** under `RC_HUB=pg`. `/health` already
   reports `degraded` then.
 - **Staging adds cost.** The staging environment adds its own usage (two replicas and a

@@ -206,10 +206,26 @@ export class RelayRouter {
       return;
     }
     if (envelope.cls === 'command') {
-      // A shared gate answers asynchronously (ADR 0016); a local one stays synchronous so
-      // a command is not overtaken by the sender's next frame.
-      const admitted = this.#gate.admit(envelope, identity);
-      if (!(typeof admitted === 'boolean' ? admitted : await admitted)) {
+      // The gate may answer asynchronously (ADR 0016); DeviceSession routes one frame at a
+      // time, so a command is not overtaken by the sender's next frame.
+      let admitted: boolean;
+      try {
+        const answer = this.#gate.admit(envelope, identity);
+        admitted = typeof answer === 'boolean' ? answer : await answer;
+      } catch (error) {
+        this.deps.logger.error(
+          {
+            event: 'gate_failed',
+            device_id: identity.deviceId,
+            envelope_id: envelope.id,
+            err: error,
+          },
+          'decision check failed',
+        );
+        sender.error('unverified', envelope.id, 'decision could not be checked');
+        return;
+      }
+      if (!admitted) {
         this.deps.logger.warn(
           {
             event: 'command_refused',
@@ -310,6 +326,8 @@ class DeviceSession implements HubConnection, SocketEvents {
   #terminator: TimerHandle | undefined;
   readonly #bucket: TokenBucket;
   readonly #early: string[] = [];
+  /** The last routed frame; the next one waits for it so a sender's order holds. */
+  #routing: Promise<void> | undefined;
 
   constructor(
     private readonly router: RelayRouter,
@@ -416,12 +434,7 @@ class DeviceSession implements HubConnection, SocketEvents {
     }
     switch (frame.kind) {
       case 'data':
-        this.router.route(this, frame, text).catch((error: unknown) => {
-          this.router.deps.logger.error(
-            { event: 'route_failed', device_id: this.identity.deviceId, err: error },
-            'routing failed',
-          );
-        });
+        this.#route(frame, text);
         return;
       case 'ack':
         this.router.forwardAck(this, frame.ids);
@@ -440,6 +453,22 @@ class DeviceSession implements HubConnection, SocketEvents {
         // A second `hello`, or a frame only the relay may send.
         this.close(CloseCode.policy, 'unexpected frame');
     }
+  }
+
+  /** Routes `frame` now, or after the previous frame if that one is still awaiting. */
+  #route(frame: Envelope, text: string): void {
+    const run = (): Promise<void> =>
+      this.router.route(this, frame, text).catch((error: unknown) => {
+        this.router.deps.logger.error(
+          { event: 'route_failed', device_id: this.identity.deviceId, err: error },
+          'routing failed',
+        );
+      });
+    const routing = this.#routing === undefined ? run() : this.#routing.then(run);
+    this.#routing = routing;
+    void routing.then(() => {
+      if (this.#routing === routing) this.#routing = undefined;
+    });
   }
 
   async #hello(hello: Hello): Promise<void> {

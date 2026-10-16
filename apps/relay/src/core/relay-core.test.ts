@@ -5,7 +5,7 @@ import { describe, expect, it, vi, type Mock } from 'vitest';
 import type { DeviceDirectory, DeviceIdentity, DeviceRecord } from '../ports/device-directory.js';
 import type { HubConnection } from '../ports/hub.js';
 import type { PeerSocket } from '../ports/peer-socket.js';
-import type { AuditSink } from '../ports/relay-seams.js';
+import type { AuditSink, CommandGate } from '../ports/relay-seams.js';
 import { createFakeTime, type FakeTime } from '../testing/fake-time.js';
 import {
   ACK_WINDOW_MS,
@@ -227,7 +227,7 @@ interface Harness {
 const agentIdentity: DeviceIdentity = { userId: USER, deviceId: AGENT, kind: 'agent' };
 const phoneIdentity: DeviceIdentity = { userId: USER, deviceId: PHONE, kind: 'phone' };
 
-function harness(): Harness {
+function harness(commandGate?: CommandGate): Harness {
   const time = createFakeTime();
   const logs = createMemoryDestination();
   const hub = new LocalHub(time.clock, DEVICE_CAP);
@@ -250,6 +250,7 @@ function harness(): Harness {
     directory,
     audit,
     logger: createLogger({ level: 'info', destination: logs }),
+    ...(commandGate === undefined ? {} : { commandGate }),
   });
   return {
     time,
@@ -274,6 +275,25 @@ const hello = (kind: 'agent' | 'phone') =>
   });
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+/** A phone → agent data frame of class `cls`. */
+const data = (cls: 'command' | 'event', n: number, decisionHash?: string) =>
+  JSON.stringify({
+    v: 1,
+    kind: 'data',
+    id: envelopeId(n),
+    from: PHONE,
+    to: AGENT,
+    session: null,
+    cls,
+    seq: n,
+    ts: 0,
+    expiresAt: null,
+    payload: 'AAAA',
+    ...(decisionHash === undefined ? {} : { decisionHash }),
+  });
+const command = (n: number, decisionHash?: string) => data('command', n, decisionHash);
+const event = (n: number) => data('event', n);
 
 describe('RelayRouter', () => {
   it('closes with 1012 when the presence snapshot fails', async () => {
@@ -375,21 +395,6 @@ describe('RelayRouter', () => {
     phone.events.message(hello('phone'));
     await flush();
     const hash = 'ab'.repeat(32);
-    const command = (n: number, decisionHash?: string) =>
-      JSON.stringify({
-        v: 1,
-        kind: 'data',
-        id: envelopeId(n),
-        from: PHONE,
-        to: AGENT,
-        session: null,
-        cls: 'command',
-        seq: n,
-        ts: 0,
-        expiresAt: null,
-        payload: 'AAAA',
-        ...(decisionHash === undefined ? {} : { decisionHash }),
-      });
     phone.events.message(command(1, hash));
     phone.events.message(command(2));
     await flush();
@@ -398,6 +403,43 @@ describe('RelayRouter', () => {
     await flush();
     expect(h.audit.decisionForwarded.mock.calls).toEqual([[phoneIdentity, hash]]);
     expect(h.router.stats.backpressureDrops).toBe(1);
+  });
+
+  it("keeps a sender's frame order when the gate answers asynchronously (ADR 0016)", async () => {
+    const h = harness({
+      admit: (envelope) => Promise.resolve(envelope.decisionHash !== undefined),
+    });
+    const agent = h.connect(agentIdentity);
+    const phone = h.connect(phoneIdentity);
+    agent.events.message(hello('agent'));
+    phone.events.message(hello('phone'));
+    await flush();
+    const before = agent.socket.sent.length;
+    phone.events.message(command(1, 'ab'.repeat(32)));
+    phone.events.message(event(2));
+    await flush();
+    expect(agent.socket.sent.slice(before).map((frame) => frame.id)).toEqual([
+      envelopeId(1),
+      envelopeId(2),
+    ]);
+  });
+
+  it('answers unverified when the gate fails, and keeps routing', async () => {
+    const h = harness({ admit: () => Promise.reject(new Error('db down')) });
+    const agent = h.connect(agentIdentity);
+    const phone = h.connect(phoneIdentity);
+    agent.events.message(hello('agent'));
+    phone.events.message(hello('phone'));
+    await flush();
+    const before = agent.socket.sent.length;
+    phone.events.message(command(1, 'ab'.repeat(32)));
+    phone.events.message(event(2));
+    await flush();
+    expect(phone.socket.sent).toContainEqual(
+      expect.objectContaining({ kind: 'error', code: 'unverified', ref: envelopeId(1) }),
+    );
+    expect(agent.socket.sent.slice(before).map((frame) => frame.id)).toEqual([envelopeId(2)]);
+    expect(h.logs.lines().join('\n')).toContain('"event":"gate_failed"');
   });
 
   it('drains: 1012 everywhere, no presence broadcast, last_seen_at stamped', async () => {

@@ -96,6 +96,21 @@ describe('DecisionVerifier', () => {
     expect((await verifier.challenge(PHONE, hashOf(4))).ok).toBe(true);
   });
 
+  it('refuses a verification instead of evicting a live hash when the table is full', async () => {
+    const { verifier } = harness(2);
+    await verifier.challenge(PHONE, hashOf(11));
+    await verifier.challenge(PHONE, hashOf(12));
+    await verifier.verify(PHONE, response(hashOf(11)));
+    // Asked for while the hash table still had room; verified once it is full.
+    await verifier.challenge(PHONE, hashOf(13));
+    await verifier.verify(PHONE, response(hashOf(12)));
+    expect((await verifier.verify(PHONE, response(hashOf(13)))).ok).toBe(false);
+    for (const n of [11, 12]) {
+      expect(await verifier.admit(command(hashOf(n)), PHONE)).toBe(true);
+      expect(await verifier.challenge(PHONE, hashOf(n))).toEqual({ ok: false, reason: 'replayed' });
+    }
+  });
+
   it('evicts the oldest verified hash when that table is full', async () => {
     const { time, verifier } = harness(1);
     await verifier.challenge(PHONE, hashOf(5));

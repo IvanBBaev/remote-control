@@ -46,7 +46,10 @@ export interface ChallengeLedger {
    * is full of live hashes; otherwise `free`.
    */
   usage(decisionHash: string, now: number): Promise<'free' | 'used' | 'busy'>;
-  /** Records a verification; `false` if the hash is already used (a concurrent verify won). */
+  /**
+   * Records a verification; `false` if the hash is already used (a concurrent verify won)
+   * or an in-memory ledger is full of live hashes.
+   */
   markVerified(verified: VerifiedDecision, now: number): Promise<boolean>;
   /** Whether this phone verified this hash and its admission window is open. */
   isVerified(userId: string, deviceId: string, decisionHash: string, now: number): Promise<boolean>;

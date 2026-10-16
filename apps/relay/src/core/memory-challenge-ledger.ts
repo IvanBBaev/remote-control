@@ -53,10 +53,8 @@ export class MemoryChallengeLedger implements ChallengeLedger {
   markVerified(verified: VerifiedDecision, now: number): Promise<boolean> {
     if (this.#isUsed(verified.decisionHash, now)) return Promise.resolve(false);
     this.#hashes.delete(verified.decisionHash);
-    if (!this.#room(now)) {
-      const oldest = this.#hashes.keys().next();
-      if (oldest.done !== true) this.#hashes.delete(oldest.value);
-    }
+    // Evicting a live hash would reopen its replay window; a full table refuses instead.
+    if (!this.#room(now)) return Promise.resolve(false);
     this.#hashes.set(verified.decisionHash, {
       userId: verified.userId,
       deviceId: verified.deviceId,
