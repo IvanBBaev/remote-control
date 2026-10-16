@@ -53,9 +53,15 @@ export async function x25519(
 /** Builds a key pair from a raw 32-byte private key (clamped by X25519 itself). */
 export async function x25519KeyPairFromPrivateKey(secret: Uint8Array): Promise<X25519KeyPair> {
   assertLength(secret, 'X25519 private key');
+  // WebKitGTK/WPE (Linux WebKit) rejects a PKCS#8 key whose first byte is 0x00 with a
+  // DataError, i.e. 1 in 256 keys. Clamping (RFC 7748 §5) clears the low three bits of
+  // that byte, so 0x01 yields the same scalar and the same key, and the key never leaves
+  // WebCrypto as bytes.
+  const scalar = copyBytes(secret);
+  if (scalar[0] === 0) scalar[0] = 1;
   const privateKey = await getSubtle().importKey(
     'pkcs8',
-    concatBytes(PKCS8_PREFIX, secret),
+    concatBytes(PKCS8_PREFIX, scalar),
     ALGORITHM,
     false,
     ['deriveBits'],

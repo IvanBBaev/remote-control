@@ -34,6 +34,16 @@ describe('RFC 7748 §6.1 (X25519)', () => {
     expect(hex(await x25519(alice.privateKey, bob.publicKey))).toBe(shared);
     expect(hex(await x25519(bob.privateKey, alice.publicKey))).toBe(shared);
   });
+
+  it('accepts a private key whose first byte is zero (Linux WebKit rejects it as PKCS#8)', async () => {
+    // Expected value from OpenSSL, which imports the key as is.
+    const pair = await x25519KeyPairFromPrivateKey(
+      fromHex('000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f'),
+    );
+    expect(hex(pair.publicKey)).toBe(
+      '8f40c5adb68f25624ae5b214ea767a6ec94d829d3d7b5e1ad1ba6f3e2138285f',
+    );
+  });
 });
 
 describe('RFC 5869 A.1 (HKDF-SHA-256, test case 1)', () => {

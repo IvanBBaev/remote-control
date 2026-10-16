@@ -72,8 +72,8 @@ jobs:
             e2e/test-results
           retention-days: 14
 
-  # WebKit on macOS: Linux WebKitGTK is not the engine iOS Safari ships (its WebCrypto
-  # refuses the X25519 vectors and its WebAuthn differs), so it would test the wrong thing.
+  # WebKit on macOS: Linux WebKitGTK is not the engine iOS Safari ships (its WebAuthn and
+  # its Secure-cookie handling on http://localhost differ), so it would test the wrong thing.
   webkit:
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'e2e')
     runs-on: macos-latest
