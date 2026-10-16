@@ -56,7 +56,8 @@ named, so nobody re-derives it.
 | M0-23b | Real-CLI runs (held ≥ 11 min, decided from the phone, A2/A3, version) — needs claude CLI, M0-02b/M0-03b | §4 M0-23 | `blocked-owner` | 1 |
 | M0-24 | Agent macOS launchd service | §4 M0-24 | `done` | 1 |
 | M0-25 | CI completion: OS matrix, coverage, pg-real, browser vectors | §4 M0-25 | `done` | 2 |
-| PUSH | First push: ci/agent-os/pg-real/image green on GitHub runners, fix runner-only failures, branch protection | §4 M0-25, M1-08 notes | `blocked-owner` | 3 |
+| PUSHa | Runner-only failures fixed (waitFor budget, LF, Windows shell/paths/EBUSY, diff-view CPU time, WebKit on macOS) | §4 M0-25, M1-08 notes | `done 15dc317` | 2 |
+| PUSHb | First push: ci/agent-os/e2e/pg-real/image green on GitHub runners (fix what remains), branch protection | §4 M0-25, M1-08 notes | `blocked-owner` | 1 |
 | M0-26a | Sentry scrubbing, ops runbook (code part) | §4 M0-26 | `done` | 1 |
 | M0-26b | Railway backups + restore drill, UptimeRobot, usage alert, Sentry DSN | §4 M0-26 | `blocked-owner` | 1 |
 | M0-27a | SECURITY.md, README v0, publish settings (repo part) | §4 M0-27 | `done` | 1 |
