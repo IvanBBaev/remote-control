@@ -6,7 +6,13 @@ export default defineConfig({
       enabled: true,
       provider: 'v8',
       include: ['{apps,packages}/*/src/**/*.{ts,tsx}'],
-      exclude: ['**/*.test.{ts,tsx}', '**/*.d.ts'],
+      exclude: [
+        '**/*.test.{ts,tsx}',
+        '**/*.d.ts',
+        // React Native views and their wiring run only in the simulator; they are verified
+        // by screenshots (docs/verification/native-app.md). The logic lives in src/core.
+        'apps/mobile/src/{app,ui,state,adapters}/**',
+      ],
       reporter: ['text-summary', 'text'],
       // Per-package thresholds. D18 floors are enforced by tools/coverage-policy.test.ts:
       // lowering one below its floor, or dropping a package, fails `ci`.
@@ -24,6 +30,8 @@ export default defineConfig({
         'packages/crypto/src/**': { lines: 100, functions: 100, branches: 100, statements: 100 },
         // D18 floor is 80 / 70; set just under the measured value (M0-18).
         'apps/web/src/**': { lines: 95, functions: 95, branches: 90, statements: 95 },
+        // ADR 0017: the native app's core is pure logic and stays fully covered.
+        'apps/mobile/src/**': { lines: 100, functions: 100, branches: 100, statements: 100 },
       },
     },
     projects: [

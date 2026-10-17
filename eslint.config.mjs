@@ -23,7 +23,15 @@ const nodeCryptoRule = [
 ];
 
 export default tseslint.config(
-  { ignores: ['**/dist/', '**/node_modules/', '**/coverage/', 'tools/lint-fixtures/'] },
+  {
+    ignores: [
+      '**/dist/',
+      '**/node_modules/',
+      '**/coverage/',
+      'tools/lint-fixtures/',
+      'apps/mobile/{ios,android,.expo}/',
+    ],
+  },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {
