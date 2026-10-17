@@ -1085,7 +1085,7 @@ wrappers (01-roles; moved to M4, ADR 0017).
 ### M4 — Native phone app (ADR 0017)
 
 #### M4-01 — Expo app scaffold and screens
-Size M · Deps — · Status doing · Sources ADR 0017, Coucou review (2026-10-17)
+Size M · Deps — · Status done 65fc7e4 · Sources ADR 0017, Coucou review (2026-10-17)
 Scope: `apps/mobile` (Expo SDK 58, dev client, TypeScript, expo-router); dark theme
 with tone colours (orange = needs OK, cyan = question, red = error, green = done);
 screens: agents list sorted by urgency (needs OK > question > error > working > done >
