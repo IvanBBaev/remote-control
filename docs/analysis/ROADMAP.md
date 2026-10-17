@@ -20,11 +20,11 @@ named, so nobody re-derives it.
 | | |
 |---|---|
 | Release target | `M1 — Second user` exit (§3): `remotectl@0.1.0` published + M1 exit record (current version `0.0.0`, no tags) |
-| Progress | **85.5 %** — 82.5 h of 96.5 h earned |
-| Remaining | **14 h** Opus 5.5 (0 h workable now, 14 h blocked) |
-| Blocked by | domain + Railway deploy (Q2); device spike on iPhone/Android; first push (CI on GitHub, branch protection); npm placeholder + trusted publisher; second user named (Q13); two weeks of owner use; real-CLI runs with the claude CLI (M0-23b, then M1-04b/05b/07b); 24 h soak run |
+| Progress | **88 %** — 84.9 h of 96.5 h earned |
+| Remaining | **11.6 h** Opus 5.5 (0.4 h workable now, 11.2 h blocked) |
+| Blocked by | domain + Railway deploy (Q2); device spike on iPhone/Android; branch protection on main; npm placeholder + trusted publisher; second user named (Q13); two weeks of owner use; real-CLI runs with the claude CLI (M0-23b, then M1-04b/05b/07b); 24 h soak run |
 | Calibration | Same-session sequential WP gaps (git log 2026-10-12/13): M0-14 ~1.0 h, M0-11 ~1.1 h, M0-20 ~0.7 h, M0-19 ~3.2 h; 37 WPs closed in ~20.5 h wall across 3–4 parallel sessions. Scale: S = 1 h, M = 2 h, L = 4 h; owner-gated tails 0.5–3 h of agent work each |
-| Updated | 2026-10-14 at `a84d088` |
+| Updated | 2026-10-17 at `a91822b` |
 
 | ID | Item | Source | Status | Est h |
 |---|---|---|---|---|
@@ -56,8 +56,9 @@ named, so nobody re-derives it.
 | M0-23b | Real-CLI runs (held ≥ 11 min, decided from the phone, A2/A3, version) — needs claude CLI, M0-02b/M0-03b | §4 M0-23 | `blocked-owner` | 1 |
 | M0-24 | Agent macOS launchd service | §4 M0-24 | `done` | 1 |
 | M0-25 | CI completion: OS matrix, coverage, pg-real, browser vectors | §4 M0-25 | `done` | 2 |
-| PUSHa | Runner-only failures fixed (waitFor budget, LF, Windows shell/paths/EBUSY, diff-view CPU time, WebKit on macOS) | §4 M0-25, M1-08 notes | `done 15dc317` | 2 |
-| PUSHb | First push: ci/agent-os/e2e/pg-real/image green on GitHub runners (fix what remains), branch protection | §4 M0-25, M1-08 notes | `blocked-owner` | 1 |
+| PUSHa | Runner-only failures fixed (waitFor budget, LF, Windows shell/paths/EBUSY, diff-view CPU time, WebKit on macOS; 15dc317) | §4 M0-25, M1-08 notes | `done` | 2 |
+| PUSHb | First push done (origin/main = a91822b); ci, e2e, pg-real, image green; agent-os Windows still red (EBUSY rmdir in fake-claude-code conformance, project-settings deepEqual in cli main.test) | §4 M0-25, M1-08 notes | `partial:50` | 0.75 |
+| PUSHc | Branch protection on main with the green checks required | §4 M0-25, M1-08 notes | `blocked-owner` | 0.25 |
 | M0-26a | Sentry scrubbing, ops runbook (code part) | §4 M0-26 | `done` | 1 |
 | M0-26b | Railway backups + restore drill, UptimeRobot, usage alert, Sentry DSN | §4 M0-26 | `blocked-owner` | 1 |
 | M0-27a | SECURITY.md, README v0, publish settings (repo part) | §4 M0-27 | `done` | 1 |
@@ -89,6 +90,7 @@ named, so nobody re-derives it.
 ### History
 - 2026-10-13 `727195e` — 65.3 %, 33.5 h left (first run; target M1 exit; M2-04 and M2-08 are done but outside the target and not counted)
 - 2026-10-14 `a84d088` — 85.5 %, 14 h left (+20.2 pp, −19.5 h; done M1-02, M1-03, M1-10, M1-12 and the code parts of M0-23, M1-04, M1-05, M1-07, M1-14, M1-15; split M0-23 3→2+1, M1-04 4→3.5+0.5, M1-05 4→3.5+0.5, M1-07 2→1.5+0.5 into code + real-CLI check, peer sessions split M1-14/M1-15 1.5→1+0.5, totals unchanged; M2-01/02/03/05/06/07/09 and M3 Node 24, Gemini, PgNotifyHub done but outside the target; no estimates changed — the day's WPs landed within S/M/L)
+- 2026-10-17 `a91822b` — 88 %, 11.6 h left (+2.5 pp, −2.4 h; PUSHa done 15dc317 (peer split PUSH 3→2+1); first push landed, ci/e2e/pg-real/image green on GitHub, so split PUSHb 1→0.75 (Windows agent-os fixes, partial:50, workable) + PUSHc 0.25 (branch protection, owner); normalised PUSHa status `done 15dc317`→`done`; M3 transcript backfill, claude-sdk, staging, Codex/Gemini labels and PgNotifyHub hardening done but outside the target; no estimates changed)
 <!-- release-progress:end -->
 
 ## 0. How to execute this roadmap
