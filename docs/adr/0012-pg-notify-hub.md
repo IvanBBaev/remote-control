@@ -46,6 +46,17 @@ commit, in order (03 F24–F26).
   _(Amended after review.)_ The `close` can be lost (a failed publish, or a listening
   connection that was down). A displaced socket still open after 15 s is closed with
   4000 by the heartbeat.
+  _(Amended after review.)_ Clock skew between replicas still picks the winner of two
+  attaches that raced, where neither replica knew of the other's socket. Two such
+  attaches have no real order to recover, so the hub does not try to find one. It makes
+  sure that the race ends:
+  - The winner answers the loser's `on` with its own `on`, then a 4000 `close` for the
+    losing socket. That socket is closed at once instead of waiting for the heartbeat.
+  - The client reconnects after a 4000. Its new attach knows the winner and is stamped
+    later, so it takes over.
+  - A supersede `close` carries the attach time `a` of the socket it ends. A replica
+    closes only the socket attached at that time, so a late `close` never ends a newer
+    socket of the device. A revoke carries no `a` and ends any socket the device has.
 - **Device cap.** It counts local and remote devices (D15's cap of 10 per user holds
   cluster-wide).
 - **Liveness.**

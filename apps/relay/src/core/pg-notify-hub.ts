@@ -67,6 +67,8 @@ const Message = z.discriminatedUnion('t', [
     ...identityFields,
     code: z.number().int(),
     why: z.string(),
+    /** The attach time of the socket aimed at: a socket attached at another time stays. */
+    a: z.number().optional(),
   }),
   z.object({ t: z.literal('ack'), r: z.string(), ...identityFields, ids: z.array(z.string()) }),
 ]);
@@ -299,10 +301,17 @@ export class PgNotifyHub implements HubPort, HubCluster {
       case 'close': {
         // A displaced socket first: the close is the supersede aimed at it.
         const key = displacedKey(message.u, message.d);
-        const target =
-          this.#displaced.get(key)?.connection ?? this.#local.connection(message.u, message.d);
-        this.#displaced.delete(key);
-        target?.close(message.code, message.why);
+        const target = [
+          this.#displaced.get(key)?.connection,
+          this.#local.connection(message.u, message.d),
+        ].find(
+          (connection) =>
+            connection !== undefined &&
+            (message.a === undefined || this.#attachedAt.get(connection) === message.a),
+        );
+        if (target === undefined) return;
+        if (this.#displaced.get(key)?.connection === target) this.#displaced.delete(key);
+        target.close(message.code, message.why);
         return;
       }
       case 'ack':
@@ -316,10 +325,22 @@ export class PgNotifyHub implements HubPort, HubCluster {
     const local = this.#local.connection(userId, deviceId);
     const localAt = local === undefined ? undefined : this.#attachedAt.get(local);
     // A claim older than the socket here (sent before a missed notification, or raced
-    // with this attach) is stale: keep the socket and tell that replica it lost.
+    // with this attach) is stale: keep the socket and tell that replica it lost. Nothing
+    // else closes its socket when the attaches raced: neither side knew of the other.
     if (local !== undefined && at !== undefined && localAt !== undefined) {
       if (newer(localAt, this.replicaId, at, replica)) {
-        this.#publish([this.#direct(replica, this.#on(local))]);
+        this.#publish([
+          this.#direct(replica, this.#on(local)),
+          this.#direct(replica, {
+            t: 'close',
+            r: this.replicaId,
+            u: userId,
+            d: deviceId,
+            code: CloseCode.superseded,
+            why: 'superseded',
+            a: at,
+          }),
+        ]);
         return;
       }
     }
@@ -349,7 +370,7 @@ export class PgNotifyHub implements HubPort, HubCluster {
     }
     devices.set(deviceId, {
       replica,
-      connection: this.#proxy(replica, identity),
+      connection: this.#proxy(replica, identity, at),
       attachedAt: at,
     });
     this.#touch(deviceId);
@@ -381,7 +402,7 @@ export class PgNotifyHub implements HubPort, HubCluster {
 
   // ── outbound ─────────────────────────────────────────────────────────────────────
 
-  #proxy(replica: string, identity: DeviceIdentity): HubConnection {
+  #proxy(replica: string, identity: DeviceIdentity, at: number | undefined): HubConnection {
     const target = { u: identity.userId, d: identity.deviceId };
     return {
       identity,
@@ -392,7 +413,16 @@ export class PgNotifyHub implements HubPort, HubCluster {
       },
       close: (code, reason) => {
         this.#publish([
-          this.#direct(replica, { t: 'close', r: this.replicaId, ...target, code, why: reason }),
+          // A supersede names the attach it ends, so it never reaches a later socket of the
+          // device. Any other close (a revoke) ends whichever socket the device has.
+          this.#direct(replica, {
+            t: 'close',
+            r: this.replicaId,
+            ...target,
+            code,
+            why: reason,
+            ...(at === undefined || code !== CloseCode.superseded ? {} : { a: at }),
+          }),
         ]);
       },
     };

@@ -42,7 +42,7 @@ interface Cluster {
   readonly time: FakeTime;
   readonly network: MemoryNotifyNetwork;
   readonly logs: MemoryDestination;
-  hub(options?: { deviceCap?: number }): { hub: PgNotifyHub; bus: NotifyBus };
+  hub(options?: { deviceCap?: number; skewMs?: number }): { hub: PgNotifyHub; bus: NotifyBus };
 }
 
 function cluster(): Cluster {
@@ -55,8 +55,9 @@ function cluster(): Cluster {
     logs,
     hub(options = {}) {
       const bus = network.bus();
+      const skew = options.skewMs ?? 0;
       const hub = new PgNotifyHub({
-        clock: time.clock,
+        clock: { now: () => time.clock.now() + skew },
         timer: time.timer,
         random: webCryptoRandom,
         bus,
@@ -358,6 +359,58 @@ describe('PgNotifyHub', () => {
     await flushNotifications();
     expect(b.connection(USER, AGENT)).toBe(second);
     expect([a.count(USER), b.count(USER)]).toEqual([1, 1]);
+  });
+
+  it('closes the losing socket of two racing attaches at once, whatever the clocks say', async () => {
+    const c = cluster();
+    // a's clock runs ahead, so its attach wins although b's came later.
+    const { hub: a } = c.hub({ skewMs: 2_000 });
+    const { hub: b } = c.hub();
+    await a.start();
+    await b.start();
+    const first = connection(agentIdentity);
+    a.attach(first);
+    c.time.advance(1);
+    const second = connection(agentIdentity);
+    b.attach(second);
+    await flushNotifications();
+    await flushNotifications();
+    expect(second.close).toHaveBeenCalledExactlyOnceWith(4000, 'superseded');
+    expect(first.close).not.toHaveBeenCalled();
+    expect(a.connection(USER, AGENT)).toBe(first);
+    expect(b.connection(USER, AGENT)?.identity).toEqual(agentIdentity);
+    // The device reconnects to b, which now knows a's socket and supersedes it.
+    b.detach(second);
+    const third = connection(agentIdentity);
+    const result = b.attach(third);
+    if (result.ok) result.superseded?.close(4000, 'superseded');
+    await flushNotifications();
+    await flushNotifications();
+    expect(first.close).toHaveBeenCalledExactlyOnceWith(4000, 'superseded');
+    expect(b.connection(USER, AGENT)).toBe(third);
+    expect([a.count(USER), b.count(USER)]).toEqual([1, 1]);
+  });
+
+  it('lets a supersede end only the attach it names', async () => {
+    const c = cluster();
+    const [a] = await started(c, 1);
+    const socket = connection(agentIdentity);
+    a?.attach(socket);
+    const close = (extra: object) =>
+      c.network.bus().publish([
+        {
+          channel: `${HUB_CHANNEL}_${a?.replicaId ?? ''}`,
+          payload: JSON.stringify({ t: 'close', r: 'ff', u: USER, d: AGENT, ...extra }),
+        },
+      ]);
+    // Aimed at an earlier socket of the device: this one stays.
+    await close({ code: 4000, why: 'superseded', a: c.time.clock.now() - 5 });
+    await flushNotifications();
+    expect(socket.close).not.toHaveBeenCalled();
+    // A revoke names no attach and ends whichever socket the device has.
+    await close({ code: 4002, why: 'revoked' });
+    await flushNotifications();
+    expect(socket.close).toHaveBeenCalledExactlyOnceWith(4002, 'revoked');
   });
 
   it('settles two attaches of one device on the later one', async () => {
