@@ -530,6 +530,7 @@ features. Sources: `02 §5.2`, `03 §5.6` case 6, `01 Q7`, `03 Q6`.
 | **M1 — Second user** | A second, named user installs from the README in ≤ 10 min; the owner uses it daily: questions, Always, follow-ups, new sessions, thin session view, readable notifications. | (1) J4 question, J8 sessions, J9 instruction, J10 new session, J11 allow-list refusal, J12 revoke green. (2) `remotectl@0.1.0` published by trusted publishing; installers for macOS and Linux (Windows allowed to slip). (3) Second-user usability run logged in `docs/verification/second-user.md`, ≤ 10 min, no help. (4) Two weeks of owner use: ≥ 20 approvals from outside home, zero agent-caused hangs (`docs/verification/m1-usage.md`). (5) Playwright P1–P9 + WebKit smoke green on `main`. (6) Release checklist executed once. |
 | **M2 — Beyond Claude Code** | The product reasons (a) multi-agent, (f) history/cost and the comfort features: Codex adapter, diff bodies, QR pairing, desktop layout, agent-side assertion verification. | (1) Codex journey green with the fake + a manual log with real Codex. (2) Agent verifies WebAuthn assertions itself (02 phase 2). (3) Diff viewer on the phone. (4) History/cost counters per project. |
 | **M3 — Backlog** | Not planned, listed so nobody re-analyses: Gemini observe+deny adapter, `claude-sdk` adapter for API-key users, transcript backfill, `PgNotifyHub` + 2 replicas, Node 24 image, staging environment, native wrappers. | — |
+| **M4 — Native phone app** | Coucou-level phone experience (ADR 0017): an Expo app with urgency-sorted agents, session screen, Allow/Deny from notifications and from the Dynamic Island / Lock Screen Live Activity, widgets. PWA stays as fallback. | (1) M4-01…M4-08 done. (2) A real iPhone on TestFlight allows one real Claude Code request from the Lock Screen Live Activity, logged in `docs/verification/native-app.md`. (3) No command, path or summary in any APNs Live Activity payload (privacy gate). |
 
 **Critical path for one executor** (from 07 §7 and the dependency graph below):
 M0-01 → M0-05 → M0-06 → M0-08 → M0-10 → M0-13 → M0-14 → M0-16 → M0-18 → M0-20 →
@@ -1078,7 +1079,75 @@ Gemini CLI observe+deny adapter (04 W14, `done 9ba3054`, ADR 0013; deny-only pho
 transcript backfill behind a flag (04 W11, 07 W5, `done 23345b9`, ADR 0014: own parser instead of agenthropic's);
 `PgNotifyHub` + 2 replicas (03 W11, `done 305176a`, ADR 0012; two-replica run pending on staging); Node 24 image + CI (06 W21, `done fb0c67d`, ADR 0011); staging environment
 (06 §5.6, `done fe01106`, ADR 0016: shared WebAuthn challenges in Postgres; Railway run pending); interactive pty fake (07 W22 — only if a pty route is ever chosen); native
-wrappers (01-roles).
+wrappers (01-roles; moved to M4, ADR 0017).
+
+
+### M4 — Native phone app (ADR 0017)
+
+#### M4-01 — Expo app scaffold and screens
+Size M · Deps — · Status doing · Sources ADR 0017, Coucou review (2026-10-17)
+Scope: `apps/mobile` (Expo SDK 58, dev client, TypeScript, expo-router); dark theme
+with tone colours (orange = needs OK, cyan = question, red = error, green = done);
+screens: agents list sorted by urgency (needs OK > question > error > working > done >
+idle) with swipe Allow/Deny, session screen (approval card, question card, last turn,
+composer with quick-reply chips), history, settings; driven by a fixture store until
+M4-03 wires the relay. Typecheck, lint and unit tests join `pnpm check`.
+AC: the app builds and runs in the iOS simulator; screenshots of the four screens in
+`docs/verification/native-app.md`; `pnpm check` green.
+
+#### M4-02 — Noble crypto backend
+Size M · Deps — · Status todo · Sources ADR 0017, D3
+Scope: a second primitives backend for `@remote-control/crypto` (X25519, AES-GCM, HKDF,
+SHA-256, HMAC, ECDSA P-256 verify) on `@noble/*`, selected by the caller; WebCrypto
+stays the default.
+AC: the existing Noise vectors, property tests and push-summary tests pass on both
+backends.
+
+#### M4-03 — Phone core shared by PWA and app
+Size L · Deps M4-02 · Status todo · Sources ADR 0017
+Scope: move platform-free phone logic from `apps/web` (relay client, pairing, KK
+session handling, request/session store) into `packages/phone-core` behind storage and
+socket ports; the PWA and the app both use it; the app pairs with a real agent.
+AC: PWA tests unchanged and green; the app pairs with `remotectl` against a local relay
+and shows a real pending request.
+
+#### M4-04 — Device signing key for user verification
+Size M · Deps M4-03 · Status todo · Sources ADR 0017, D7, ADR 0010
+Scope: Secure Enclave P-256 key with biometry-current-set access control (Android
+StrongBox/TEE); SPKI in pairing msg3; ES256 over SHA-256(canonical decision) on every
+non-deny decision; agent verification next to the passkey path.
+AC: agent unit tests accept a valid device signature and reject wrong key, wrong hash,
+missing UV; app Allow works end to end in the simulator.
+
+#### M4-05 — APNs on the relay and actionable notifications
+Size M · Deps M4-03 · Status todo · Sources ADR 0017, D5, ADR 0001
+Scope: push port with Web Push and APNs adapters (token auth, `.p8` from env);
+`push_subscriptions.kind`; categories Allow / Review / Deny (authentication required),
+Reply (text input), per-option answers; Notification Service Extension decrypting
+`pushBlob`.
+AC: relay unit tests for the APNs adapter (payload shape, no plaintext beyond D5);
+`simctl push` fixture shows the decrypted summary and the action buttons.
+
+#### M4-06 — Live Activity and Dynamic Island
+Size L · Deps M4-04, M4-05 · Status todo · Sources ADR 0017
+Scope: WidgetKit extension (SwiftUI) with compact / minimal / expanded / Lock Screen
+layouts; push-to-start and update tokens registered with the relay; the relay starts,
+updates and ends the activity from metadata only; Allow/Deny as `LiveActivityIntent`s
+signing with the device key.
+AC: in the simulator a pushed activity shows state and count and its Deny reaches the
+agent; privacy gate asserts metadata-only activity payloads.
+
+#### M4-07 — Widgets and Control Center
+Size M · Deps M4-03 · Status todo · Sources ADR 0017
+Scope: small / medium / Lock Screen accessory widgets and a Control Center control fed
+from the App Group store; deep links into the app.
+AC: widgets render fixture data in the simulator; tap opens the right screen.
+
+#### M4-08 — TestFlight and device run
+Size S · Deps M4-06, owner Q2 + Q22 · Status todo · Sources ADR 0017
+Scope: EAS/Xcode archive, associated domains, APNs production environment, TestFlight.
+AC: `docs/verification/native-app.md` records a real request allowed from the Lock
+Screen Live Activity on the owner's iPhone.
 
 ## 5. Conventions for the executor
 
@@ -1140,6 +1209,8 @@ specialists' §8 items this row replaces.
 | Q19 | Push on turn finished / needs input: off by default, setting in M2 | **Off** | 01 Q5 |
 | Q20 | QA gates: thresholds enforced, OS matrix on every PR, Playwright on `main`/nightly/label, `pg-real` nightly + `main`, anonymised fixtures committed, WebKit smoke on | **Yes** | 07 Q1–Q7 |
 | Q21 | Relay supports current + previous protocol major; agent ships its version in `hello` | **Yes** | 03 Q7 |
+| Q22 | Apple Developer Program membership ($99/year) for APNs, associated domains, App Group and TestFlight (ADR 0017) | **Owner enrols** | — |
+| Q23 | Native app bundle id | **`dev.ivanbaev.remotecontrol`** | — |
 
 Decisions the roadmap took without an owner question (listed for visibility): no outbox
 (D4), no `@noble` fallback (D3), tsdown over tsup, `drainingSeconds` 30, env-paths over
