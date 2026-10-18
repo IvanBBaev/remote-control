@@ -106,8 +106,14 @@ export class TempEnv {
   }
 
   cleanup(): void {
-    // Windows keeps a killed hook's working directory locked for a moment (EBUSY).
-    rmSync(this.root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    // Windows keeps a killed hook's working directory locked for a moment (EBUSY). Retry for
+    // a few seconds; a directory that stays locked is a leaked temp dir, not a test failure.
+    try {
+      rmSync(this.root, { recursive: true, force: true, maxRetries: 40, retryDelay: 100 });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (process.platform !== 'win32' || (code !== 'EBUSY' && code !== 'EPERM')) throw error;
+    }
   }
 
   #writeSettings(file: string, settings: object | string): void {

@@ -16,6 +16,7 @@ import { toHex } from '@remote-control/protocol';
 import type { FileSystem } from '../ports/file-system.js';
 import type { PathPort } from '../ports/path-port.js';
 import type { Random } from '../ports/random.js';
+import { retryTransient, WINDOWS_BUSY_RETRY } from './retry-transient.js';
 
 function isNotFound(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException).code;
@@ -48,7 +49,8 @@ export function createNodeFileSystem(random: Random): FileSystem {
     try {
       // `wx`: never follow or reuse an existing file; `mode` applies from creation.
       await writeFile(temp, data, { mode, flag: 'wx' });
-      await rename(temp, path);
+      // A reader holding the target open makes a Windows rename fail for a moment.
+      await retryTransient(() => rename(temp, path), WINDOWS_BUSY_RETRY);
     } catch (error) {
       await rm(temp, { force: true });
       throw error;
@@ -90,7 +92,8 @@ export function createNodeFileSystem(random: Random): FileSystem {
     },
     async remove(path) {
       try {
-        await unlink(path);
+        // A script host still winding down keeps its file locked on Windows for a moment.
+        await retryTransient(() => unlink(path), WINDOWS_BUSY_RETRY);
         return true;
       } catch (error) {
         if (isNotFound(error)) return false;
