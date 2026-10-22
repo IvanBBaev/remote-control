@@ -1104,7 +1104,7 @@ AC: the existing Noise vectors, property tests and push-summary tests pass on bo
 backends.
 
 #### M4-03 — Phone core shared by PWA and app
-Size L · Deps M4-02 · Status todo · Sources ADR 0017
+Size L · Deps M4-02 · Status doing · Sources ADR 0017
 Scope: move platform-free phone logic from `apps/web` (relay client, pairing, KK
 session handling, request/session store) into `packages/phone-core` behind storage and
 socket ports; the PWA and the app both use it; the app pairs with a real agent.
