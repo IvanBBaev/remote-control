@@ -1138,7 +1138,7 @@ AC: in the simulator a pushed activity shows state and count and its Deny reache
 agent; privacy gate asserts metadata-only activity payloads.
 
 #### M4-07 — Widgets and Control Center
-Size M · Deps M4-03 · Status todo · Sources ADR 0017
+Size M · Deps M4-03 · Status done 953d63e · Sources ADR 0017
 Scope: small / medium / Lock Screen accessory widgets and a Control Center control fed
 from the App Group store; deep links into the app.
 AC: widgets render fixture data in the simulator; tap opens the right screen.
