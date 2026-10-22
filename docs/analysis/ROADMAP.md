@@ -1112,7 +1112,7 @@ AC: PWA tests unchanged and green; the app pairs with `remotectl` against a loca
 and shows a real pending request.
 
 #### M4-04 — Device signing key for user verification
-Size M · Deps M4-03 · Status todo · Sources ADR 0017, D7, ADR 0010
+Size M · Deps M4-03 · Status doing · Sources ADR 0017, D7, ADR 0010
 Scope: Secure Enclave P-256 key with biometry-current-set access control (Android
 StrongBox/TEE); SPKI in pairing msg3; ES256 over SHA-256(canonical decision) on every
 non-deny decision; agent verification next to the passkey path.
