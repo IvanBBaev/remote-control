@@ -9,7 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@electric-sql/pglite": "0.5.8",
+    "@electric-sql/pglite": "0.5.10",
     "@remote-control/crypto": "workspace:*",
     "@remote-control/fake-claude-code": "workspace:*",
     "@remote-control/log": "workspace:*",
