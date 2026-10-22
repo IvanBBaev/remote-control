@@ -2,6 +2,9 @@ export { CryptoError } from './errors.js';
 export type { CryptoErrorCode } from './errors.js';
 export { bytesEqual, concatBytes, fromHex, utf8 } from './bytes.js';
 
+export { setCryptoBackend } from './backend.js';
+export type { AesGcmUsage, CryptoBackend } from './backend.js';
+export { webCryptoBackend } from './backends/web-crypto.js';
 export { webCryptoRandom } from './adapters/web-crypto-random.js';
 export { probeWebCrypto } from './primitives/probe.js';
 export type { WebCryptoCapability, WebCryptoProbe } from './primitives/probe.js';

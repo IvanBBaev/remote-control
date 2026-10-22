@@ -19,6 +19,12 @@ const nodeCryptoRule = [
       { name: 'node:crypto', message: 'Use packages/crypto (WebCrypto only, D3).' },
       { name: 'crypto', message: 'Use packages/crypto (WebCrypto only, D3).' },
     ],
+    patterns: [
+      {
+        group: ['@noble/*'],
+        message: 'Use packages/crypto; only its noble backend imports @noble (ADR 0017).',
+      },
+    ],
   },
 ];
 
@@ -69,6 +75,11 @@ export default tseslint.config(
   {
     files: ['packages/crypto/src/adapters/**/*.ts'],
     rules: { 'no-restricted-properties': 'off', 'no-restricted-imports': 'off' },
+  },
+  {
+    // The pure-JS primitives for React Native (ADR 0017, M4-02).
+    files: ['packages/crypto/src/backends/noble.ts'],
+    rules: { 'no-restricted-imports': 'off' },
   },
   {
     files: ['*.mjs', 'packages/*/bin/*.mjs', 'apps/agent/scripts/*.mjs', 'apps/web/scripts/*.mjs'],

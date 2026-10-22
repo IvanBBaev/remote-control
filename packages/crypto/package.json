@@ -2,13 +2,17 @@
   "name": "@remote-control/crypto",
   "version": "0.0.0",
   "private": true,
-  "description": "WebCrypto-only Noise KK / XXpsk0 sessions, HKDF and AES-GCM.",
+  "description": "Noise KK / XXpsk0 sessions, HKDF and AES-GCM on WebCrypto, with a @noble backend for React Native.",
   "license": "MIT",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./noble": "./src/noble.ts"
   },
   "dependencies": {
+    "@noble/ciphers": "2.4.0",
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
     "@remote-control/protocol": "workspace:*"
   }
 }

@@ -51,6 +51,17 @@ export default defineConfig({
       {
         extends: true,
         test: {
+          // ADR 0017 / M4-02: the crypto suites again on the @noble backend, without
+          // crypto.subtle (React Native has none).
+          name: 'crypto-noble',
+          environment: 'node',
+          include: ['packages/crypto/src/{vectors,properties,push-summary,noise}.test.ts'],
+          setupFiles: ['packages/crypto/test/use-noble.ts'],
+        },
+      },
+      {
+        extends: true,
+        test: {
           // Real Postgres (M0-08); every suite skips unless RC_TEST_DATABASE_URL is set.
           name: 'pg-real',
           environment: 'node',

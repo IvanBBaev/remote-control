@@ -1,5 +1,4 @@
-import { copyBytes } from '../bytes.js';
-import { getSubtle } from './subtle.js';
+import { cryptoBackend } from '../backend.js';
 
 /** Length of one P-256 scalar, and so of `r` and `s` in a raw signature. */
 const P256_SCALAR_LENGTH = 32;
@@ -62,18 +61,5 @@ export async function verifyEs256(
 ): Promise<boolean> {
   const signature = es256DerToRaw(derSignature);
   if (signature === undefined) return false;
-  const subtle = getSubtle();
-  let key: CryptoKey;
-  try {
-    key = await subtle.importKey(
-      'spki',
-      copyBytes(spki),
-      { name: 'ECDSA', namedCurve: 'P-256' },
-      false,
-      ['verify'],
-    );
-  } catch {
-    return false;
-  }
-  return subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, signature, copyBytes(data));
+  return cryptoBackend().verifyEs256(spki, data, signature);
 }
