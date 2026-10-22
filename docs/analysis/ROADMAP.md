@@ -1096,7 +1096,7 @@ AC: the app builds and runs in the iOS simulator; screenshots of the four screen
 `docs/verification/native-app.md`; `pnpm check` green.
 
 #### M4-02 — Noble crypto backend
-Size M · Deps — · Status doing · Sources ADR 0017, D3
+Size M · Deps — · Status done 4697714 · Sources ADR 0017, D3
 Scope: a second primitives backend for `@remote-control/crypto` (X25519, AES-GCM, HKDF,
 SHA-256, HMAC, ECDSA P-256 verify) on `@noble/*`, selected by the caller; WebCrypto
 stays the default.
