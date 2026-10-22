@@ -10,7 +10,10 @@
     "backgroundColor": "#0B0D10",
     "ios": {
       "bundleIdentifier": "dev.ivanbaev.remotecontrol",
-      "supportsTablet": false
+      "supportsTablet": false,
+      "entitlements": {
+        "com.apple.security.application-groups": ["group.dev.ivanbaev.remotecontrol"]
+      }
     },
     "android": {
       "package": "dev.ivanbaev.remotecontrol",
@@ -18,6 +21,7 @@
     },
     "plugins": [
       "expo-router",
+      "@bacons/apple-targets",
       [
         "expo-splash-screen",
         {

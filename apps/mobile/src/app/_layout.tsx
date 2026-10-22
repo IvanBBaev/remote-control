@@ -8,6 +8,8 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { loadDevConnection } from '../adapters/dev-connection';
 import { useInbox } from '../state/store';
+import { startPendingLinkWatch } from '../state/pending-link';
+import { startWidgetSync } from '../state/widget-sync';
 
 import { colors } from '../ui/theme';
 
@@ -31,6 +33,10 @@ export default function RootLayout() {
       if (saved !== undefined) void connect(saved);
     });
   }, [connect]);
+  // Home-screen, Lock Screen and Control Center widgets read the App Group (M4-07).
+  useEffect(() => startWidgetSync(), []);
+  // The Control Center control opens the app and leaves the deep link to follow (M4-07).
+  useEffect(() => startPendingLinkWatch(), []);
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>

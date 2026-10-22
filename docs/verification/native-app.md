@@ -80,3 +80,43 @@ builds only), `remotecontrol://settings?pair=<code>` starts pairing, and in
 development builds `&confirm=<fingerprint>` confirms it when it matches what the app
 computed. The session token is a credential: keep it out of shell history and files
 that are committed.
+
+## M4-07 — widgets and Control Center (2026-10-22)
+
+**Result: pass** for the home-screen widgets and the Control Center control. Lock Screen
+accessories are not covered (see the end of this section).
+
+The app writes a privacy-reduced snapshot to the App Group `group.dev.ivanbaev.remotecontrol`
+(`src/core/widget-snapshot.ts`, `src/state/widget-sync.ts`). Each row holds only the
+machine, project, state, a plain label, the deadline and a deep link, which is the push
+summary level (D5). The snapshot is written only when something the widgets show
+changes. The WidgetKit extension (`targets/widgets`, via `@bacons/apple-targets`) contains:
+
+- **AgentsWidget**: small (most urgent session, countdown), medium (three rows, each its
+  own link), and the Lock Screen `accessoryCircular`, `accessoryRectangular` and
+  `accessoryInline` families.
+- **WaitingControl** (iOS 18): a Control Center button labelled "N waiting" that opens the
+  most urgent waiting session, or the agents list when nothing waits. Control Center does
+  not follow an `OpenURLIntent`, so the control's intent opens the app and leaves the link
+  in the App Group. The app opens it when it becomes active (`src/state/pending-link.ts`)
+  and ignores records older than 30 s.
+
+Checked in a scratch iPhone 18 Pro simulator (iOS 27) against the Release build, running
+on sample data. The widgets were placed by hand. The taps run as an XCUITest against
+SpringBoard ([WidgetTapUITests.swift](native-app/WidgetTapUITests.swift), in a UI-test
+target added locally to the git-ignored `ios/` project). All four tests pass:
+
+| Step                               | Evidence                                                                                                   |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Widgets render the sample data     | Small widget shows billing-api; medium shows three rows ([widgets-home.png](native-app/widgets-home.png)). |
+| Medium row 2 opens its session     | marketing-site session screen ([widget-tap-marketing-site.png](native-app/widget-tap-marketing-site.png)). |
+| Medium row 3 opens its session     | infra session screen ([widget-tap-infra.png](native-app/widget-tap-infra.png)).                            |
+| Small widget opens the most urgent | billing-api session screen ([widget-tap-billing-api.png](native-app/widget-tap-billing-api.png)).          |
+| Control shows the live count       | "2 waiting" in Control Center ([control-center.png](native-app/control-center.png)).                       |
+| Control opens the most urgent      | billing-api session screen ([control-tap-billing-api.png](native-app/control-tap-billing-api.png)).        |
+
+The sample deadlines count from app launch, so relaunch the app before you run the tests.
+
+**Not verified:** the Lock Screen accessory families compile and use the same views and
+links, but none was placed on a Lock Screen. A headless simulator cannot reliably drive the
+Lock Screen editor. This check is left for a device.

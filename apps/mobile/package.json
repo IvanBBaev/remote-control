@@ -12,6 +12,7 @@
     "prebuild": "expo prebuild --clean"
   },
   "dependencies": {
+    "@bacons/apple-targets": "5.0.0",
     "@remote-control/crypto": "workspace:*",
     "@remote-control/phone-core": "workspace:*",
     "@remote-control/protocol": "workspace:*",

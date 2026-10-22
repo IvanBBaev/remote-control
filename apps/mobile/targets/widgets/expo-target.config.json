@@ -1,0 +1,11 @@
+{
+  "type": "widget",
+  "name": "widgets",
+  "displayName": "Remote Control",
+  "bundleIdentifier": ".widgets",
+  "deploymentTarget": "18.0",
+  "frameworks": ["SwiftUI", "WidgetKit", "AppIntents"],
+  "entitlements": {
+    "com.apple.security.application-groups": ["group.dev.ivanbaev.remotecontrol"]
+  }
+}
