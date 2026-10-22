@@ -12,5 +12,9 @@
   },
   "include": ["src"],
   "exclude": ["src/sw.ts", "src/sw.test.ts", "src/**/*.harness.test.ts"],
-  "references": [{ "path": "../../packages/crypto" }, { "path": "../../packages/protocol" }]
+  "references": [
+    { "path": "../../packages/crypto" },
+    { "path": "../../packages/protocol" },
+    { "path": "../../packages/phone-core" }
+  ]
 }

@@ -1,6 +1,13 @@
+// Must run before any shared package touches crypto or the web platform APIs.
+import '../adapters/platform';
+
 import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
+import { loadDevConnection } from '../adapters/dev-connection';
+import { useInbox } from '../state/store';
 
 import { colors } from '../ui/theme';
 
@@ -17,6 +24,14 @@ const theme = {
 };
 
 export default function RootLayout() {
+  const connect = useInbox((state) => state.connect);
+  useEffect(() => {
+    // Reconnects to the developer relay saved last time (M4-03).
+    void loadDevConnection().then((saved) => {
+      if (saved !== undefined) void connect(saved);
+    });
+  }, [connect]);
+
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
       <ThemeProvider value={theme}>

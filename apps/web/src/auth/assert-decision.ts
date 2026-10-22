@@ -1,31 +1,12 @@
 import { decisionChallenge, decisionHash, requiresAssertion } from '@remote-control/protocol';
 import type { CanonicalDecision, DecisionAssertion } from '@remote-control/protocol';
+import type { AssertDecisionResult } from '@remote-control/phone-core/auth/results';
 import { startAuthentication } from '@simplewebauthn/browser';
 
 import { classifyFailure } from './ceremony.js';
-import type { CeremonyFailure } from './ceremony.js';
 import type { RelayApi } from './relay-api.js';
 
-export type AssertDecisionResult =
-  | {
-      readonly ok: true;
-      /** Goes into the head of the `cls: command` envelope (02 §5.4). */
-      readonly decisionHash: string;
-      /** `false` for Deny and "Reply in terminal": they need no assertion (D7). */
-      readonly asserted: boolean;
-      /**
-       * The assertion itself, sealed into the decision so the agent checks it without
-       * the relay (D7 phase 2, M2-03); absent when `asserted` is `false`.
-       */
-      readonly assertion?: DecisionAssertion;
-    }
-  | {
-      readonly ok: false;
-      readonly failure:
-        | CeremonyFailure
-        /** The relay's challenge is not this decision's hash: never sign it. */
-        | 'challenge_mismatch';
-    };
+export type { AssertDecisionResult } from '@remote-control/phone-core/auth/results';
 
 class ChallengeMismatch extends Error {}
 

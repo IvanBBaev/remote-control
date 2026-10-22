@@ -1,0 +1,17 @@
+{
+  "name": "@remote-control/phone-core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Phone logic shared by the PWA and the native app: relay API, realtime client, pairing (ADR 0017).",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@remote-control/crypto": "workspace:*",
+    "@remote-control/protocol": "workspace:*",
+    "@simplewebauthn/browser": "14.0.0",
+    "zustand": "5.0.15"
+  }
+}

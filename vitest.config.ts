@@ -28,6 +28,9 @@ export default defineConfig({
         // 07 §5.13: the protocol package is the trust boundary and stays fully covered.
         'packages/protocol/src/**': { lines: 100, functions: 100, branches: 100, statements: 100 },
         'packages/crypto/src/**': { lines: 100, functions: 100, branches: 100, statements: 100 },
+        // M4-03: the PWA's former realtime/pairing core, shared with the native app; its
+        // suites still run from apps/web against the re-exports.
+        'packages/phone-core/src/**': { lines: 95, functions: 95, branches: 90, statements: 95 },
         // D18 floor is 80 / 70; set just under the measured value (M0-18).
         'apps/web/src/**': { lines: 95, functions: 95, branches: 90, statements: 95 },
         // ADR 0017: the native app's core is pure logic and stays fully covered.

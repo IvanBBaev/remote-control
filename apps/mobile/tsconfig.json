@@ -22,5 +22,9 @@
     "paths": { "@/*": ["./src/*"] }
   },
   "include": ["src"],
-  "references": [{ "path": "../../packages/protocol" }]
+  "references": [
+    { "path": "../../packages/crypto" },
+    { "path": "../../packages/phone-core" },
+    { "path": "../../packages/protocol" }
+  ]
 }

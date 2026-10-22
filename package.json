@@ -26,6 +26,7 @@
     "build": "pnpm -r --if-present run build",
     "dev:https": "pnpm --filter @remote-control/relay dev:https",
     "soak": "tsx packages/test-harness/src/soak-cli.ts",
+    "dev:session": "tsx packages/test-harness/src/dev-session.ts",
     "release:version": "tsx tools/release.ts version",
     "release:verify": "tsx tools/release.ts verify",
     "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test && pnpm build"

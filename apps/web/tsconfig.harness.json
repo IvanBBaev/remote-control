@@ -14,6 +14,7 @@
   "references": [
     { "path": "../../packages/crypto" },
     { "path": "../../packages/protocol" },
+    { "path": "../../packages/phone-core" },
     { "path": "../../packages/test-harness" },
     { "path": "../../packages/fake-claude-code" },
     { "path": "../relay" }

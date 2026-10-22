@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@remote-control/crypto": "workspace:*",
+    "@remote-control/phone-core": "workspace:*",
     "@remote-control/protocol": "workspace:*",
     "@simplewebauthn/browser": "14.0.0",
     "barcode-detector": "3.2.2",

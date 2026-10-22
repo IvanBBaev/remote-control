@@ -20,6 +20,9 @@
       "path": "./packages/crypto"
     },
     {
+      "path": "./packages/phone-core"
+    },
+    {
       "path": "./packages/log"
     },
     {

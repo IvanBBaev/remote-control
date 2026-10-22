@@ -38,3 +38,45 @@ pnpm exec expo run:ios                   # builds the dev client and opens the s
 
 Deep links: `remotecontrol://session/<id>`, `remotecontrol://history`,
 `remotecontrol://settings`.
+
+## M4-03 — shared phone core, live relay (2026-10-22)
+
+**Result: pass.** The pure phone logic moved from `apps/web/src` to `packages/phone-core`
+(realtime client and store, pairing, envelopes, relay API, passkey key derivation); the
+PWA imports it from there and its tests run unchanged. The app runs the same code on
+Hermes through `src/adapters/platform.ts` (noble crypto backend, `getRandomValues` from
+expo-crypto, `crypto.subtle.digest`, `AbortSignal.timeout`, `TextDecoder`), keeps its
+identity and paired computers in the Keychain (expo-secure-store,
+`AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY`) and sends the session cookie and `Origin` itself
+on fetch and on the WebSocket upgrade.
+
+Checked against a local relay (`RC_ORIGIN=http://localhost:3200`, `RC_RP_ID=localhost`)
+and a `remotectl` built from this tree, in the iPhone 18 Pro simulator:
+
+| Step                                                | Evidence                                                                                                                                                                                                                      |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App signs in with a dev session and binds the phone | Relay log: `phone_bind` 201, then `ws_open` with `kind: phone`.                                                                                                                                                               |
+| Pairing                                             | `remotectl pair` and the app showed the same fingerprint; both confirmed; the computer is listed Online ([live-settings.png](native-app/live-settings.png)).                                                                  |
+| A real pending request                              | A `PermissionRequest` sent through the installed `hook.cjs` appears on Agents with its countdown ([live-agents.png](native-app/live-agents.png)) and on the session screen ([live-session.png](native-app/live-session.png)). |
+| Reconnect                                           | After the app is killed and relaunched it signs in again from the Keychain and shows the request.                                                                                                                             |
+
+Until the app has its own passkey (M4-04) it sends only what needs no assertion (Deny,
+handing back to the terminal); Allow, Always, answers and instructions say they need
+Face ID. The agent therefore records the phone without passkey keys and relies on the
+relay's check, as it says when pairing.
+
+### How to run (development builds)
+
+```sh
+pnpm --filter @remote-control/relay build
+# relay with RC_ORIGIN=http://localhost:3200 RC_RP_ID=localhost RC_PORT=3200 and your DB env
+node apps/relay/dist/admin.js invite                       # one-time invite code
+pnpm dev:session --relay http://localhost:3200 --invite <code>   # prints a session token
+```
+
+Deep links into Settings drive the app without typing (a headless simulator has no
+taps): `remotecontrol://settings?relay=<url>&token=<token>` signs in (development
+builds only), `remotecontrol://settings?pair=<code>` starts pairing, and in
+development builds `&confirm=<fingerprint>` confirms it when it matches what the app
+computed. The session token is a credential: keep it out of shell history and files
+that are committed.

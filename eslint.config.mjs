@@ -53,6 +53,7 @@ export default tseslint.config(
             'apps/relay/spike/*.js',
             'apps/web/vite.config.ts',
             'apps/web/scripts/*.mjs',
+            'apps/mobile/metro.config.js',
           ],
         },
         tsconfigRootDir: import.meta.dirname,
@@ -87,6 +88,16 @@ export default tseslint.config(
     languageOptions: {
       globals: { process: 'readonly', Buffer: 'readonly', URL: 'readonly' },
     },
+  },
+  {
+    // Metro loads its config as CommonJS (M4-03).
+    files: ['apps/mobile/metro.config.js'],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: { require: 'readonly', module: 'writable', __dirname: 'readonly' },
+    },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
   {
     // M0-03 device spike: plain browser scripts served as-is, outside the ports (no build,

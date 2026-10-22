@@ -19,6 +19,7 @@ const FLOORS: Record<string, Floor> = {
   'apps/relay': { lines: 90, branches: 85 },
   'apps/web': { lines: 80, branches: 70 },
   'apps/mobile': { lines: 90, branches: 85 },
+  'packages/phone-core': { lines: 80, branches: 70 },
   // 07 §5.13: test tooling sits on the agent/relay bar for lines.
   'packages/fake-claude-code': { lines: 90, branches: 85 },
   'packages/test-harness': { lines: 90 },

@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "node_modules/.cache/tsc",
+    "tsBuildInfoFile": "node_modules/.cache/tsc/tsconfig.tsbuildinfo",
+    // Platform-neutral: the PWA and React Native both provide fetch, AbortSignal and the
+    // WebSocket shape; the DOM lib supplies their types. Nothing here touches `document`.
+    "lib": ["ES2023", "DOM"],
+    "types": []
+  },
+  "include": ["src"],
+  "references": [{ "path": "../crypto" }, { "path": "../protocol" }]
+}

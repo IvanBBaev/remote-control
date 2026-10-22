@@ -1,14 +1,8 @@
+import type { CeremonyFailure } from '@remote-control/phone-core/auth/results';
+
 import { OfflineError, RelayError } from './relay-api.js';
 
-/** Why a passkey ceremony or its relay round trip did not complete. */
-export type CeremonyFailure =
-  /** The user dismissed the sheet, or another ceremony replaced this one. */
-  | 'cancelled'
-  | 'offline'
-  | 'rate_limited'
-  /** The relay refused with this `{ error }` code. */
-  | { readonly relay: string }
-  | 'failed';
+export type { CeremonyFailure } from '@remote-control/phone-core/auth/results';
 
 /**
  * `navigator.credentials` rejects with `NotAllowedError` when the user cancels or the

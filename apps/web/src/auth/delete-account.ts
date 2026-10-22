@@ -1,13 +1,11 @@
 import { accountDeletionChallenge, accountDeletionHash } from '@remote-control/protocol';
+import type { DeleteAccountResult } from '@remote-control/phone-core/auth/results';
 import { startAuthentication } from '@simplewebauthn/browser';
 
 import { classifyFailure } from './ceremony.js';
-import type { CeremonyFailure } from './ceremony.js';
 import type { RelayApi } from './relay-api.js';
 
-export type DeleteAccountResult =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly failure: CeremonyFailure | 'challenge_mismatch' };
+export type { DeleteAccountResult } from '@remote-control/phone-core/auth/results';
 
 class ChallengeMismatch extends Error {}
 
