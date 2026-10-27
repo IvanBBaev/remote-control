@@ -4,6 +4,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { type PushStatus, usePush } from '../../state/push';
 import { useInbox } from '../../state/store';
 import { Screen, Section } from '../../ui/screen';
 import { colors, mono } from '../../ui/theme';
@@ -216,7 +217,15 @@ function DeveloperRelay() {
   );
 }
 
+const PUSH_LABELS: Readonly<Record<PushStatus, string>> = {
+  off: 'When connected',
+  on: 'On',
+  denied: 'Not allowed',
+  failed: 'Not registered',
+};
+
 export default function SettingsScreen() {
+  const push = usePush((state) => state.status);
   const sample = useInbox((state) => state.sample);
   const sessions = useInbox((state) => state.sessions);
   const paired = useInbox((state) => state.machines);
@@ -243,7 +252,7 @@ export default function SettingsScreen() {
       </Section>
       {__DEV__ && <DeveloperRelay />}
       <Section title="Notifications">
-        <Row first label="Push notifications" value="M4-06" />
+        <Row first label="Push notifications" value={PUSH_LABELS[push]} />
         <Row label="Live Activity & Dynamic Island" value="M4-06" />
       </Section>
       <Section title="Security">

@@ -1,0 +1,12 @@
+{
+  "Simulator Target Bundle": "dev.ivanbaev.remotecontrol",
+  "aps": {
+    "alert": { "title": "Approval needed on MacBook", "body": "Tap to review." },
+    "sound": "default",
+    "category": "rc.pending",
+    "mutable-content": 1,
+    "interruption-level": "time-sensitive",
+    "thread-id": "fixture"
+  },
+  "rc": { "t": "pending", "rid": "r-api-1", "dev": "MacBook", "exp": null }
+}

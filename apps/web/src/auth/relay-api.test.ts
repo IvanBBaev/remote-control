@@ -89,6 +89,18 @@ describe('createRelayApi', () => {
     ]);
   });
 
+  it('stores and forgets an APNs token (M4-05)', async () => {
+    const fetchImpl = respond(204);
+    const api = createRelayApi(fetchImpl);
+    const token = 'ab'.repeat(32);
+    await expect(api.saveApnsToken({ token, environment: 'sandbox' })).resolves.toBeUndefined();
+    await expect(api.deleteApnsToken(token)).resolves.toBeUndefined();
+    expect(fetchImpl.mock.calls.map(([url, init]) => [init.method, url, init.body])).toEqual([
+      ['PUT', '/api/push/apns', JSON.stringify({ token, environment: 'sandbox' })],
+      ['DELETE', '/api/push/apns', JSON.stringify({ token })],
+    ]);
+  });
+
   it('revokes a device and deletes the account with DELETE (M1-10)', async () => {
     const fetchImpl = respond(204);
     const api = createRelayApi(fetchImpl);

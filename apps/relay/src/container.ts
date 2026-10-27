@@ -13,6 +13,7 @@ import { createScryptSecretHasher } from './adapters/scrypt-secret-hasher.js';
 import { createSimpleWebAuthn } from './adapters/simple-webauthn.js';
 import { createDrizzlePushSubscriptionStore } from './adapters/drizzle-push-subscription-store.js';
 import { createSentryReporter } from './adapters/sentry-reporter.js';
+import { createApnsSender } from './adapters/apns-sender.js';
 import { createWebPushSender } from './adapters/web-push-sender.js';
 import { createDrizzleDeviceDirectory } from './adapters/drizzle-device-directory.js';
 import { createDrizzleDeviceRegistry } from './adapters/drizzle-device-registry.js';
@@ -68,12 +69,14 @@ export interface Container {
           { readonly start: () => Promise<void>; readonly stop: () => Promise<void> } | undefined;
       }
     | undefined;
-  /** Web Push (M0-12); `undefined` without a database or VAPID keys. */
+  /** Web Push (M0-12) and APNs (M4-05); `undefined` without a database or any push keys. */
   readonly push:
     | {
         readonly notifier: PushNotifier;
         readonly store: PushSubscriptionStore;
-        readonly publicKey: string;
+        /** `undefined` without VAPID keys (APNs only). */
+        readonly publicKey: string | undefined;
+        readonly apns: boolean;
       }
     | undefined;
   /** Audit rows written by routing and push (M1-13); `undefined` without a database. */
@@ -130,23 +133,28 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
   const revocationStore = db && createDrizzleDeviceRevocations(db.orm);
   const auditLog = db && createDrizzleAuditLog(db.orm);
   const audit = auditLog && new AuditRecorder({ clock, store: auditLog, logger });
-  const pushStore = db && config.push && createDrizzlePushSubscriptionStore(db.orm);
+  const pushStore =
+    db && (config.push || config.apns) ? createDrizzlePushSubscriptionStore(db.orm) : undefined;
   const push = directory &&
-    pushStore &&
-    config.push && {
+    pushStore && {
       notifier: new PushNotifier({
         clock,
         directory,
         store: pushStore,
-        push: createWebPushSender(config.push),
+        ...(config.push && { push: createWebPushSender(config.push) }),
+        ...(config.apns && { apns: createApnsSender(config.apns) }),
         logger,
         ...(audit && { audit }),
       }),
       store: pushStore,
-      publicKey: config.push.publicKey,
+      publicKey: config.push?.publicKey,
+      apns: config.apns !== undefined,
     };
-  if (db !== undefined && push === undefined) {
+  if (db !== undefined && config.push === undefined) {
     logger.info({ event: 'push_disabled' }, 'web push disabled (RC_VAPID_* not set)');
+  }
+  if (db !== undefined && config.apns === undefined) {
+    logger.info({ event: 'apns_disabled' }, 'apns disabled (RC_APNS_* not set)');
   }
   const errors =
     config.sentry === undefined

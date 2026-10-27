@@ -17,6 +17,8 @@ const RELAY_METHODS = [
   'state',
   'pushKey',
   'savePushSubscription',
+  'saveApnsToken',
+  'deleteApnsToken',
   'revokeDevice',
   'deleteAccount',
 ] as const satisfies readonly (keyof RelayApi)[];

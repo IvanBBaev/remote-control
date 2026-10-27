@@ -2,10 +2,14 @@ import type { Clock } from '@remote-control/protocol';
 import type { Logger } from 'pino';
 
 import type { DeviceDirectory } from '../ports/device-directory.js';
-import type { PushPort } from '../ports/push.js';
-import type { PushSubscriptionStore } from '../ports/push-subscription-store.js';
+import type { ApnsPort, PushPort, PushResult } from '../ports/push.js';
+import type {
+  PushSubscriptionRecord,
+  PushSubscriptionStore,
+} from '../ports/push-subscription-store.js';
 import type { AuditSink, PendingRequestSink, UndeliveredEnvelope } from '../ports/relay-seams.js';
 import type { TrackedDelivery } from './ack-tracker.js';
+import { apnsExpiration, encodeApnsAlert } from './apns-payload.js';
 import { encodePendingPayload, pushTopic, pushTtlSeconds } from './push-payload.js';
 import { FixedWindowRateLimiter, type RateLimit } from './rate-limiter.js';
 
@@ -25,7 +29,10 @@ export interface PushNotifierDeps {
   readonly clock: Clock;
   readonly directory: DeviceDirectory;
   readonly store: PushSubscriptionStore;
-  readonly push: PushPort;
+  /** Web Push sender; `undefined` without VAPID keys (webpush rows are then skipped). */
+  readonly push?: PushPort;
+  /** APNs sender (M4-05); `undefined` without the `.p8` key (apns rows are then skipped). */
+  readonly apns?: ApnsPort;
   readonly logger: Logger;
   readonly limits?: PushLimits;
   /** Writes one `push_sent` audit row per notified phone (M1-13). */
@@ -44,8 +51,9 @@ interface PendingRequest {
 
 /**
  * The relay's {@link PendingRequestSink} (M0-12, D4, D5): a `cls: request` for a phone
- * with no live socket, or one that stayed unacked for 3 s, becomes a metadata-only Web
- * Push to each of that phone's subscriptions. Sending is fire-and-forget — the hub's
+ * with no live socket, or one that stayed unacked for 3 s, becomes a metadata-only push to
+ * each of that phone's subscriptions: Web Push for the PWA, an APNs alert for the native
+ * app (M4-05). Live Activity tokens (`apns_activity`) are not alerted. Sending is fire-and-forget — the hub's
  * routing path never waits for it — and best-effort: failures are logged (never the
  * endpoint, D19) and swallowed; 404/410 delete the subscription.
  */
@@ -113,25 +121,45 @@ export class PushNotifier implements PendingRequestSink {
       );
       return;
     }
-    const message = {
-      payload: encodePendingPayload(
-        request.envelopeId,
-        sender?.name ?? '',
-        request.expiresAt,
-        request.pushBlob,
-      ),
-      topic: pushTopic(request.envelopeId),
-      ttlSeconds,
-      urgency: 'high',
-    } as const;
+    const now = this.deps.clock.now();
+    const payload = encodePendingPayload(
+      request.envelopeId,
+      sender?.name ?? '',
+      request.expiresAt,
+      request.pushBlob,
+    );
+    const send = (subscription: PushSubscriptionRecord): Promise<PushResult> | undefined => {
+      if (subscription.kind === 'webpush') {
+        return this.deps.push?.send(subscription, {
+          payload,
+          topic: pushTopic(request.envelopeId),
+          ttlSeconds,
+          urgency: 'high',
+        });
+      }
+      if (subscription.kind === 'apns') {
+        return this.deps.apns?.send(
+          { token: subscription.endpoint, environment: subscription.environment },
+          {
+            payload: encodeApnsAlert(payload, request.from),
+            collapseId: request.envelopeId,
+            expiration: apnsExpiration(now, ttlSeconds),
+          },
+        );
+      }
+      return undefined;
+    };
     let sent = false;
     await Promise.all(
       subscriptions.map(async (subscription) => {
-        const result = await this.deps.push.send(subscription, message);
+        const pending = send(subscription);
+        if (pending === undefined) return;
+        const result = await pending;
         const fields = {
           event: 'push_sent',
           ...log,
           subscription: subscription.id,
+          kind: subscription.kind,
           result: result.kind,
         };
         if (result.kind === 'sent') {

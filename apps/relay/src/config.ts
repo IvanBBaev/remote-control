@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { parseApnsKey } from './adapters/apns-sender.js';
 import { parseSentryDsn, type SentryDsn } from './core/sentry-dsn.js';
 
 /** Empty strings in the environment mean "unset" (Railway and compose both produce them). */
@@ -40,6 +41,16 @@ const EnvSchema = z
     /** VAPID contact (`mailto:` or `https:`); defaults to an https `RC_ORIGIN`. */
     RC_VAPID_SUBJECT: optional(
       z.string().regex(/^(mailto:\S+|https:\/\/\S+)$/, 'must be a mailto: or https: URL'),
+    ),
+    /** APNs token-auth signing key (M4-05, ADR 0017): the `.p8` PEM, `\n` escapes allowed. */
+    RC_APNS_KEY: optional(
+      z.string().refine(isApnsKey, 'must be the PEM of an EC P-256 private key (.p8)'),
+    ),
+    RC_APNS_KEY_ID: optional(z.string().regex(/^[A-Z0-9]{10}$/, 'must be a 10-character key id')),
+    RC_APNS_TEAM_ID: optional(z.string().regex(/^[A-Z0-9]{10}$/, 'must be a 10-character team id')),
+    /** `apns-topic`: the native app's bundle id. */
+    RC_APNS_TOPIC: optional(
+      z.string().regex(/^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/, 'must be a bundle id'),
     ),
     /** Bearer token for `GET /api/admin/counters` (M1-13); unset = the route does not exist. */
     RC_ADMIN_TOKEN: optional(
@@ -104,6 +115,15 @@ const EnvSchema = z
         message: 'is required when RC_ORIGIN is not https',
       });
     }
+    const apns = [env.RC_APNS_KEY, env.RC_APNS_KEY_ID, env.RC_APNS_TEAM_ID, env.RC_APNS_TOPIC];
+    if (apns.some((value) => value === undefined) && apns.some((value) => value !== undefined)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['RC_APNS_KEY'],
+        message:
+          'RC_APNS_KEY, RC_APNS_KEY_ID, RC_APNS_TEAM_ID and RC_APNS_TOPIC must be set together',
+      });
+    }
     if (env.RC_SPIKE === '1' && env.RC_VAPID_PUBLIC === undefined) {
       ctx.addIssue({
         code: 'custom',
@@ -126,6 +146,15 @@ const EnvSchema = z
       });
     }
   });
+
+function isApnsKey(pem: string): boolean {
+  try {
+    parseApnsKey(pem);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'silent';
 
@@ -152,6 +181,15 @@ export interface Config {
   /** Web Push VAPID keys and contact; `undefined` disables push (M0-12). */
   readonly push:
     | { readonly publicKey: string; readonly privateKey: string; readonly subject: string }
+    | undefined;
+  /** APNs token auth (M4-05); `undefined` disables native-app alerts. */
+  readonly apns:
+    | {
+        readonly privateKey: string;
+        readonly keyId: string;
+        readonly teamId: string;
+        readonly topic: string;
+      }
     | undefined;
   /** Serve the M0-03 device spike (`RC_SPIKE=1`); implies `push`. */
   readonly spike: boolean;
@@ -198,6 +236,18 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
             privateKey: e.RC_VAPID_PRIVATE,
             // Checked above: without RC_VAPID_SUBJECT, RC_ORIGIN is set and https.
             subject: e.RC_VAPID_SUBJECT ?? new URL(e.RC_ORIGIN!).origin,
+          }
+        : undefined,
+    apns:
+      e.RC_APNS_KEY !== undefined &&
+      e.RC_APNS_KEY_ID !== undefined &&
+      e.RC_APNS_TEAM_ID !== undefined &&
+      e.RC_APNS_TOPIC !== undefined
+        ? {
+            privateKey: e.RC_APNS_KEY.replaceAll('\\n', '\n'),
+            keyId: e.RC_APNS_KEY_ID,
+            teamId: e.RC_APNS_TEAM_ID,
+            topic: e.RC_APNS_TOPIC,
           }
         : undefined,
     spike: e.RC_SPIKE === '1',

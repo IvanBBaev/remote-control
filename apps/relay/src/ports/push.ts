@@ -32,3 +32,31 @@ export type PushResult =
 export interface PushPort {
   send(target: PushTarget, message: PushMessage): Promise<PushResult>;
 }
+
+/** The APNs environment a device token belongs to; a development build gets sandbox tokens. */
+export type ApnsEnvironment = 'sandbox' | 'production';
+
+/** A native app's APNs device token (ADR 0017). */
+export interface ApnsTarget {
+  /** Hex device token; a capability, so it never appears in logs (D19). */
+  readonly token: string;
+  readonly environment: ApnsEnvironment;
+}
+
+/** One APNs alert; `payload` is the JSON body and carries metadata only (D5). */
+export interface ApnsMessage {
+  readonly payload: string;
+  /** `apns-collapse-id`: replaces an earlier notification for the same request. */
+  readonly collapseId: string;
+  /** `apns-expiration`, Unix epoch seconds; never in the past (callers skip instead). */
+  readonly expiration: number;
+}
+
+/**
+ * Sends one APNs alert with token-based provider auth (ES256 JWT from the `.p8` key).
+ * Production uses `adapters/apns-sender.ts`; it never throws, every failure is a
+ * `PushResult` (`gone` for an unregistered or foreign token).
+ */
+export interface ApnsPort {
+  send(target: ApnsTarget, message: ApnsMessage): Promise<PushResult>;
+}

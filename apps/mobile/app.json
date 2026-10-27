@@ -25,6 +25,7 @@
     "plugins": [
       "expo-router",
       "@bacons/apple-targets",
+      ["expo-notifications", { "mode": "development" }],
       [
         "expo-splash-screen",
         {

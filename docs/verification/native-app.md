@@ -120,3 +120,40 @@ The sample deadlines count from app launch, so relaunch the app before you run t
 **Not verified:** the Lock Screen accessory families compile and use the same views and
 links, but none was placed on a Lock Screen. A headless simulator cannot reliably drive the
 Lock Screen editor. This check is left for a device.
+
+## M4-05 — APNs and actionable notifications (2026-10-28)
+
+**Result: partial.** The relay half is verified by unit tests; the simulator run is
+blocked by the same CoreSimulator issue as M4-04.
+
+Relay (`apps/relay`): the APNs sender signs an ES256 provider token from the `.p8` in the
+environment and posts to the sandbox or production host the token was registered for
+(`push_subscriptions.kind`, migration 0004). Unit tests check the payload shape: a
+generic alert, `category: rc.pending`, `mutable-content: 1` and the metadata-only `rc`
+object (D5). They also check that config never echoes the `.p8` key (D19) and that a gone token
+(410) is deleted.
+
+App (`apps/mobile`): the app registers the APNs token with the relay when it goes live,
+shares each pairing's notification key with the Notification Service Extension through
+the App Group Keychain, and registers the categories. Pending requests get Allow, Review,
+Deny and Reply. Turn notices get Reply only. Every action that decides needs an unlocked
+phone. The extension (`targets/notification-service`) opens `rc.sum` with AES-GCM, using
+the AAD `rc/v1/push` + rid, and replaces the title, body and category. When the summary is
+missing or cannot be opened, it keeps the generic alert.
+
+### How to run
+
+```sh
+xcrun simctl push booted docs/verification/native-app/apns-pending.json
+```
+
+[apns-pending.json](native-app/apns-pending.json) carries no `rc.sum`, so it shows the
+generic alert with the action buttons. To see a decrypted summary, the push must come
+from a paired agent, because the summary is sealed with that pairing's key.
+
+**Not verified:**
+
+- The simulator run. CoreSimulator needs `sudo xcodebuild -runFirstLaunch`, and the
+  iOS SDK is not installed (see M4-04).
+- Per-option answer buttons. The summary carries no options, so a question is answered
+  by a Reply whose text matches an option label.

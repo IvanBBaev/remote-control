@@ -18,8 +18,10 @@ export interface PushRouteDeps {
   readonly store: PushSubscriptionStore;
   readonly clock: Clock;
   readonly limiter: FixedWindowRateLimiter;
-  /** VAPID public key served to the PWA as its `applicationServerKey`. */
-  readonly publicKey: string;
+  /** VAPID public key served to the PWA; absent → no Web Push routes (APNs only). */
+  readonly publicKey?: string | undefined;
+  /** `true` → the native app may register APNs tokens (M4-05). */
+  readonly apns?: boolean;
   /** Per-account limit on subscription requests. */
   readonly limit?: RateLimit;
   /** Which endpoints may be stored; default {@link isKnownPushService}. */
@@ -39,18 +41,28 @@ const subscriptionBody = z.object({
   }),
 });
 const unsubscribeBody = z.object({ endpoint });
+/** A native app's APNs device token (hex) and the environment its build talks to. */
+const apnsToken = z.string().regex(/^[0-9a-f]{64,200}$/);
+const apnsBody = z.object({
+  token: apnsToken,
+  environment: z.enum(['sandbox', 'production']),
+});
+const apnsDeleteBody = z.object({ token: apnsToken });
 
 const BODY_LIMIT = 4096;
 
 /**
- * Web Push registration for the PWA (M0-12). Every route needs the session cookie and a
- * phone device bound to that session; state changes also pass the origin guard (D8).
- * Endpoints are capabilities: they are stored but never returned or logged (D19).
+ * Push registration for the PWA (Web Push, M0-12) and the native app (APNs, M4-05). Every
+ * route needs the session cookie and a phone device bound to that session; state changes
+ * also pass the origin guard (D8). Endpoints and tokens are capabilities: they are stored
+ * but never returned or logged (D19).
  *
- * - `GET /api/push/key` → `{ publicKey }`
- * - `PUT /api/push/subscription` with `PushSubscription.toJSON()` → 204
- * - `GET /api/push/subscription` → `{ subscriptions: [{ id, createdAt, lastFailureAt }] }`
+ * - `GET /api/push/key` → `{ publicKey }` (VAPID configured)
+ * - `PUT /api/push/subscription` with `PushSubscription.toJSON()` → 204 (VAPID configured)
+ * - `GET /api/push/subscription` → `{ subscriptions: [{ id, kind, createdAt, lastFailureAt }] }`
  * - `DELETE /api/push/subscription` with `{ endpoint }` → 204
+ * - `PUT /api/push/apns` with `{ token, environment }` → 204 (APNs configured)
+ * - `DELETE /api/push/apns` with `{ token }` → 204 (APNs configured)
  */
 export function registerPushRoutes(app: FastifyInstance, deps: PushRouteDeps): void {
   const limit = deps.limit ?? DEFAULT_LIMIT;
@@ -85,43 +97,90 @@ export function registerPushRoutes(app: FastifyInstance, deps: PushRouteDeps): v
     return device;
   };
 
-  app.get('/api/push/key', async (request, reply) => {
-    const device = await phone(request, reply);
-    if (device === undefined) return reply;
-    return reply.header('cache-control', 'no-store').send({ publicKey: deps.publicKey });
-  });
+  const { publicKey } = deps;
+  if (publicKey !== undefined) {
+    app.get('/api/push/key', async (request, reply) => {
+      const device = await phone(request, reply);
+      if (device === undefined) return reply;
+      return reply.header('cache-control', 'no-store').send({ publicKey });
+    });
+  }
 
-  app.put('/api/push/subscription', { bodyLimit: BODY_LIMIT }, async (request, reply) => {
-    const device = await phone(request, reply);
-    if (device === undefined) return reply;
-    const parsed = subscriptionBody.safeParse(request.body);
-    if (!parsed.success || !allowEndpoint(parsed.data.endpoint)) {
-      return reply.code(400).send({ error: 'bad_subscription' });
-    }
-    const result = await deps.store.save(
-      {
-        userId: device.userId,
-        deviceId: device.deviceId,
-        endpoint: parsed.data.endpoint,
-        p256dh: parsed.data.keys.p256dh,
-        auth: parsed.data.keys.auth,
-      },
-      MAX_SUBSCRIPTIONS_PER_DEVICE,
-      deps.clock.now(),
-    );
-    if (result === 'taken') return reply.code(409).send({ error: 'endpoint_taken' });
-    request.log.info(
-      { event: 'push_subscribed', device: device.deviceId },
-      'push subscription saved',
-    );
-    return reply.code(204).send();
-  });
+  if (deps.apns === true) {
+    app.put('/api/push/apns', { bodyLimit: BODY_LIMIT }, async (request, reply) => {
+      const device = await phone(request, reply);
+      if (device === undefined) return reply;
+      const parsed = apnsBody.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: 'bad_token' });
+      const result = await deps.store.save(
+        {
+          kind: 'apns',
+          userId: device.userId,
+          deviceId: device.deviceId,
+          endpoint: parsed.data.token,
+          environment: parsed.data.environment,
+        },
+        MAX_SUBSCRIPTIONS_PER_DEVICE,
+        deps.clock.now(),
+      );
+      if (result === 'taken') return reply.code(409).send({ error: 'endpoint_taken' });
+      request.log.info(
+        { event: 'push_subscribed', device: device.deviceId, kind: 'apns' },
+        'apns token saved',
+      );
+      return reply.code(204).send();
+    });
+
+    app.delete('/api/push/apns', { bodyLimit: BODY_LIMIT }, async (request, reply) => {
+      const device = await phone(request, reply);
+      if (device === undefined) return reply;
+      const parsed = apnsDeleteBody.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: 'bad_token' });
+      if (await deps.store.removeEndpoint(device.deviceId, parsed.data.token)) {
+        request.log.info(
+          { event: 'push_unsubscribed', device: device.deviceId, kind: 'apns' },
+          'apns token deleted',
+        );
+      }
+      return reply.code(204).send();
+    });
+  }
+
+  if (publicKey !== undefined) {
+    app.put('/api/push/subscription', { bodyLimit: BODY_LIMIT }, async (request, reply) => {
+      const device = await phone(request, reply);
+      if (device === undefined) return reply;
+      const parsed = subscriptionBody.safeParse(request.body);
+      if (!parsed.success || !allowEndpoint(parsed.data.endpoint)) {
+        return reply.code(400).send({ error: 'bad_subscription' });
+      }
+      const result = await deps.store.save(
+        {
+          kind: 'webpush',
+          userId: device.userId,
+          deviceId: device.deviceId,
+          endpoint: parsed.data.endpoint,
+          p256dh: parsed.data.keys.p256dh,
+          auth: parsed.data.keys.auth,
+        },
+        MAX_SUBSCRIPTIONS_PER_DEVICE,
+        deps.clock.now(),
+      );
+      if (result === 'taken') return reply.code(409).send({ error: 'endpoint_taken' });
+      request.log.info(
+        { event: 'push_subscribed', device: device.deviceId },
+        'push subscription saved',
+      );
+      return reply.code(204).send();
+    });
+  }
 
   app.get('/api/push/subscription', async (request, reply) => {
     const device = await phone(request, reply);
     if (device === undefined) return reply;
     const subscriptions = (await deps.store.listForDevice(device.deviceId)).map((row) => ({
       id: row.id,
+      kind: row.kind,
       createdAt: row.createdAt,
       lastFailureAt: row.lastFailureAt,
     }));

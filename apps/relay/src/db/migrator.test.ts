@@ -35,9 +35,9 @@ describe('migrateWithLock on PGlite (forward-only, idempotent)', () => {
 
   it('applies the shipped migrations once and is a no-op on the next boot', async () => {
     const db = createPgliteDb(client, { migrationsFolder: MIGRATIONS_DIR });
-    expect(await db.migrate()).toEqual({ applied: 4, total: 4 });
-    expect(await db.migrate()).toEqual({ applied: 0, total: 4 });
-    expect(await historyRows(client)).toBe(4);
+    expect(await db.migrate()).toEqual({ applied: 5, total: 5 });
+    expect(await db.migrate()).toEqual({ applied: 0, total: 5 });
+    expect(await historyRows(client)).toBe(5);
     expect(await db.check()).toBe('ok');
     const users = await client.query('SELECT count(*) FROM users');
     expect(users.rows).toHaveLength(1);
@@ -51,8 +51,8 @@ describe('migrateWithLock on PGlite (forward-only, idempotent)', () => {
       fixture.newestWhen() + 1000,
       'CREATE TABLE "probe" ("id" integer PRIMARY KEY);',
     );
-    expect(await db.migrate()).toEqual({ applied: 1, total: 5 });
-    expect(await db.migrate()).toEqual({ applied: 0, total: 5 });
+    expect(await db.migrate()).toEqual({ applied: 1, total: 6 });
+    expect(await db.migrate()).toEqual({ applied: 0, total: 6 });
   });
 
   it('refuses a migration that was edited after it was applied', async () => {
@@ -67,7 +67,7 @@ describe('migrateWithLock on PGlite (forward-only, idempotent)', () => {
     await db.migrate();
     fixture.add('0001_in_the_past', fixture.newestWhen() - 1000, 'SELECT 1;');
     await expect(db.migrate()).rejects.toThrow(/older than the newest applied/);
-    expect(await historyRows(client)).toBe(4);
+    expect(await historyRows(client)).toBe(5);
   });
 
   it('rolls back a failing migration and releases the lock', async () => {
@@ -79,7 +79,7 @@ describe('migrateWithLock on PGlite (forward-only, idempotent)', () => {
       'CREATE TABLE "half" ("id" integer);\n--> statement-breakpoint\nSELECT * FROM missing_table;',
     );
     await expect(db.migrate()).rejects.toThrow();
-    expect(await historyRows(client)).toBe(4);
+    expect(await historyRows(client)).toBe(5);
     const half = await client.query<{ t: string | null }>("SELECT to_regclass('half') AS t");
     expect(half.rows[0]?.t).toBeNull();
     const locks = await client.query("SELECT 1 FROM pg_locks WHERE locktype = 'advisory'");

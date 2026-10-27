@@ -71,6 +71,12 @@ export interface PushSubscriptionInput {
   readonly keys: { readonly p256dh: string; readonly auth: string };
 }
 
+/** A native app's APNs device token (hex) and the APNs environment of its build (M4-05). */
+export interface ApnsTokenInput {
+  readonly token: string;
+  readonly environment: 'sandbox' | 'production';
+}
+
 /** The relay's HTTP endpoints, as the PWA calls them. */
 export interface RelayApi {
   registerOptions(input: {
@@ -97,6 +103,10 @@ export interface RelayApi {
   pushKey(): Promise<{ publicKey: string }>;
   /** Stores this phone's push subscription; 409 `endpoint_taken` if another phone has it. */
   savePushSubscription(subscription: PushSubscriptionInput): Promise<void>;
+  /** Stores this phone's APNs token (native app, M4-05); 409 `endpoint_taken` likewise. */
+  saveApnsToken(input: ApnsTokenInput): Promise<void>;
+  /** Forgets an APNs token of this phone, e.g. after the user turned notifications off. */
+  deleteApnsToken(token: string): Promise<void>;
   /** Revokes a device of this account (M1-10); 404 `unknown_device` if it is gone. */
   revokeDevice(deviceId: string): Promise<void>;
   /**
@@ -187,6 +197,12 @@ export function createRelayApi(
     pushKey: () => json('GET', '/api/push/key'),
     async savePushSubscription(subscription) {
       await call('PUT', '/api/push/subscription', subscription);
+    },
+    async saveApnsToken(input) {
+      await call('PUT', '/api/push/apns', input);
+    },
+    async deleteApnsToken(token) {
+      await call('DELETE', '/api/push/apns', { token });
     },
     async revokeDevice(deviceId) {
       await call('DELETE', `/api/devices/${encodeURIComponent(deviceId)}`);

@@ -2,14 +2,20 @@ import { and, asc, eq, inArray } from 'drizzle-orm';
 
 import { devices, pushSubscriptions } from '../db/schema.js';
 import type { RelayDatabase } from '../ports/db.js';
-import type { PushSubscriptionStore } from '../ports/push-subscription-store.js';
+import type { ApnsEnvironment } from '../ports/push.js';
+import type {
+  PushSubscriptionRecord,
+  PushSubscriptionStore,
+} from '../ports/push-subscription-store.js';
 
 const columns = {
   id: pushSubscriptions.id,
   deviceId: pushSubscriptions.deviceId,
+  kind: pushSubscriptions.kind,
   endpoint: pushSubscriptions.endpoint,
   p256dh: pushSubscriptions.p256dh,
   auth: pushSubscriptions.auth,
+  apnsEnvironment: pushSubscriptions.apnsEnvironment,
   createdAt: pushSubscriptions.createdAt,
   lastFailureAt: pushSubscriptions.lastFailureAt,
 };
@@ -25,10 +31,14 @@ export function createDrizzlePushSubscriptionStore(orm: RelayDatabase): PushSubs
           .innerJoin(devices, eq(devices.id, pushSubscriptions.deviceId))
           .where(eq(pushSubscriptions.endpoint, subscription.endpoint));
         if (existing !== undefined && existing.userId !== subscription.userId) return 'taken';
+        const keys =
+          subscription.kind === 'webpush'
+            ? { p256dh: subscription.p256dh, auth: subscription.auth, apnsEnvironment: null }
+            : { p256dh: null, auth: null, apnsEnvironment: subscription.environment };
         const values = {
           deviceId: subscription.deviceId,
-          p256dh: subscription.p256dh,
-          auth: subscription.auth,
+          kind: subscription.kind,
+          ...keys,
           createdAt: new Date(now),
           lastFailureAt: null,
         };
@@ -43,7 +53,12 @@ export function createDrizzlePushSubscriptionStore(orm: RelayDatabase): PushSubs
         const rows = await tx
           .select({ id: pushSubscriptions.id, endpoint: pushSubscriptions.endpoint })
           .from(pushSubscriptions)
-          .where(eq(pushSubscriptions.deviceId, subscription.deviceId))
+          .where(
+            and(
+              eq(pushSubscriptions.deviceId, subscription.deviceId),
+              eq(pushSubscriptions.kind, subscription.kind),
+            ),
+          )
           .orderBy(asc(pushSubscriptions.createdAt), asc(pushSubscriptions.id));
         const surplus = rows
           .filter((row) => row.endpoint !== subscription.endpoint)
@@ -62,11 +77,10 @@ export function createDrizzlePushSubscriptionStore(orm: RelayDatabase): PushSubs
         .from(pushSubscriptions)
         .where(eq(pushSubscriptions.deviceId, deviceId))
         .orderBy(asc(pushSubscriptions.createdAt), asc(pushSubscriptions.id));
-      return rows.map((row) => ({
-        ...row,
-        createdAt: row.createdAt.getTime(),
-        lastFailureAt: row.lastFailureAt === null ? null : row.lastFailureAt.getTime(),
-      }));
+      return rows.flatMap((row) => {
+        const record = toRecord(row);
+        return record === undefined ? [] : [record];
+      });
     },
 
     async removeEndpoint(deviceId, endpoint) {
@@ -90,4 +104,38 @@ export function createDrizzlePushSubscriptionStore(orm: RelayDatabase): PushSubs
         .where(eq(pushSubscriptions.id, id));
     },
   };
+}
+
+type Row = {
+  readonly id: string;
+  readonly deviceId: string;
+  readonly kind: string;
+  readonly endpoint: string;
+  readonly p256dh: string | null;
+  readonly auth: string | null;
+  readonly apnsEnvironment: string | null;
+  readonly createdAt: Date;
+  readonly lastFailureAt: Date | null;
+};
+
+/** Maps a row to its kind; the table's check constraint makes `undefined` unreachable. */
+function toRecord(row: Row): PushSubscriptionRecord | undefined {
+  const stored = {
+    id: row.id,
+    deviceId: row.deviceId,
+    endpoint: row.endpoint,
+    createdAt: row.createdAt.getTime(),
+    lastFailureAt: row.lastFailureAt === null ? null : row.lastFailureAt.getTime(),
+  };
+  if (row.kind === 'webpush' && row.p256dh !== null && row.auth !== null) {
+    return { ...stored, kind: 'webpush', p256dh: row.p256dh, auth: row.auth };
+  }
+  if (
+    (row.kind === 'apns' || row.kind === 'apns_activity') &&
+    (row.apnsEnvironment === 'sandbox' || row.apnsEnvironment === 'production')
+  ) {
+    const environment: ApnsEnvironment = row.apnsEnvironment;
+    return { ...stored, kind: row.kind, environment };
+  }
+  return undefined;
 }

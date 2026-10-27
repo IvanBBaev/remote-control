@@ -1,4 +1,4 @@
-import { createRelayApi } from '@remote-control/phone-core/auth/relay-api';
+import { createRelayApi, type RelayApi } from '@remote-control/phone-core/auth/relay-api';
 import type { AssertDecisionResult } from '@remote-control/phone-core/auth/results';
 import { createPhoneService } from '@remote-control/phone-core/realtime/phone';
 import type { PhoneService } from '@remote-control/phone-core/realtime/phone';
@@ -29,6 +29,7 @@ import type { DecisionInput } from '../core/inbox';
 /** A signed-in phone service on a relay, connected. */
 export interface LivePhone {
   readonly phone: PhoneService;
+  readonly relay: RelayApi;
   readonly userId: string;
 }
 
@@ -51,7 +52,7 @@ export async function startLivePhone(connection: RelayConnection): Promise<LiveP
   const session = await relay.session();
   if (session === null) throw new Error('The relay does not accept this session token.');
   await phone.connect(session.userId);
-  return { phone, userId: session.userId };
+  return { phone, relay, userId: session.userId };
 }
 
 function machineOfSession(state: RealtimeState, sessionId: string): string | undefined {

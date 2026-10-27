@@ -1,6 +1,7 @@
 // WebCrypto has no scrypt, and 02 §5.5 asks for an scrypt hash of the recovery code.
-// This relay-only adapter is the single exception to the WebCrypto-only rule; it never
-// runs in the browser and handles no E2E material (D3 covers phone ↔ agent crypto).
+// This relay-only adapter is, with the APNs sender, an exception to the WebCrypto-only
+// rule; it never runs in the browser and handles no E2E material (D3 covers phone ↔ agent
+// crypto).
 // eslint-disable-next-line no-restricted-imports -- scrypt is not available in WebCrypto.
 import { scrypt, timingSafeEqual } from 'node:crypto';
 

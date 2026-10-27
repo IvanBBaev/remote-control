@@ -2,7 +2,7 @@ import { createLogger, createMemoryDestination } from '@remote-control/log';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { DeviceDirectory, DeviceRecord } from '../ports/device-directory.js';
-import type { PushPort, PushResult } from '../ports/push.js';
+import type { ApnsPort, PushPort, PushResult } from '../ports/push.js';
 import type {
   PushSubscriptionRecord,
   PushSubscriptionStore,
@@ -127,7 +127,7 @@ function device(id: string, kind: DeviceRecord['kind'], extra: Partial<DeviceRec
   };
 }
 
-function setup(options: { limits?: PushLimits; result?: PushResult } = {}) {
+function setup(options: { limits?: PushLimits; result?: PushResult; withoutApns?: boolean } = {}) {
   const pushSent = vi.fn<(userId: string, phoneDeviceId: string) => void>();
   const time = createFakeTime();
   const logs = createMemoryDestination();
@@ -138,6 +138,7 @@ function setup(options: { limits?: PushLimits; result?: PushResult } = {}) {
   const subscriptions: PushSubscriptionRecord[] = [
     {
       id: 'sub-1',
+      kind: 'webpush',
       deviceId: PHONE,
       endpoint: 'https://fcm.googleapis.com/fcm/send/secret-endpoint-1',
       p256dh: 'BPUB',
@@ -155,11 +156,15 @@ function setup(options: { limits?: PushLimits; result?: PushResult } = {}) {
     markFailure,
   } as unknown as PushSubscriptionStore;
   const send = vi.fn<PushPort['send']>(() => Promise.resolve(options.result ?? { kind: 'sent' }));
+  const apnsSend = vi.fn<ApnsPort['send']>(() =>
+    Promise.resolve(options.result ?? { kind: 'sent' }),
+  );
   const notifier = new PushNotifier({
     clock: time.clock,
     directory,
     store,
     push: { send },
+    ...(options.withoutApns === true ? {} : { apns: { send: apnsSend } }),
     logger,
     audit: { pushSent },
     ...(options.limits === undefined ? {} : { limits: options.limits }),
@@ -182,11 +187,96 @@ function setup(options: { limits?: PushLimits; result?: PushResult } = {}) {
     remove,
     markFailure,
     send,
+    apnsSend,
     notifier,
     request,
     pushSent,
   };
 }
+
+const APNS_TOKEN = 'ab'.repeat(32);
+
+describe('PushNotifier with APNs subscriptions (M4-05, D5)', () => {
+  function withApns(options: Parameters<typeof setup>[0] = {}) {
+    const context = setup(options);
+    context.subscriptions.push(
+      {
+        id: 'sub-apns',
+        kind: 'apns',
+        deviceId: PHONE,
+        endpoint: APNS_TOKEN,
+        environment: 'sandbox',
+        createdAt: 0,
+        lastFailureAt: null,
+      },
+      {
+        id: 'sub-activity',
+        kind: 'apns_activity',
+        deviceId: PHONE,
+        endpoint: 'cd'.repeat(32),
+        environment: 'sandbox',
+        createdAt: 0,
+        lastFailureAt: null,
+      },
+    );
+    return context;
+  }
+
+  it('sends a metadata-only alert to the app token and Web Push to the PWA', async () => {
+    const { notifier, send, apnsSend, request, logs, time } = withApns();
+    const envelope = { ...request(1), pushBlob: 'U0VBTEVE' };
+    notifier.undelivered(envelope);
+    await notifier.idle();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(apnsSend).toHaveBeenCalledTimes(1);
+    const [target, message] = apnsSend.mock.calls[0]!;
+    expect(target).toEqual({ token: APNS_TOKEN, environment: 'sandbox' });
+    expect(message.collapseId).toBe(envelope.envelopeId);
+    expect(message.expiration).toBe(Math.floor(time.clock.now() / 1000) + 120);
+    expect(JSON.parse(message.payload)).toEqual({
+      aps: {
+        alert: { title: 'Approval needed on mac-studio', body: 'Tap to review.' },
+        sound: 'default',
+        category: 'rc.pending',
+        'mutable-content': 1,
+        'interruption-level': 'time-sensitive',
+        'thread-id': AGENT,
+      },
+      rc: {
+        t: 'pending',
+        rid: envelope.envelopeId,
+        dev: 'mac-studio',
+        exp: time.clock.now() + 120_000,
+        sum: 'U0VBTEVE',
+      },
+    });
+    const lines = logs.lines().join('\n');
+    expect(lines).toContain('"kind":"apns"');
+    expect(lines).not.toContain(APNS_TOKEN);
+    expect(lines).not.toContain('U0VBTEVE');
+  });
+
+  it('never alerts a Live Activity token', async () => {
+    const { notifier, apnsSend, request } = withApns();
+    notifier.undelivered(request(1));
+    await notifier.idle();
+    expect(apnsSend.mock.calls.map(([target]) => target.token)).toEqual([APNS_TOKEN]);
+  });
+
+  it('deletes a gone token and skips APNs rows when APNs is not configured', async () => {
+    const gone = withApns({ result: { kind: 'gone' } });
+    gone.notifier.undelivered(gone.request(1));
+    await gone.notifier.idle();
+    expect(gone.remove.mock.calls.map(([id]) => id).sort()).toEqual(['sub-1', 'sub-apns']);
+
+    const off = withApns({ withoutApns: true });
+    off.notifier.undelivered(off.request(1));
+    await off.notifier.idle();
+    expect(off.apnsSend).not.toHaveBeenCalled();
+    expect(off.send).toHaveBeenCalledTimes(1);
+    expect(off.remove).not.toHaveBeenCalled();
+  });
+});
 
 describe('PushNotifier (M0-12, D4, D5)', () => {
   it('writes one push_sent audit row per notified phone, none when nothing was sent (M1-13)', async () => {

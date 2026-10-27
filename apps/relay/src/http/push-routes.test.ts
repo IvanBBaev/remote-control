@@ -6,6 +6,7 @@ import {
   createMemoryDestination,
   type MemoryDestination,
 } from '@remote-control/log';
+import { sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -28,7 +29,7 @@ import { RelayRouter } from '../core/relay-router.js';
 import { agentTokens, devices, sessions, users } from '../db/schema.js';
 import { MIGRATIONS_DIR } from '../package-paths.js';
 import type { Db } from '../ports/db.js';
-import type { PushTarget } from '../ports/push.js';
+import type { ApnsMessage, ApnsTarget, PushResult, PushTarget } from '../ports/push.js';
 import type { PushSubscriptionStore } from '../ports/push-subscription-store.js';
 import { FakePushService } from '../testing/fake-push-service.js';
 import { createFakeTime, type FakeTime } from '../testing/fake-time.js';
@@ -77,7 +78,17 @@ afterEach(async () => {
 });
 
 /** A relay wired like `container.ts`: real router, notifier, web-push sender, audit log. */
-async function startRelay(options: { admin?: boolean } = {}): Promise<Relay> {
+/** Every alert the fake APNs port received, and what it answers next. */
+const apnsSent: { target: ApnsTarget; message: ApnsMessage }[] = [];
+let apnsResult: PushResult = { kind: 'sent' };
+afterEach(() => {
+  apnsSent.length = 0;
+  apnsResult = { kind: 'sent' };
+});
+
+async function startRelay(
+  options: { admin?: boolean; vapid?: boolean; apns?: boolean } = {},
+): Promise<Relay> {
   const time = createFakeTime();
   const logs = createMemoryDestination();
   const logger = createLogger({ level: 'info', destination: logs });
@@ -90,6 +101,12 @@ async function startRelay(options: { admin?: boolean } = {}): Promise<Relay> {
     directory,
     store,
     push: createWebPushSender(vapid),
+    apns: {
+      send: (target, message) => {
+        apnsSent.push({ target, message });
+        return Promise.resolve(apnsResult);
+      },
+    },
     logger,
     audit,
   });
@@ -122,7 +139,8 @@ async function startRelay(options: { admin?: boolean } = {}): Promise<Relay> {
     // The fake push service is plain http on 127.0.0.1; production keeps the allow-list.
     push: {
       store,
-      publicKey: vapid.publicKey,
+      ...(options.vapid !== false && { publicKey: vapid.publicKey }),
+      apns: options.apns !== false,
       allowEndpoint: (url) => url.startsWith(service.origin),
     },
     ...(options.admin === true && { admin: { token: ADMIN_TOKEN, stats: auditLog } }),
@@ -213,11 +231,18 @@ describe('drizzle push subscription store (M0-12)', () => {
     const userId = await addUser();
     const phoneA = await addDevice(userId, 'phone', 'A', now);
     const phoneB = await addDevice(userId, 'phone', 'B', now);
-    const sub = { userId, endpoint: `https://x.test/${unique()}`, p256dh: 'P1', auth: 'A1' };
+    const sub = {
+      kind: 'webpush' as const,
+      userId,
+      endpoint: `https://x.test/${unique()}`,
+      p256dh: 'P1',
+      auth: 'A1',
+    };
     expect(await store.save({ ...sub, deviceId: phoneA }, 5, now)).toBe('saved');
     expect(await store.listForDevice(phoneA)).toEqual([
       {
         id: expect.any(String) as unknown,
+        kind: 'webpush',
         deviceId: phoneA,
         endpoint: sub.endpoint,
         p256dh: 'P1',
@@ -249,14 +274,18 @@ describe('drizzle push subscription store (M0-12)', () => {
     const phone = await addDevice(userId, 'phone', 'A', 0);
     const endpoints = [1, 2, 3, 4].map(() => `https://x.test/${unique()}`);
     for (const [index, endpoint] of endpoints.entries()) {
-      await store.save({ userId, deviceId: phone, endpoint, p256dh: 'P', auth: 'A' }, 3, index);
+      await store.save(
+        { kind: 'webpush', userId, deviceId: phone, endpoint, p256dh: 'P', auth: 'A' },
+        3,
+        index,
+      );
     }
     expect((await store.listForDevice(phone)).map((row) => row.endpoint)).toEqual(
       endpoints.slice(1),
     );
     // Refreshing the oldest one makes it the newest instead of evicting it.
     await store.save(
-      { userId, deviceId: phone, endpoint: endpoints[1]!, p256dh: 'P', auth: 'A' },
+      { kind: 'webpush', userId, deviceId: phone, endpoint: endpoints[1]!, p256dh: 'P', auth: 'A' },
       3,
       9,
     );
@@ -272,11 +301,19 @@ describe('drizzle push subscription store (M0-12)', () => {
     const phone = await addDevice(userId, 'phone', 'A', 0);
     const other = await addDevice(userId, 'phone', 'B', 0);
     const endpoint = `https://x.test/${unique()}`;
-    await store.save({ userId, deviceId: phone, endpoint, p256dh: 'P', auth: 'A' }, 5, 0);
+    await store.save(
+      { kind: 'webpush', userId, deviceId: phone, endpoint, p256dh: 'P', auth: 'A' },
+      5,
+      0,
+    );
     expect(await store.removeEndpoint(other, endpoint)).toBe(false);
     expect(await store.removeEndpoint(phone, endpoint)).toBe(true);
     expect(await store.removeEndpoint(phone, endpoint)).toBe(false);
-    await store.save({ userId, deviceId: phone, endpoint, p256dh: 'P', auth: 'A' }, 5, 0);
+    await store.save(
+      { kind: 'webpush', userId, deviceId: phone, endpoint, p256dh: 'P', auth: 'A' },
+      5,
+      0,
+    );
     await store.remove((await store.listForDevice(phone))[0]!.id);
     expect(await store.listForDevice(phone)).toEqual([]);
   });
@@ -314,7 +351,7 @@ describe('push subscription routes (M0-12, D8, D19)', () => {
     expect(list.statusCode).toBe(200);
     const body = list.json<{ subscriptions: { id: string }[] }>();
     expect(body.subscriptions).toEqual([
-      { id: expect.any(String) as unknown, createdAt: now, lastFailureAt: null },
+      { id: expect.any(String) as unknown, kind: 'webpush', createdAt: now, lastFailureAt: null },
     ]);
     expect(list.body).not.toContain(target.endpoint);
 
@@ -709,5 +746,185 @@ describe('audit log and admin counters (M1-13, 03 W12, D19)', () => {
     expect(lines).toContain('"err":"TypeError"');
     assertNoCanary(logs.lines(), ['canary-db-detail']);
     await createDrizzleAuditLog(db.orm).append([]);
+  });
+});
+
+const APNS_TOKEN = () => unique().toString(16).padStart(64, 'a');
+
+describe('APNs token store and routes (M4-05, D19)', () => {
+  it('stores an APNs token next to a Web Push subscription of the same phone', async () => {
+    const userId = await addUser();
+    const phone = await addDevice(userId, 'phone', 'A', 0);
+    const token = APNS_TOKEN();
+    await store.save(
+      {
+        kind: 'webpush',
+        userId,
+        deviceId: phone,
+        endpoint: `https://x.test/${unique()}`,
+        p256dh: 'P',
+        auth: 'A',
+      },
+      1,
+      0,
+    );
+    await store.save(
+      { kind: 'apns', userId, deviceId: phone, endpoint: token, environment: 'sandbox' },
+      1,
+      1,
+    );
+    // The cap is per kind: one APNs token does not evict the browser subscription.
+    expect((await store.listForDevice(phone)).map((row) => row.kind)).toEqual(['webpush', 'apns']);
+    expect((await store.listForDevice(phone))[1]).toEqual({
+      id: expect.any(String) as unknown,
+      kind: 'apns',
+      deviceId: phone,
+      endpoint: token,
+      environment: 'sandbox',
+      createdAt: 1,
+      lastFailureAt: null,
+    });
+  });
+
+  it('rejects rows that mix Web Push keys and APNs fields (check constraint)', async () => {
+    const userId = await addUser();
+    const phone = await addDevice(userId, 'phone', 'A', 0);
+    await expect(
+      db.orm.execute(
+        sql`insert into push_subscriptions (device_id, kind, endpoint, p256dh, auth, apns_environment) values (${phone}, 'apns', ${APNS_TOKEN()}, 'P', 'A', 'sandbox')`,
+      ),
+    ).rejects.toThrow();
+    await expect(
+      db.orm.execute(
+        sql`insert into push_subscriptions (device_id, kind, endpoint) values (${phone}, 'webpush', ${`https://x.test/${unique()}`})`,
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('registers, lists and deletes an APNs token without echoing it', async () => {
+    const relay = await startRelay();
+    const now = relay.time.clock.now();
+    const phone = await addPhone(await addUser(), now);
+    const token = APNS_TOKEN();
+    const put = await relay.app.inject({
+      method: 'PUT',
+      url: '/api/push/apns',
+      headers: phone.headers,
+      payload: { token, environment: 'production' },
+    });
+    expect(put.statusCode).toBe(204);
+    const list = await relay.app.inject({
+      method: 'GET',
+      url: '/api/push/subscription',
+      headers: phone.headers,
+    });
+    expect(list.json()).toEqual({
+      subscriptions: [
+        { id: expect.any(String) as unknown, kind: 'apns', createdAt: now, lastFailureAt: null },
+      ],
+    });
+    expect(list.body).not.toContain(token);
+    expect(relay.logs.lines().join('\n')).not.toContain(token);
+
+    const del = await relay.app.inject({
+      method: 'DELETE',
+      url: '/api/push/apns',
+      headers: phone.headers,
+      payload: { token },
+    });
+    expect(del.statusCode).toBe(204);
+    expect(await store.listForDevice(phone.deviceId)).toEqual([]);
+  });
+
+  it("refuses malformed tokens, other users' tokens and unauthenticated calls", async () => {
+    const relay = await startRelay();
+    const now = relay.time.clock.now();
+    const phone = await addPhone(await addUser(), now);
+    for (const payload of [
+      { token: 'not-hex', environment: 'sandbox' },
+      { token: 'ab'.repeat(16), environment: 'sandbox' },
+      { token: APNS_TOKEN(), environment: 'staging' },
+      { token: APNS_TOKEN().toUpperCase(), environment: 'sandbox' },
+    ]) {
+      const response = await relay.app.inject({
+        method: 'PUT',
+        url: '/api/push/apns',
+        headers: phone.headers,
+        payload,
+      });
+      expect(response.statusCode).toBe(400);
+    }
+    const token = APNS_TOKEN();
+    const put = (headers: Record<string, string>) =>
+      relay.app.inject({
+        method: 'PUT',
+        url: '/api/push/apns',
+        headers,
+        payload: { token, environment: 'sandbox' },
+      });
+    expect((await put(phone.headers)).statusCode).toBe(204);
+    const stranger = await addPhone(await addUser(), now);
+    expect((await put(stranger.headers)).statusCode).toBe(409);
+    const { cookie: _cookie, ...anonymous } = phone.headers;
+    expect((await put(anonymous)).statusCode).toBe(401);
+  });
+
+  it('registers only the routes whose push service is configured', async () => {
+    const apnsOnly = await startRelay({ vapid: false });
+    const webOnly = await startRelay({ apns: false });
+    const phone = await addPhone(await addUser(), apnsOnly.time.clock.now());
+    const status = async (relay: Relay, method: 'GET' | 'PUT', url: string) =>
+      (
+        await relay.app.inject({
+          method,
+          url,
+          headers: phone.headers,
+          payload: method === 'PUT' ? {} : undefined,
+        })
+      ).statusCode;
+    expect(await status(apnsOnly, 'GET', '/api/push/key')).toBe(404);
+    expect(await status(apnsOnly, 'PUT', '/api/push/subscription')).toBe(404);
+    expect(await status(apnsOnly, 'PUT', '/api/push/apns')).toBe(400);
+    expect(await status(webOnly, 'PUT', '/api/push/apns')).toBe(404);
+    expect(await status(webOnly, 'GET', '/api/push/key')).toBe(200);
+  });
+
+  it('alerts the app with metadata only for a request to an offline phone', async () => {
+    const relay = await startRelay();
+    const userId = await addUser();
+    const now = relay.time.clock.now();
+    const agent = await addAgent(userId, now);
+    const phone = await addPhone(userId, now);
+    const token = APNS_TOKEN();
+    await relay.app.inject({
+      method: 'PUT',
+      url: '/api/push/apns',
+      headers: phone.headers,
+      payload: { token, environment: 'sandbox' },
+    });
+    const agentPeer = await WsPeer.open(relay.url, agent.headers);
+    await agentPeer.hello('agent');
+    const expiresAt = now + 90_000;
+    agentPeer.send(request(agent.deviceId, phone.deviceId, 50, expiresAt));
+    await vi.waitFor(() => expect(apnsSent).toHaveLength(1));
+    await relay.notifier.idle();
+    const [alert] = apnsSent;
+    expect(alert!.target).toEqual({ token, environment: 'sandbox' });
+    expect(alert!.message.collapseId).toBe(envelopeId(50));
+    expect(alert!.message.expiration).toBe(Math.floor(now / 1000) + 90);
+    const body = JSON.parse(alert!.message.payload) as { aps: unknown; rc: unknown };
+    expect(body.rc).toEqual({
+      t: 'pending',
+      rid: envelopeId(50),
+      dev: 'mac-studio',
+      exp: expiresAt,
+    });
+    expect(alert!.message.payload).not.toContain('U0VDUkVU');
+    expect(relay.logs.lines().join('\n')).not.toContain(token);
+
+    apnsResult = { kind: 'gone' };
+    agentPeer.send(request(agent.deviceId, phone.deviceId, 51, expiresAt));
+    await vi.waitFor(() => expect(apnsSent).toHaveLength(2));
+    await vi.waitFor(async () => expect(await store.listForDevice(phone.deviceId)).toEqual([]));
   });
 });

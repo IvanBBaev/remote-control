@@ -1,3 +1,4 @@
+import type { RelayApi } from '@remote-control/phone-core/auth/relay-api';
 import type { PhoneService } from '@remote-control/phone-core/realtime/phone';
 import { Alert } from 'react-native';
 import { create } from 'zustand';
@@ -28,6 +29,8 @@ interface InboxStore extends Inbox {
   readonly sample: boolean;
   readonly live: LiveStatus;
   readonly phone: PhoneService | undefined;
+  /** The signed-in relay API while live (APNs token registration, M4-05). */
+  readonly relay: RelayApi | undefined;
   readonly machines: readonly MachineRow[];
   decide: (input: DecisionInput) => void;
   expire: () => void;
@@ -45,6 +48,7 @@ export const useInbox = create<InboxStore>()((set, get) => ({
   sample: true,
   live: { state: 'off' },
   phone: undefined,
+  relay: undefined,
   machines: [],
   decide: (input) => {
     const { phone, sessions } = get();
@@ -80,7 +84,7 @@ export const useInbox = create<InboxStore>()((set, get) => ({
     await get().disconnect();
     set({ live: { state: 'connecting' } });
     try {
-      const { phone, userId } = await startLivePhone(connection);
+      const { phone, relay, userId } = await startLivePhone(connection);
       if (remember) await saveDevConnection(connection);
       const show = (state = phone.realtime.getState()) => {
         set({
@@ -97,6 +101,7 @@ export const useInbox = create<InboxStore>()((set, get) => ({
       });
       set({
         phone,
+        relay,
         sample: false,
         history: [],
         live: { state: 'live', userId, origin: connection.origin },
@@ -119,6 +124,7 @@ export const useInbox = create<InboxStore>()((set, get) => ({
       ...fixtureInbox(systemNow()),
       sample: true,
       phone: undefined,
+      relay: undefined,
       machines: [],
       live: { state: 'off' },
     });

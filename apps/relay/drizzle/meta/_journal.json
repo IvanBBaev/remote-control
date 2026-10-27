@@ -29,6 +29,13 @@
       "when": 1791974256056,
       "tag": "0003_shared_challenges",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792680431600,
+      "tag": "0004_push_kind",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,11 @@
+{
+  "type": "notification-service",
+  "name": "notification-service",
+  "displayName": "Remote Control Notifications",
+  "bundleIdentifier": ".notification-service",
+  "deploymentTarget": "18.0",
+  "frameworks": ["UserNotifications", "CryptoKit", "Security"],
+  "entitlements": {
+    "com.apple.security.application-groups": ["group.dev.ivanbaev.remotecontrol"]
+  }
+}

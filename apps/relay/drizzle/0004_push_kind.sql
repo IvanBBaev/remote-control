@@ -1,0 +1,5 @@
+ALTER TABLE "push_subscriptions" ALTER COLUMN "p256dh" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "push_subscriptions" ALTER COLUMN "auth" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "push_subscriptions" ADD COLUMN "kind" text DEFAULT 'webpush' NOT NULL;--> statement-breakpoint
+ALTER TABLE "push_subscriptions" ADD COLUMN "apns_environment" text;--> statement-breakpoint
+ALTER TABLE "push_subscriptions" ADD CONSTRAINT "push_subscriptions_kind_check" CHECK (("push_subscriptions"."kind" = 'webpush' and "push_subscriptions"."p256dh" is not null and "push_subscriptions"."auth" is not null and "push_subscriptions"."apns_environment" is null) or ("push_subscriptions"."kind" in ('apns', 'apns_activity') and "push_subscriptions"."p256dh" is null and "push_subscriptions"."auth" is null and "push_subscriptions"."apns_environment" in ('sandbox', 'production')));

@@ -61,7 +61,7 @@ export interface AppDeps {
   readonly auth?: AuthDeps | undefined;
   /** The WebSocket hub (D15); needs `auth` (phones log in with the session cookie). */
   readonly relay?: RelayDeps | undefined;
-  /** Web Push registration (M0-12); needs `auth` and `relay`. */
+  /** Web Push and APNs registration (M0-12, M4-05); needs `auth` and `relay`. */
   readonly push?: PushDeps | undefined;
   /** Receives every 5xx handler error (D16); absent → errors are only logged. */
   readonly errors?: ErrorReporter | undefined;
@@ -81,8 +81,10 @@ export interface AdminDeps {
 
 export interface PushDeps {
   readonly store: PushSubscriptionStore;
-  /** VAPID public key handed to the PWA. */
-  readonly publicKey: string;
+  /** VAPID public key handed to the PWA; absent → the Web Push routes do not exist. */
+  readonly publicKey?: string | undefined;
+  /** `true` when APNs is configured; otherwise the APNs token routes do not exist (M4-05). */
+  readonly apns?: boolean;
   /** Which endpoints may be stored; default: the known browser push services. */
   readonly allowEndpoint?: (endpoint: string) => boolean;
 }

@@ -9,6 +9,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { loadDevConnection } from '../adapters/dev-connection';
 import { useInbox } from '../state/store';
 import { startPendingLinkWatch } from '../state/pending-link';
+import { startPushSync } from '../state/push';
 import { startWidgetSync } from '../state/widget-sync';
 
 import { colors } from '../ui/theme';
@@ -37,6 +38,8 @@ export default function RootLayout() {
   useEffect(() => startWidgetSync(), []);
   // The Control Center control opens the app and leaves the deep link to follow (M4-07).
   useEffect(() => startPendingLinkWatch(), []);
+  // APNs token, the extension's keys and the notification buttons (M4-05).
+  useEffect(() => startPushSync(), []);
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>

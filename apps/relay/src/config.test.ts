@@ -1,3 +1,6 @@
+// eslint-disable-next-line no-restricted-imports -- test keys for the APNs .p8 (node:crypto adapter).
+import { generateKeyPairSync } from 'node:crypto';
+
 import { describe, expect, it } from 'vitest';
 
 import { ConfigError, loadConfig } from './config.js';
@@ -121,6 +124,38 @@ describe('loadConfig', () => {
     expect(() => loadConfig(keys)).toThrow(/RC_VAPID_SUBJECT/);
     expect(() => loadConfig({ RC_VAPID_PUBLIC: keys.RC_VAPID_PUBLIC })).toThrow(/set together/);
     expect(() => loadConfig({ RC_VAPID_PRIVATE: keys.RC_VAPID_PRIVATE })).toThrow(/set together/);
+  });
+
+  it('reads the APNs token-auth settings as a set and never echoes the key (M4-05)', () => {
+    const pem = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+      .privateKey.export({ type: 'pkcs8', format: 'pem' })
+      .toString();
+    const apns = {
+      RC_APNS_KEY: pem.replaceAll('\n', '\\n'),
+      RC_APNS_KEY_ID: 'ABC123DEFG',
+      RC_APNS_TEAM_ID: 'TEAM123456',
+      RC_APNS_TOPIC: 'dev.ivanbaev.remotecontrol',
+    };
+    expect(loadConfig({}).apns).toBeUndefined();
+    expect(loadConfig(apns).apns).toEqual({
+      privateKey: pem,
+      keyId: 'ABC123DEFG',
+      teamId: 'TEAM123456',
+      topic: 'dev.ivanbaev.remotecontrol',
+    });
+    expect(() => loadConfig({ ...apns, RC_APNS_TOPIC: undefined })).toThrow(/set together/);
+    const rsa = generateKeyPairSync('rsa', { modulusLength: 2048 })
+      .privateKey.export({ type: 'pkcs8', format: 'pem' })
+      .toString();
+    let message = '';
+    try {
+      loadConfig({ ...apns, RC_APNS_KEY: rsa });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toMatch(/RC_APNS_KEY must be the PEM/);
+    expect(message).not.toContain('PRIVATE KEY');
+    expect(() => loadConfig({ ...apns, RC_APNS_KEY_ID: 'short' })).toThrow(/RC_APNS_KEY_ID/);
   });
 
   it('enables the device spike only with RC_SPIKE=1 and the VAPID keys (M0-03)', () => {

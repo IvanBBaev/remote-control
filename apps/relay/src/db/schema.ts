@@ -150,7 +150,12 @@ export const pairings = pgTable(
   ],
 );
 
-/** Web Push subscription of a phone. The endpoint is a capability URL: never logged (D19). */
+/**
+ * Push subscription of a phone (M0-12, M4-05): a Web Push subscription of the PWA, or an
+ * APNs device token of the native app (`apns`) or of its Live Activity (`apns_activity`,
+ * ADR 0017). `endpoint` holds the push address — the Web Push endpoint URL or the APNs
+ * token — and is a capability: never logged (D19).
+ */
 export const pushSubscriptions = pgTable(
   'push_subscriptions',
   {
@@ -158,14 +163,23 @@ export const pushSubscriptions = pgTable(
     deviceId: uuid('device_id')
       .notNull()
       .references(() => devices.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull().default('webpush'),
     endpoint: text('endpoint').notNull().unique(),
-    /** Subscription keys (RFC 8291) used to encrypt the metadata-only push. */
-    p256dh: text('p256dh').notNull(),
-    auth: text('auth').notNull(),
+    /** Subscription keys (RFC 8291) used to encrypt the metadata-only Web Push. */
+    p256dh: text('p256dh'),
+    auth: text('auth'),
+    /** APNs environment the token belongs to: a development build gets sandbox tokens. */
+    apnsEnvironment: text('apns_environment'),
     createdAt: createdAt(),
     lastFailureAt: at('last_failure_at'),
   },
-  (table) => [index('push_subscriptions_device_id_idx').on(table.deviceId)],
+  (table) => [
+    index('push_subscriptions_device_id_idx').on(table.deviceId),
+    check(
+      'push_subscriptions_kind_check',
+      sql`(${table.kind} = 'webpush' and ${table.p256dh} is not null and ${table.auth} is not null and ${table.apnsEnvironment} is null) or (${table.kind} in ('apns', 'apns_activity') and ${table.p256dh} is null and ${table.auth} is null and ${table.apnsEnvironment} in ('sandbox', 'production'))`,
+    ),
+  ],
 );
 
 /**
