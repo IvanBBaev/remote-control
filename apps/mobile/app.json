@@ -13,6 +13,9 @@
       "supportsTablet": false,
       "entitlements": {
         "com.apple.security.application-groups": ["group.dev.ivanbaev.remotecontrol"]
+      },
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Face ID confirms each Allow before it reaches your agent."
       }
     },
     "android": {

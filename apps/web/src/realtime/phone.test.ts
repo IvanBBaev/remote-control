@@ -47,7 +47,10 @@ const settle = async (): Promise<void> => {
   for (let i = 0; i < 20; i++) await new Promise((resolve) => setTimeout(resolve, 0));
 };
 
-async function setup(overrides: Partial<RelayApi> = {}) {
+async function setup(
+  overrides: Partial<RelayApi> = {},
+  native?: Parameters<typeof createTestPhone>[1],
+) {
   const { codeHash } = await pairingSecrets('0123456789AB');
   const mocks = {
     bindPhone: vi.fn(() => Promise.resolve({ deviceId: PHONE })),
@@ -59,7 +62,7 @@ async function setup(overrides: Partial<RelayApi> = {}) {
     enrollAgent: vi.fn(() => Promise.resolve({ deviceId: AGENT, enrollToken: 'rc-enroll:abc' })),
   };
   const relay = fakeRelay({ ...mocks, ...overrides });
-  const { phone, keyStore, passkeys, sockets, timer } = createTestPhone(relay);
+  const { phone, keyStore, passkeys, sockets, timer } = createTestPhone(relay, native);
   const identity = await keyStore.identity();
   const agent = await createTestAgent({
     deviceId: AGENT,
@@ -218,6 +221,27 @@ describe('phone service', () => {
       })(),
     ]);
     expect(agentSide).toEqual({ name: 'iPhone', passkeys: [passkey] });
+  });
+
+  it("hands the native app's device key to the agent at pairing (M4-04)", async () => {
+    const deviceKey = { publicKey: 'spki', userVerified: true };
+    const t = await setup(
+      {},
+      {
+        authorize: () => Promise.resolve({ ok: false, failure: 'failed' }),
+        deviceKey: () => Promise.resolve(deviceKey),
+      },
+    );
+    await t.online();
+    const { psk } = await pairingSecrets('0123456789AB');
+    const [, agentSide] = await Promise.all([
+      t.phone.pair(CODE),
+      (async () => {
+        await settle();
+        return t.agent.acceptPairing(t.sockets.last, psk, 'Studio Mac');
+      })(),
+    ]);
+    expect(agentSide).toEqual({ name: 'iPhone', deviceKey });
   });
 
   it('refuses a short code and pairing while offline, without using the slot', async () => {
@@ -505,6 +529,25 @@ describe('phone decisions', () => {
       }
     },
   );
+
+  it('sends a device-signed allow with the signature only, no hash for the relay (M4-04)', async () => {
+    const authorize = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        decisionHash: 'a'.repeat(64),
+        asserted: true,
+        deviceSignature: 'MEUC',
+      }),
+    );
+    const t = await setup({}, { authorize });
+    await t.online();
+    const decide = vi.spyOn(t.phone.client!, 'decide');
+    await expect(t.phone.decide(AGENT, REQUEST, 'allow')).resolves.toMatchObject({ ok: true });
+    expect(authorize).toHaveBeenCalledOnce();
+    expect(decide).toHaveBeenCalledWith(AGENT, expect.objectContaining({ kind: 'allow' }), {
+      deviceSignature: 'MEUC',
+    });
+  });
 
   it.each([
     ['session', null],

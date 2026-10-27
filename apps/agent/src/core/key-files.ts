@@ -1,4 +1,4 @@
-import { DeviceId, EpochMs, PairedPasskey } from '@remote-control/protocol';
+import { DeviceId, EpochMs, PairedDeviceKey, PairedPasskey } from '@remote-control/protocol';
 import { z } from 'zod';
 
 import { fromBase64Url } from './from-base64url.js';
@@ -26,7 +26,8 @@ export type DeviceKeyFile = z.infer<typeof DeviceKeyFile>;
 
 /**
  * `peers.json` (0600, data dir): the paired phones, their static public keys and the
- * passkeys they handed over at pairing (M2-03; absent for a phone paired before).
+ * passkeys they handed over at pairing (M2-03; absent for a phone paired before), and
+ * the native app's device key (M4-04).
  */
 export const PeersFile = z
   .object({
@@ -46,6 +47,7 @@ export const PeersFile = z
             )
             .max(16)
             .optional(),
+          deviceKey: PairedDeviceKey.optional(),
         })
         .strict(),
     ),

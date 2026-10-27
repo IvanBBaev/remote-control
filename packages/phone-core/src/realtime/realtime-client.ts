@@ -133,6 +133,8 @@ export interface Signed {
   readonly decisionHash?: string | undefined;
   /** The agent's own check (phase 2, M2-03), sealed into the message. */
   readonly assertion?: DecisionAssertion | undefined;
+  /** The native app's device-key signature (M4-04), sealed into the message. */
+  readonly deviceSignature?: string | undefined;
 }
 
 /** A phone message that carries a D7 decision, so it can wait in the outbox. */
@@ -611,11 +613,15 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
   }
 
   function queue(machineId: string, message: QueuedMessage, signed: Signed): void {
-    const { decisionHash, assertion } = signed;
+    const { decisionHash, assertion, deviceSignature } = signed;
     decided.set(message.decision.request_id, message.decision.kind);
     outbox.set(message.decision.request_id, {
       machineId,
-      message: assertion === undefined ? message : { ...message, assertion },
+      message: {
+        ...message,
+        ...(assertion && { assertion }),
+        ...(deviceSignature !== undefined && { deviceSignature }),
+      },
       ...(decisionHash === undefined ? {} : { decisionHash }),
     });
     enqueue(() => flush(machineId));

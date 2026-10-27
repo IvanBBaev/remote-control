@@ -162,7 +162,7 @@ function PairMachine() {
   );
 }
 
-/** Developer sign-in until the app has its own passkey (M4-04). */
+/** Developer sign-in until the app has its own account sign-in. */
 function DeveloperRelay() {
   const live = useInbox((state) => state.live);
   const connect = useInbox((state) => state.connect);
@@ -247,7 +247,7 @@ export default function SettingsScreen() {
         <Row label="Live Activity & Dynamic Island" value="M4-06" />
       </Section>
       <Section title="Security">
-        <Row first label="Face ID before Allow" value="M4-04" />
+        <Row first label="Face ID before Allow" value="On" />
       </Section>
       {sample && (
         <Section title="Sample data">

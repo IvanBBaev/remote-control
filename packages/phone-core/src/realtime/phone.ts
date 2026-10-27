@@ -11,6 +11,7 @@ import type {
   ApprovalRequest,
   CanonicalDecision,
   DecisionKind,
+  PairedDeviceKey,
   PermissionMode,
   Question,
   Random,
@@ -77,6 +78,11 @@ export interface PhoneServiceOptions {
    * agent checks every assertion itself; without them the relay's check stands.
    */
   readonly passkeys?: PasskeyKeys;
+  /**
+   * The native app's device key (ADR 0017, M4-04), handed to a computer at pairing so
+   * its agent checks the device signatures on decisions; `undefined` without one.
+   */
+  readonly deviceKey?: () => Promise<PairedDeviceKey | undefined>;
   readonly isVisible?: () => boolean;
   readonly onError?: (error: unknown) => void;
   /** Where the local usage counters persist (M1-11); default: memory only. */
@@ -296,7 +302,11 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
       deliver(
         live,
         decision,
-        result.asserted ? { decisionHash: result.decisionHash, assertion: result.assertion } : {},
+        result.deviceSignature !== undefined
+          ? { deviceSignature: result.deviceSignature }
+          : result.asserted
+            ? { decisionHash: result.decisionHash, assertion: result.assertion }
+            : {},
       );
     }
     return result;
@@ -345,9 +355,11 @@ export function createPhoneService(options: PhoneServiceOptions): PhoneService {
         );
       }
       const passkeys = userId === undefined ? [] : (options.passkeys?.list(userId) ?? []);
+      const deviceKey = await options.deviceKey?.();
       const result = await live.pair(agentDeviceId, psk, {
         name: options.phoneName,
         ...(passkeys.length > 0 && { passkeys: [...passkeys] }),
+        ...(deviceKey && { deviceKey }),
       });
       const { keyPair } = await keyStore.identity();
       const fingerprint = await pairingFingerprint(keyPair.publicKey, result.publicKey);

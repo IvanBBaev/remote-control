@@ -24,6 +24,14 @@ export interface PeerPasskey {
   readonly counter: number;
 }
 
+/** The native app's Secure Enclave key, handed over at pairing (ADR 0017, M4-04). */
+export interface PeerDeviceKey {
+  /** SubjectPublicKeyInfo (ES256), unpadded base64url. */
+  readonly publicKey: string;
+  /** Whether the phone declared every use of the key gated by user verification. */
+  readonly userVerified: boolean;
+}
+
 /** A paired phone, as stored in `peers.json`. */
 export interface Peer {
   readonly deviceId: string;
@@ -38,6 +46,11 @@ export interface Peer {
    * paired before M2-03 has none and keeps the relay's verification (phase 1).
    */
   readonly passkeys?: readonly PeerPasskey[];
+  /**
+   * The native app's device key (M4-04). With it, a decision may carry a device
+   * signature instead of a passkey assertion; the agent verifies either.
+   */
+  readonly deviceKey?: PeerDeviceKey;
 }
 
 /** The hook endpoint published in `agent.json` for `hook.cjs` (D11). */

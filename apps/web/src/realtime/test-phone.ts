@@ -1,4 +1,6 @@
 import { webCryptoRandom } from '@remote-control/crypto';
+import { createPhoneService as createCorePhoneService } from '@remote-control/phone-core/realtime/phone';
+import type { PhoneServiceOptions as CoreOptions } from '@remote-control/phone-core/realtime/phone';
 import { IDBFactory } from 'fake-indexeddb';
 
 import type { RelayApi } from '../auth/relay-api.js';
@@ -21,8 +23,14 @@ export interface TestPhone {
   readonly timer: ManualTimer;
 }
 
-/** A phone service on fake sockets, a fresh IndexedDB and a manual clock. */
-export function createTestPhone(relay: RelayApi = fakeRelay()): TestPhone {
+/**
+ * A phone service on fake sockets, a fresh IndexedDB and a manual clock. `native` swaps
+ * the PWA's WebAuthn for the native app's ceremony and device key (M4-04).
+ */
+export function createTestPhone(
+  relay: RelayApi = fakeRelay(),
+  native?: Pick<CoreOptions, 'authorize' | 'deviceKey'>,
+): TestPhone {
   const timer = createManualTimer();
   const passkeys = memoryPasskeyKeys();
   const sockets = fakeSockets();
@@ -30,7 +38,7 @@ export function createTestPhone(relay: RelayApi = fakeRelay()): TestPhone {
     indexedDB: new IDBFactory(),
     random: webCryptoRandom,
   });
-  const phone = createPhoneService({
+  const options = {
     relay,
     keyStore,
     timer,
@@ -40,6 +48,13 @@ export function createTestPhone(relay: RelayApi = fakeRelay()): TestPhone {
     version: '0.0.0-test',
     phoneName: 'iPhone',
     passkeys,
-  });
+  };
+  const phone = native
+    ? createCorePhoneService({
+        ...options,
+        ...native,
+        deleteAccount: () => Promise.resolve({ ok: false, failure: 'failed' }),
+      })
+    : createPhoneService(options);
   return { phone, keyStore, passkeys, sockets, timer };
 }

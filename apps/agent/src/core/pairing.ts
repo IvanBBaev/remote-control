@@ -9,6 +9,7 @@ import {
   HANDSHAKE_TAG,
   PairingHello,
   PhonePairingHello,
+  type PairedDeviceKey,
   type PairedPasskey,
   toBase64Url,
   VERSION_TABLE,
@@ -253,8 +254,9 @@ export async function runPairing(options: PairingOptions): Promise<PairingOutcom
         ...(attempt.passkeys.length > 0 && {
           passkeys: attempt.passkeys.map((passkey) => ({ ...passkey, counter: 0 })),
         }),
+        ...(attempt.deviceKey && { deviceKey: attempt.deviceKey }),
       };
-      if (attempt.passkeys.length === 0) {
+      if (attempt.passkeys.length === 0 && attempt.deviceKey === undefined) {
         print(
           'The phone did not hand over its passkey keys: this agent relies on the ' +
             "relay's passkey check for its decisions. Re-pair after registering a " +
@@ -283,7 +285,12 @@ export async function runPairing(options: PairingOptions): Promise<PairingOutcom
   ): Promise<
     | 'failed'
     | 'stopped'
-    | { phoneKey: Uint8Array; name: string; passkeys: readonly PairedPasskey[] }
+    | {
+        phoneKey: Uint8Array;
+        name: string;
+        passkeys: readonly PairedPasskey[];
+        deviceKey: PairedDeviceKey | undefined;
+      }
   > {
     try {
       const state = await HandshakeState.initialize({
@@ -300,12 +307,14 @@ export async function runPairing(options: PairingOptions): Promise<PairingOutcom
       const third = await nextFrom(first.from);
       if (third === undefined) return 'stopped';
       const payload = await state.readMessage(handshakeBytes(third)!);
-      // The phone's hello carries its passkey keys (M2-03); XXpsk0 authenticates them.
+      // The phone's hello carries its passkey keys (M2-03) and the native app's device key
+      // (M4-04); XXpsk0 authenticates them.
       const phoneHello = PhonePairingHello.parse(JSON.parse(new TextDecoder().decode(payload)));
       return {
         phoneKey: state.remoteStaticPublicKey!,
         name: phoneHello.name,
         passkeys: phoneHello.passkeys ?? [],
+        deviceKey: phoneHello.deviceKey,
       };
     } catch {
       return 'failed';

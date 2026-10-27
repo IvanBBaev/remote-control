@@ -37,6 +37,7 @@ import type { Random } from '../ports/random.js';
 import type { WebSocketConnection } from '../ports/web-socket.js';
 import { FAKE_RELAY_ORIGIN, type FakeDevice, type FakeRelay } from './fake-relay.js';
 import { waitFor } from './manual-time.js';
+import type { TestDeviceKey } from './test-device-key.js';
 import type { AssertionOverrides, TestPasskey } from './test-passkey.js';
 
 const encoder = new TextEncoder();
@@ -50,6 +51,10 @@ export interface DecideOverrides {
   readonly assertion?: AssertionOverrides;
   /** Rewrites the signed assertion before it is sealed; `undefined` drops it. */
   readonly tamper?: (assertion: DecisionAssertion) => DecisionAssertion | undefined;
+  /** Phones with a device key: signs with this key instead (`null`: sends no signature). */
+  readonly signer?: TestDeviceKey | null;
+  /** Phones with a device key: signs this decision instead of the one sent. */
+  readonly signed?: Partial<CanonicalDecision>;
 }
 
 export interface Received {
@@ -110,9 +115,13 @@ export async function createFakePhone(
   /**
    * The phone's passkey (M2-03): handed to the agent at pairing, and every decision that
    * needs one carries its assertion. Without it the phone is one paired before M2-03.
+   * A device key (M4-04) makes it the native app: decisions carry a device signature and
+   * no envelope `decisionHash`, as the relay never sees that proof.
    */
-  passkey?: TestPasskey,
+  key?: TestPasskey | TestDeviceKey,
 ): Promise<FakePhone> {
+  const passkey = key && 'assert' in key ? key : undefined;
+  const deviceKey = key && 'sign' in key ? key : undefined;
   const device = relay.addPhone(name);
   const keyPair = await generateX25519KeyPair(random);
   let socket: WebSocketConnection | undefined;
@@ -167,7 +176,13 @@ export async function createFakePhone(
           JSON.parse(decoder.decode(await state.readMessage(bytes.subarray(1)))),
         );
         const msg3 = await state.writeMessage(
-          encoder.encode(JSON.stringify({ name, ...(passkey && { passkeys: [passkey.paired] }) })),
+          encoder.encode(
+            JSON.stringify({
+              name,
+              ...(passkey && { passkeys: [passkey.paired] }),
+              ...(deviceKey && { deviceKey: deviceKey.paired }),
+            }),
+          ),
         );
         control(received.from, HANDSHAKE_TAG.pairing, msg3);
         pairing.done = { name: hello.name, agentPublicKey: state.remoteStaticPublicKey! };
@@ -210,7 +225,8 @@ export async function createFakePhone(
     };
     const hash = await decisionHash(decision);
     if (requiresAssertion(kind)) relay.verified.add(hash);
-    const envelopeHash = overrides.envelopeHash ?? (requiresAssertion(kind) ? hash : undefined);
+    const envelopeHash =
+      overrides.envelopeHash ?? (requiresAssertion(kind) && !deviceKey ? hash : undefined);
     const head = {
       ...envelope(agentId, 'command', new Uint8Array(0)),
       ...(envelopeHash === undefined ? {} : { decisionHash: envelopeHash }),
@@ -220,8 +236,19 @@ export async function createFakePhone(
         ? await passkey.assert(decision, overrides.assertion)
         : undefined;
     if (assertion !== undefined && overrides.tamper) assertion = overrides.tamper(assertion);
+    const signer = overrides.signer === undefined ? deviceKey : overrides.signer;
+    const deviceSignature =
+      deviceKey && signer && requiresAssertion(kind)
+        ? await signer.sign({ ...decision, ...overrides.signed })
+        : undefined;
     const plaintext = encoder.encode(
-      JSON.stringify({ t: 'decision', ...body, decision, ...(assertion && { assertion }) }),
+      JSON.stringify({
+        t: 'decision',
+        ...body,
+        decision,
+        ...(assertion && { assertion }),
+        ...(deviceSignature && { deviceSignature }),
+      }),
     );
     const ciphertext = await transport!.encrypt(header(head), plaintext);
     send({ ...head, payload: Buffer.from(ciphertext).toString('base64') });
@@ -350,6 +377,7 @@ export async function createFakePhone(
       publicKey: toBase64Url(keyPair.publicKey),
       pairedAt,
       ...(passkey && { passkeys: [{ ...passkey.paired, counter: 0 }] }),
+      ...(deviceKey && { deviceKey: deviceKey.paired }),
     }),
     of: <T extends AgentMessage['t']>(t: T) =>
       messages

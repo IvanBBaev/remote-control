@@ -6,7 +6,7 @@ const KEY = 'rc.dev.connection';
 
 /**
  * The developer relay and session token (M4-03), kept in the Keychain: the token is a
- * bearer credential. Replaced by the app's own passkey sign-in in M4-04.
+ * bearer credential, until the app has its own account sign-in.
  */
 export async function loadDevConnection(): Promise<RelayConnection | undefined> {
   const text = await SecureStore.getItemAsync(KEY);

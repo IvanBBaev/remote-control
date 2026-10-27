@@ -22,6 +22,12 @@ export type AssertDecisionResult =
        * the relay (D7 phase 2, M2-03); absent when `asserted` is `false`.
        */
       readonly assertion?: DecisionAssertion;
+      /**
+       * The native app's device-key signature over the decision hash instead of an
+       * assertion (ADR 0017, M4-04): only the agent checks it, so the envelope head then
+       * carries no `decisionHash` for the relay.
+       */
+      readonly deviceSignature?: string;
     }
   | {
       readonly ok: false;

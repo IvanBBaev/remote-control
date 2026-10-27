@@ -33,10 +33,11 @@ import {
 
 import type { AdapterDecision, AgentAdapterId, QuestionAnswers } from '../ports/agent-adapter.js';
 import type { Clock } from '../ports/clock.js';
-import type { Peer, PeerPasskey } from '../ports/key-store.js';
+import type { Peer, PeerDeviceKey, PeerPasskey } from '../ports/key-store.js';
 import type { Random } from '../ports/random.js';
 import { approvalView, pendingRequestHash } from './approval-view.js';
 import { checkAssertion } from './assertion-check.js';
+import { checkDeviceSignature } from './device-signature-check.js';
 import { checkCommand, type CommandTarget } from './command-check.js';
 import { checkDecision, DECISION_KINDS } from './decision-check.js';
 import { fromBase64Url } from './from-base64url.js';
@@ -155,6 +156,12 @@ export interface SessionHub {
   sessions(): readonly string[];
 }
 
+/** What proves a decision: a passkey assertion or a native app's device signature. */
+interface Proof {
+  readonly assertion?: DecisionAssertion | undefined;
+  readonly deviceSignature?: string | undefined;
+}
+
 interface PhoneSession {
   readonly phoneId: string;
   readonly transport: TransportSession;
@@ -163,6 +170,8 @@ interface PhoneSession {
    * `undefined` for a phone paired without them, whose assertions only the relay checks.
    */
   passkeys: readonly PeerPasskey[] | undefined;
+  /** The native app's device key (M4-04); `undefined` for a phone without one. */
+  readonly deviceKey: PeerDeviceKey | undefined;
 }
 
 /** Why a request left the phones' view, by the decision that ended it. */
@@ -531,7 +540,7 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
       ...passkey,
       counter: Math.max(passkey.counter, counters.get(`${phoneId}/${passkey.id}`) ?? 0),
     }));
-    const session: PhoneSession = { phoneId, transport, passkeys };
+    const session: PhoneSession = { phoneId, transport, passkeys, deviceKey: peer.deviceKey };
     const reply = new Uint8Array(msg2.length + 1);
     reply[0] = HANDSHAKE_TAG.kk;
     reply.set(msg2, 1);
@@ -575,17 +584,35 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
    * its passkeys at pairing the agent checks the assertion itself (phase 2, M2-03) and
    * the relay's word counts for nothing; for one paired without them it falls back to
    * the relay's check, the envelope's `decisionHash` (phase 1). A verified assertion
-   * moves the passkey's counter forward, so it cannot be replayed.
+   * moves the passkey's counter forward, so it cannot be replayed. A native app signs with
+   * its device key instead (ADR 0017, M4-04); the relay never sees that proof, so only the
+   * agent's own check counts.
    */
   async function verify(
     session: PhoneSession,
     envelope: Envelope,
     decision: CanonicalDecision,
-    assertion: DecisionAssertion | undefined,
+    proof: Proof,
   ): Promise<boolean> {
-    if (session.passkeys === undefined) {
+    if (session.passkeys === undefined && session.deviceKey === undefined) {
       return envelope.decisionHash === (await decisionHash(decision));
     }
+    if (proof.deviceSignature !== undefined || session.passkeys === undefined) {
+      const signed = await checkDeviceSignature({
+        signature: proof.deviceSignature,
+        decision,
+        deviceKey: session.deviceKey,
+      });
+      if (!signed.ok) {
+        log('device_signature_refused', {
+          phone_device_id: session.phoneId,
+          request_id: decision.request_id,
+          reason: signed.reason,
+        });
+      }
+      return signed.ok;
+    }
+    const { assertion } = proof;
     const result = await checkAssertion({ assertion, decision, passkeys: session.passkeys });
     if (!result.ok) {
       log('assertion_refused', {
@@ -653,8 +680,7 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
     const requestHash = pending === undefined ? undefined : await hashOf(pending);
     // Deny and terminal need no assertion (D7): nothing to verify, no counter to move.
     const verified =
-      requiresAssertion(decision.kind) &&
-      (await verify(session, envelope, decision, parsed.data.assertion));
+      requiresAssertion(decision.kind) && (await verify(session, envelope, decision, parsed.data));
     // From here on synchronous: the checks and the store see the same state (decide-once).
     const shown = store.get(decision.request_id);
     let answer: QuestionAnswers | undefined;
@@ -732,12 +758,14 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
           start: StartSession;
           decision: CanonicalDecision;
           assertion?: DecisionAssertion | undefined;
+          deviceSignature?: string | undefined;
         }
       | {
           t: 'instruct';
           instruction: { sessionId: string; text: string };
           decision: CanonicalDecision;
           assertion?: DecisionAssertion | undefined;
+          deviceSignature?: string | undefined;
         },
   ): Promise<void> {
     const { decision } = message;
@@ -759,7 +787,7 @@ export function createSessionHub(options: SessionHubOptions): SessionHub {
         ? { ok: true, requestHash: await requestHash({ prompt: text, sessionId }) }
         : { ok: false, reason: 'follow_up_unsupported' };
     }
-    const verified = await verify(session, envelope, decision, message.assertion);
+    const verified = await verify(session, envelope, decision, message);
     const result = checkCommand({
       session: live.get(session.phoneId) === session,
       message: message.t,

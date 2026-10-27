@@ -16,7 +16,12 @@ import {
   relaySocketUrl,
   type RelayConnection,
 } from '../adapters/relay-transport';
-import { authorizeWithoutPasskey, deleteAccountWithoutPasskey } from '../core/authorize';
+import { nativeDeviceSigner } from '../adapters/device-signer';
+import {
+  authorizeWithDeviceKey,
+  deleteAccountWithoutPasskey,
+  pairedDeviceKey,
+} from '../core/authorize';
 import { pendingRequestFor } from '../core/realtime-inbox';
 import type { AgentSession } from '../core/model';
 import type { DecisionInput } from '../core/inbox';
@@ -39,7 +44,8 @@ export async function startLivePhone(connection: RelayConnection): Promise<LiveP
     url: relaySocketUrl(connection.origin),
     version: Constants.expoConfig?.version ?? '0.0.0',
     phoneName: Platform.OS === 'ios' ? 'iPhone' : 'Android phone',
-    authorize: authorizeWithoutPasskey,
+    authorize: authorizeWithDeviceKey(nativeDeviceSigner),
+    deviceKey: () => pairedDeviceKey(nativeDeviceSigner),
     deleteAccount: deleteAccountWithoutPasskey,
   });
   const session = await relay.session();
@@ -90,10 +96,9 @@ export function sendDecision(
 /** What the user reads when a decision did not go out. */
 export function failureText(result: Exclude<AssertDecisionResult, { ok: true }>): string {
   const { failure } = result;
-  if (failure === 'cancelled')
-    return 'This needs Face ID with a passkey, which the app gets in M4-04. Deny works now.';
+  if (failure === 'cancelled') return 'Face ID was cancelled; nothing was sent.';
   if (failure === 'offline') return 'Not connected to the relay, or the request is gone.';
   if (failure === 'rate_limited') return 'Too many attempts; try again in a moment.';
   if (typeof failure === 'object') return `The relay refused: ${failure.relay}.`;
-  return 'The decision did not go out.';
+  return 'The decision did not go out. If Face ID changed, pair this phone again.';
 }

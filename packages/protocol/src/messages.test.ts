@@ -278,6 +278,14 @@ describe('PhoneMessage', () => {
     }
   });
 
+  it('carries a device-key signature inside the decision (M4-04) and refuses a malformed one', () => {
+    const message = { t: 'decision', decision, deviceSignature: 'MEUCIQ' };
+    expect(PhoneMessage.parse(message)).toEqual(message);
+    for (const bad of ['', 'a+b=', 'a'.repeat(129)]) {
+      expect(PhoneMessage.safeParse({ ...message, deviceSignature: bad }).success).toBe(false);
+    }
+  });
+
   it('refuses a decision that is not canonical', () => {
     const result = PhoneMessage.safeParse({
       t: 'decision',
@@ -316,6 +324,22 @@ describe('PhonePairingHello', () => {
     }
     const many = Array.from({ length: 17 }, () => passkey);
     expect(PhonePairingHello.safeParse({ name: 'Pixel', passkeys: many }).success).toBe(false);
+  });
+
+  it('carries the native app device key (M4-04) and refuses a malformed one', () => {
+    const deviceKey = { publicKey: 'MFkwEwYHKoZIzj0CAQ', userVerified: true };
+    expect(PhonePairingHello.parse({ name: 'iPhone', deviceKey })).toEqual({
+      name: 'iPhone',
+      deviceKey,
+    });
+    for (const bad of [
+      { ...deviceKey, publicKey: 'not base64url!' },
+      { ...deviceKey, publicKey: 'a'.repeat(513) },
+      { publicKey: deviceKey.publicKey },
+      { ...deviceKey, extra: 1 },
+    ]) {
+      expect(PhonePairingHello.safeParse({ name: 'iPhone', deviceKey: bad }).success).toBe(false);
+    }
   });
 });
 

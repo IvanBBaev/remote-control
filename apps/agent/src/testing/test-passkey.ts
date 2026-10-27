@@ -28,7 +28,7 @@ export interface AssertionOverrides {
 }
 
 /** WebCrypto ECDSA gives `r || s`; WebAuthn signatures are DER `SEQUENCE { r, s }`. */
-function rawToDer(raw: Uint8Array): Uint8Array {
+export function rawToDer(raw: Uint8Array): Uint8Array {
   const integer = (bytes: Uint8Array): number[] => {
     let start = 0;
     while (start < bytes.length - 1 && bytes[start] === 0) start += 1;

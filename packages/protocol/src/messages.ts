@@ -235,15 +235,26 @@ export const DecisionAssertion = z.strictObject({
 export type DecisionAssertion = z.infer<typeof DecisionAssertion>;
 
 /**
+ * The native app's signature over a decision (ADR 0017, M4-04): ES256 in DER form,
+ * unpadded base64url, by the device key the phone handed over at pairing, over the 32
+ * bytes of SHA-256(canonical decision) (the same hash D7's WebAuthn challenge carries).
+ * It travels inside the encrypted message; the agent alone checks it.
+ */
+export const DeviceSignature = base64Url(128);
+
+/**
  * The phone's decision (`cls: command`). The envelope carries `decisionHash` for every
  * kind that needs a passkey assertion; the agent re-computes it from `decision` (D7).
  * `assertion` is the passkey assertion over the decision (M2-03); the agent requires it
- * from a phone that handed over its passkey keys at pairing.
+ * from a phone that handed over its passkey keys at pairing. `deviceSignature` is the
+ * native app's device-key signature over it (M4-04), required from a phone that handed
+ * over a device key.
  */
 export const DecisionMessage = z.strictObject({
   t: z.literal('decision'),
   decision: CanonicalDecision,
   assertion: DecisionAssertion.optional(),
+  deviceSignature: DeviceSignature.optional(),
 });
 export type DecisionMessage = z.infer<typeof DecisionMessage>;
 
@@ -258,6 +269,7 @@ export const StartMessage = z.strictObject({
   start: StartSession,
   decision: CanonicalDecision,
   assertion: DecisionAssertion.optional(),
+  deviceSignature: DeviceSignature.optional(),
 });
 export type StartMessage = z.infer<typeof StartMessage>;
 
@@ -271,6 +283,7 @@ export const InstructMessage = z.strictObject({
   instruction: Instruction,
   decision: CanonicalDecision,
   assertion: DecisionAssertion.optional(),
+  deviceSignature: DeviceSignature.optional(),
 });
 export type InstructMessage = z.infer<typeof InstructMessage>;
 
@@ -303,12 +316,26 @@ export const PairedPasskey = z.strictObject({
 export type PairedPasskey = z.infer<typeof PairedPasskey>;
 
 /**
- * The phone's hello in the last pairing message (msg3): its name and the passkeys it
- * knows the keys of. The XXpsk0 handshake authenticates it, so the agent trusts these
- * keys as much as the pairing itself; the relay never sees them.
+ * The native app's device signing key (ADR 0017, M4-04): a non-exportable P-256 key in
+ * the Secure Enclave (Android: StrongBox or TEE), as SubjectPublicKeyInfo. `userVerified`
+ * says the key's access control demands a fresh biometric for every signature
+ * ("biometry, current set"); the agent refuses signatures by a key without it.
+ */
+export const PairedDeviceKey = z.strictObject({
+  publicKey: base64Url(512),
+  userVerified: z.boolean(),
+});
+export type PairedDeviceKey = z.infer<typeof PairedDeviceKey>;
+
+/**
+ * The phone's hello in the last pairing message (msg3): its name, the passkeys it knows
+ * the keys of and the native app's device key. The XXpsk0 handshake authenticates it,
+ * so the agent trusts these keys as much as the pairing itself; the relay never sees
+ * them.
  */
 export const PhonePairingHello = PairingHello.extend({
   passkeys: z.array(PairedPasskey).max(16).optional(),
+  deviceKey: PairedDeviceKey.optional(),
 });
 export type PhonePairingHello = z.infer<typeof PhonePairingHello>;
 

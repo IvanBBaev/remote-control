@@ -24,6 +24,7 @@ import type { RelayApi } from '../ports/relay-api.js';
 import { createFakePhone } from '../testing/fake-phone.js';
 import { createFakeRelay, FAKE_RELAY_ORIGIN, type FakeRelay } from '../testing/fake-relay.js';
 import { manualTime, waitFor } from '../testing/manual-time.js';
+import { createTestDeviceKey } from '../testing/test-device-key.js';
 import { createTestPasskey } from '../testing/test-passkey.js';
 import { normalizePairingCode, pairingPsk, renderPairingQr, slotCodeHash } from './pairing-code.js';
 import { createPairingLock, PAIRING_LOCK_MS } from './pairing-lock.js';
@@ -190,6 +191,18 @@ describe('runPairing (fake relay, fake phone)', () => {
     expect(await t.outcome).toMatchObject({ status: 'paired' });
     expect(t.peers).toEqual([phone.peer(t.time.clock.now())]);
     expect(t.peers[0]!.passkeys).toEqual([{ ...passkey.paired, counter: 0 }]);
+    expect(t.lines.some((line) => line.includes('did not hand over its passkey'))).toBe(false);
+  });
+
+  it("stores the native app's device key from its hello, without the passkey warning (M4-04)", async () => {
+    const t = await setup();
+    const deviceKey = await createTestDeviceKey();
+    const phone = await createFakePhone(t.relay, 'iPhone', t.time.clock, t.random, deviceKey);
+    await phone.connect();
+    await phone.pair(await t.code());
+    expect(await t.outcome).toMatchObject({ status: 'paired' });
+    expect(t.peers[0]!.deviceKey).toEqual(deviceKey.paired);
+    expect(t.peers[0]!.passkeys).toBeUndefined();
     expect(t.lines.some((line) => line.includes('did not hand over its passkey'))).toBe(false);
   });
 

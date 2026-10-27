@@ -399,6 +399,22 @@ describe('realtime client', () => {
       });
     });
 
+    it('seals a device signature with no decision hash in the head (M4-04)', async () => {
+      const t = await setup();
+      await t.client.start();
+      const socket = await t.connect();
+      const made = decision(t.timer.now());
+      t.client.decide(AGENT, made, { deviceSignature: 'MEUC' });
+      await settle();
+      const [sent] = socket.of('data').filter((frame) => frame.cls === 'command');
+      expect(sent).not.toHaveProperty('decisionHash');
+      await expect(t.agent.read(sent!)).resolves.toEqual({
+        t: 'decision',
+        decision: made,
+        deviceSignature: 'MEUC',
+      });
+    });
+
     it('re-sends an unacked decision on the next session with a new envelope', async () => {
       const t = await setup();
       await t.client.start();
