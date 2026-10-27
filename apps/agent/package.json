@@ -44,10 +44,10 @@
     "@remote-control/log": "workspace:*",
     "@remote-control/protocol": "workspace:*",
     "diff": "9.0.0",
-    "fastify": "5.12.5",
-    "tsdown": "^0.23.0",
+    "fastify": "5.12.7",
+    "tsdown": "^0.23.1",
     "uqr": "0.1.3",
-    "zod": "^4.6.5",
-    "zxing-wasm": "3.1.5"
+    "zod": "^4.6.7",
+    "zxing-wasm": "3.1.6"
   }
 }
