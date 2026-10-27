@@ -121,6 +121,50 @@ The sample deadlines count from app launch, so relaunch the app before you run t
 links, but none was placed on a Lock Screen. A headless simulator cannot reliably drive the
 Lock Screen editor. This check is left for a device.
 
+## M4-04 — device signing key, Allow with Face ID (2026-10-28)
+
+**Result: pass.** An Allow from the app, approved with Face ID, reaches the agent signed
+with the device key. The agent checks the signature itself and applies the decision.
+
+The app's device key (`modules/device-key`) is a P-256 key whose every use needs the
+currently enrolled biometry. In the simulator there is no Secure Enclave, so the key is a
+keychain key with the same access control. Pairing msg3 carries the key's SPKI. Every
+non-deny decision carries an ES256 signature over the canonical decision. The agent
+verifies it in `device-signature-check.ts`; the relay never sees this proof.
+
+Checked in the iPhone 18 Pro simulator (iOS 27, Face ID enrolled) against the Debug build.
+Setup: a local relay and Postgres, `remotectl` paired with the app, and one
+`PermissionRequest` (`pnpm test`) sent through the installed `hook.cjs`. The taps run as
+an XCUITest ([AllowFaceIDUITests.swift](native-app/AllowFaceIDUITests.swift)), in a
+UI-test target added locally to the git-ignored `ios/` project. While the test waits, the
+host sends a Face ID match every few seconds. The test passes.
+
+| Step                         | Evidence                                                                                                                         |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| The request waits on Agents  | "1 needs you", the `pnpm test` row with its countdown ([device-key-agents.png](native-app/device-key-agents.png)).               |
+| Session screen               | Run a command card with Deny and Allow ([device-key-session.png](native-app/device-key-session.png)).                            |
+| Allow, Face ID match         | The card leaves the screen ([device-key-decided.png](native-app/device-key-decided.png)).                                        |
+| The agent checks and applies | Agent log: `pending_removed` with `outcome: decided`, then `decision_applied` with `kind: allow`; no `device_signature_refused`. |
+| The hook gets the answer     | `hook.cjs` prints `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}`.                |
+
+### How to run
+
+```sh
+# Face ID: Features → Face ID → Enrolled once, then while the test waits:
+xcrun simctl spawn booted notifyutil -p com.apple.BiometricKit_Sim.pearl.match
+```
+
+- `hook.cjs` reads `agent.json` from its own directory, so run the copy that
+  `remotectl hooks install` places in the agent's data directory, not the one in `dist/`.
+  When it finds no `agent.json` it hands the request back to the terminal without output.
+- The app needs the Expo SDK packages aligned at 58.0.16. With `expo` 58.0.7, the
+  autolinking it brings does not register `expo-application` 58.1 (a Swift `@ExpoModule`
+  macro module), and the app stops at launch with "Cannot find native module
+  'ExpoApplication'".
+
+**Not verified:** a real device's Secure Enclave key, and a biometry change that
+invalidates the key. Both need a device.
+
 ## M4-05 — APNs and actionable notifications (2026-10-28)
 
 **Result: partial.** The relay half is verified by unit tests; the simulator run is
