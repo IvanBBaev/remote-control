@@ -1120,7 +1120,7 @@ AC: agent unit tests accept a valid device signature and reject wrong key, wrong
 missing UV; app Allow works end to end in the simulator.
 
 #### M4-05 — APNs on the relay and actionable notifications
-Size M · Deps M4-03 · Status todo · Sources ADR 0017, D5, ADR 0001
+Size M · Deps M4-03 · Status doing (wp/m4-05) · Sources ADR 0017, D5, ADR 0001
 Scope: push port with Web Push and APNs adapters (token auth, `.p8` from env);
 `push_subscriptions.kind`; categories Allow / Review / Deny (authentication required),
 Reply (text input), per-option answers; Notification Service Extension decrypting
