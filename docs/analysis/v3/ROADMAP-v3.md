@@ -9,6 +9,8 @@ before the named condition. Nothing here starts before the v2 tail it depends on
 Statuses: `todo`, `done <sha>`, `gated:<why>`. Sizes S=1 h, M=2 h, L=4 h Opus 5.5
 (normalised; reports differ). Branch: AB = both, A = only if v2 teams shipped.
 Work-package ids are the report ids; the report holds scope and machine-checkable AC.
+Parallel work: lanes, path ownership, reserved names and sync points are in `PARALLEL.md`;
+claim an item by setting `doing <lane>` here on `main` before branching.
 
 ## Phase A — evidence and cheap hardening (valid with or without 3.0)
 | ID | Item | Report | Br | Size | Status |
