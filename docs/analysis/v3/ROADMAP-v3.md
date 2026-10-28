@@ -15,7 +15,7 @@ claim an item by setting `doing <lane>` here on `main` before branching.
 ## Phase A — evidence and cheap hardening (valid with or without 3.0)
 | ID | Item | Report | Br | Size | Status |
 |---|---|---|---|---|---|
-| V3-S03 | Card phishing hardening (bidi, zero-width, homoglyph, "agent says", parsed titles) | 02 §7 | AB | M | doing sec-cards |
+| V3-S03 | Card phishing hardening (bidi, zero-width, homoglyph, "agent says", parsed titles) | 02 §7 | AB | M | done a399db6 |
 | V3-P01 | Vendor-watch script: V-K1…V-K4 strings | 01 §7 | AB | S | gated:v2 watch script (V2-P01) |
 | V3-P02 | Local `remotectl stats` demand counters (no telemetry) | 01 §7 | AB | S | todo |
 | V3-P03 | V-G2 demand gate record (`v3/gates.md`) | 01 §7 | AB | S | todo |
