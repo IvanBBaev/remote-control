@@ -1,3 +1,6 @@
+import { approvalCardText, cardWarnings } from '@remote-control/phone-core/card-safety/card-text';
+import { revealHidden } from '@remote-control/phone-core/card-safety/hidden-characters';
+import type { RevealedText } from '@remote-control/phone-core/card-safety/hidden-characters';
 import * as Haptics from 'expo-haptics';
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -31,6 +34,41 @@ function CardHeader({
     <View style={styles.header}>
       <Text style={[styles.title, { color }]}>{title}</Text>
       <Text style={[styles.countdown, { color }]}>{formatCountdown(deadline, now)}</Text>
+    </View>
+  );
+}
+
+/**
+ * Text from the computer as the card shows it (V3-S03): every hidden or
+ * direction-changing character is a highlighted `⟨U+XXXX⟩` marker in its place.
+ */
+function Revealed({ text }: { text: string | RevealedText }) {
+  const revealed = typeof text === 'string' ? revealHidden(text) : text;
+  return (
+    <>
+      {revealed.parts.map((part, index) =>
+        part.kind === 'text' ? (
+          part.text
+        ) : (
+          <Text key={index} style={styles.hiddenChar}>
+            {part.text}
+          </Text>
+        ),
+      )}
+    </>
+  );
+}
+
+/** The card's warnings (V3-S03): hidden characters and look-alike names. */
+function Warnings({ warnings }: { warnings: readonly string[] }) {
+  if (warnings.length === 0) return null;
+  return (
+    <View style={styles.warnings} accessibilityRole="alert">
+      {warnings.map((warning) => (
+        <Text key={warning} style={styles.warningText}>
+          {warning}
+        </Text>
+      ))}
     </View>
   );
 }
@@ -84,20 +122,34 @@ export function ApprovalCard({
     haptic(kind);
     onDecide(kind);
   };
+  // V3-S03: the title is the tool's label, the detail is shown whole with hidden characters
+  // as markers, a subagent's task or a plan sits in a demoted "Agent says" box.
+  const card = approvalCardText({
+    toolLabel: approval.toolLabel,
+    toolKind: approval.toolKind,
+    content: approval.detail,
+    extra: [approval.cwd],
+  });
   return (
     <Card color={colors.orange}>
       <CardHeader
         color={colors.orange}
-        title={approval.toolLabel}
+        title={card.title}
         deadline={approval.expiresAt}
         now={now}
       />
-      <View style={styles.codeBox}>
-        <Text style={styles.code} selectable>
-          {approval.detail}
+      {card.agentSays && (
+        <Text style={styles.caption}>Agent says (the model's own words, not what runs):</Text>
+      )}
+      <View style={[styles.codeBox, card.agentSays && styles.agentSays]}>
+        <Text style={[styles.code, card.agentSays && styles.agentSaysText]} selectable>
+          <Revealed text={card.content} />
         </Text>
       </View>
-      <Text style={styles.caption}>in {approval.cwd}</Text>
+      <Text style={styles.caption}>
+        in <Revealed text={approval.cwd} />
+      </Text>
+      <Warnings warnings={card.warnings} />
       <View style={styles.buttons}>
         <Button label="Deny" color={colors.red} onPress={() => decide('deny')} />
         <Button label="Allow" color={colors.green} filled onPress={() => decide('allow')} />
@@ -120,15 +172,23 @@ export function QuestionCard({
   now: number;
   onAnswer: (answer: string) => void;
 }) {
+  // V3-S03: the header and prompt are the model's words, so the title stays fixed and the
+  // header is shown demoted under "Agent asks".
+  const warnings = cardWarnings([
+    question.header,
+    question.prompt,
+    ...question.options.flatMap((option) => [option.label, option.description ?? '']),
+  ]);
   return (
     <Card color={colors.cyan}>
-      <CardHeader
-        color={colors.cyan}
-        title={question.header}
-        deadline={question.expiresAt}
-        now={now}
-      />
-      <Text style={styles.prompt}>{question.prompt}</Text>
+      <CardHeader color={colors.cyan} title="Question" deadline={question.expiresAt} now={now} />
+      <Text style={styles.caption}>
+        Agent asks · <Revealed text={question.header} />
+      </Text>
+      <Text style={styles.prompt}>
+        <Revealed text={question.prompt} />
+      </Text>
+      <Warnings warnings={warnings} />
       <View style={styles.options}>
         {question.options.map((option) => (
           <Pressable
@@ -140,8 +200,14 @@ export function QuestionCard({
             }}
             style={({ pressed }) => [styles.option, pressed && styles.pressed]}
           >
-            <Text style={styles.optionLabel}>{option.label}</Text>
-            {option.description && <Text style={styles.caption}>{option.description}</Text>}
+            <Text style={styles.optionLabel}>
+              <Revealed text={option.label} />
+            </Text>
+            {option.description && (
+              <Text style={styles.caption}>
+                <Revealed text={option.description} />
+              </Text>
+            )}
           </Pressable>
         ))}
       </View>
@@ -186,4 +252,15 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   optionLabel: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  hiddenChar: { color: colors.background, backgroundColor: colors.red, fontWeight: '700' },
+  warnings: {
+    borderColor: colors.red,
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+    gap: 4,
+  },
+  warningText: { color: colors.red, fontSize: 14, lineHeight: 19 },
+  agentSays: { borderLeftColor: colors.textSecondary, borderLeftWidth: 3 },
+  agentSaysText: { fontStyle: 'italic', color: colors.textSecondary },
 });

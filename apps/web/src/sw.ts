@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import { openPushSummary } from '@remote-control/crypto';
+import { lockScreenLine, lockScreenTitle } from '@remote-control/phone-core/card-safety/card-text';
 import { decodePushSummary } from '@remote-control/protocol';
 import type { PushSummary } from '@remote-control/protocol';
 import { clientsClaim } from 'workbox-core';
@@ -109,17 +110,19 @@ export async function openSummary(
  * The notification for a push whose summary opened: `"<project>: <tool>"` over the
  * summary line, opening the request the summary names. The tag is the request, so the
  * doorbell's push and the live request's push for it replace one another. A turn notice
- * opens the app root instead.
+ * opens the app root instead. The title uses only the project and the tool label, never
+ * the line, which can be the model's words; hidden characters show as markers (V3-S03).
  */
 export function summaryNotification(text: string | null, summary: PushSummary): PushNotification {
   const { rid } = parsePending(text);
-  const title = summary.p === undefined ? summary.l : `${summary.p}: ${summary.l}`;
+  const title = lockScreenTitle(summary);
+  const line = summary.s === undefined ? undefined : lockScreenLine(summary.s);
   if (summary.k !== undefined) {
     // A turn notice (M2-08): nothing is pending, so it opens the app, not a request.
     return {
       title,
       options: {
-        body: summary.s ?? 'Tap to open.',
+        body: line ?? 'Tap to open.',
         ...(rid !== undefined && { tag: rid }),
         data: { url: '/' },
       },
@@ -129,7 +132,7 @@ export function summaryNotification(text: string | null, summary: PushSummary): 
   return {
     title,
     options: {
-      body: summary.s ?? 'Tap to review.',
+      body: line ?? 'Tap to review.',
       ...(request !== undefined && { tag: request }),
       data: { url: request === undefined ? '/' : `/requests/${request}` },
     },

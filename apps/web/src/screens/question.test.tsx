@@ -169,6 +169,43 @@ describe('question card', () => {
     expect(text()).toContain('Unknown computer');
   });
 
+  it('AC: marks hidden characters and look-alike letters and warns (V3-S03)', async () => {
+    const tricky: QuestionItem = {
+      text: 'Deploy to ex\u0430mple.com?',
+      header: 'Deploy\u202E',
+      options: [{ label: 'Yes\u200B', description: 'Safe' }, { label: 'No' }],
+      multi: false,
+    };
+    const { test, answer } = await open(() => ({ request: question({ questions: [tricky] }) }));
+    expect(mounted?.container.querySelector('legend .meta')?.textContent).toBe(
+      'Agent asks · Deploy⟨U+202E⟩',
+    );
+    expect(mounted?.container.querySelector('h2')?.textContent).toBe('Deploy to ex\u0430mple.com?');
+    expect(
+      [...(mounted?.container.querySelectorAll('.card-warnings li') ?? [])].map(
+        (item) => item.textContent,
+      ),
+    ).toEqual([
+      '1 direction-changing character, shown as ⟨U+202E⟩. The text may run differently from how it reads.',
+      '1 invisible character, shown as ⟨U+200B⟩.',
+      '"ex\u0430mple.com" mixes Latin and Cyrillic letters (U+0430): it may imitate another name.',
+    ]);
+    expect(text()).toContain('Yes⟨U+200B⟩');
+    tick(test, TAP_GUARD_MS);
+    answer.mockResolvedValue({ ok: true, decisionHash: 'h', asserted: true });
+    await click(choice('Yes'));
+    await click(mounted!.button('Send answer'));
+    expect(answer.mock.calls[0]![2]).toEqual({ answers: [{ labels: ['Yes\u200B'] }] });
+  });
+
+  it('shows no warnings for a plain question', async () => {
+    await open();
+    expect(mounted?.container.querySelector('.card-warnings')).toBeNull();
+    expect(mounted?.container.querySelector('legend .meta')?.textContent).toBe(
+      'Agent asks · Framework',
+    );
+  });
+
   it('steps through the questions and sends the answer with the note', async () => {
     const { test, answer } = await open();
     tick(test, TAP_GUARD_MS);

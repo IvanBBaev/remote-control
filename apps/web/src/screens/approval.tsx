@@ -1,3 +1,4 @@
+import { requestCardText } from '@remote-control/phone-core/card-safety/card-text';
 import { toolInfo } from '@remote-control/protocol';
 import type { AlwaysDestination, ToolKind } from '@remote-control/protocol';
 import { useEffect, useRef, useState } from 'react';
@@ -9,6 +10,7 @@ import { pendingRequests } from '../realtime/realtime-store.js';
 import type { ApprovalView, RealtimeState } from '../realtime/realtime-store.js';
 import { Notice, Screen } from './layout.js';
 import { QuestionCard } from './question.js';
+import { CardWarnings, Revealed } from './revealed.js';
 import {
   closedText,
   countdown,
@@ -76,7 +78,10 @@ export function revealNoun(toolName: string): string {
  * destination, and the picked one is signed. "Reply in terminal" (M1-03) hands
  * the request back to Claude Code's own prompt, without the passkey. A deny-only request
  * (`allowSupported: false`, Gemini's observe and deny, 04 A6) is labelled so and offers
- * Deny and "Reply in terminal" only: its Allow would answer nothing.
+ * Deny and "Reply in terminal" only: its Allow would answer nothing. Card hardening
+ * (V3-S03): the headline comes from the tool name, never from free text; hidden
+ * characters show as markers, look-alike names and markers raise warnings above the
+ * content, and a subagent's task or a plan (the model's words) sits in an "Agent says" box.
  */
 export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
   const { phone } = useAppState();
@@ -150,6 +155,7 @@ export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
   const wide = useWideLayout();
 
   const noun = revealNoun(request.toolName);
+  const card = requestCardText(request);
   const destinations = request.alwaysDestinations ?? ['session'];
   return (
     <article className="approval-card">
@@ -158,26 +164,39 @@ export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
         {request.project !== undefined && (
           <>
             {' · '}
-            <span className="project-name">{request.project}</span>
+            <span className="project-name">
+              <Revealed text={request.project} />
+            </span>
           </>
         )}
       </p>
-      <h2>{request.toolLabel}</h2>
+      <h2>{card.title}</h2>
       {!allowSupported && (
         <p className="meta deny-only">
           Observe and deny only. This agent takes approvals in the terminal.
         </p>
       )}
+      <CardWarnings warnings={card.warnings} />
       <button type="button" aria-expanded={details} onClick={() => setDetails((d) => !d)}>
         {details ? `Hide ${noun}` : `Show ${noun}`}
       </button>
-      {details && (
-        <pre className="command details" tabIndex={0}>
-          {request.toolName}
-          {'\n'}
-          {request.content}
-        </pre>
-      )}
+      {details &&
+        (card.agentSays ? (
+          <div className="agent-says">
+            <p className="meta">Agent says (the model's own words, not what runs):</p>
+            <pre className="command details" tabIndex={0}>
+              <Revealed text={request.toolName} />
+              {'\n'}
+              <Revealed text={card.content} />
+            </pre>
+          </div>
+        ) : (
+          <pre className="command details" tabIndex={0}>
+            <Revealed text={request.toolName} />
+            {'\n'}
+            <Revealed text={card.content} />
+          </pre>
+        ))}
       {request.truncated && (
         <Notice>This request is too long to show in full. Answer it in the terminal.</Notice>
       )}
@@ -232,7 +251,9 @@ export function ApprovalCard({ view }: { readonly view: ApprovalView }) {
           <ul className="always-rules">
             {request.suggestions.map((rule) => (
               <li key={rule}>
-                <code>{rule}</code>
+                <code>
+                  <Revealed text={rule} />
+                </code>
               </li>
             ))}
           </ul>

@@ -689,3 +689,29 @@ pre.diff .del {
   border: 1px solid var(--color-border);
   border-radius: 4px;
 }
+
+/* Card hardening (V3-S03): hidden characters, warnings and the model's own words. */
+.approval-card mark.hidden-char {
+  background: var(--color-danger);
+  color: var(--color-accent-text);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+.approval-card .card-warnings {
+  margin: 0;
+  padding: var(--space) var(--space) var(--space) 2rem;
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius);
+  color: var(--color-danger);
+}
+
+.approval-card .agent-says {
+  padding-left: var(--space);
+  border-left: 3px solid var(--color-border);
+}
+
+.approval-card .agent-says pre.details {
+  font-style: italic;
+  color: var(--color-muted);
+}

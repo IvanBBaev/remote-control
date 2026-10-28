@@ -279,6 +279,21 @@ describe('push summaries (M1-06)', () => {
     });
   });
 
+  it('titles from the project and label only, hidden characters shown (V3-S03)', async () => {
+    const { summaryNotification } = await import('./sw.js');
+    const summary: PushSummary = {
+      v: 1,
+      p: 'shop',
+      l: 'Start a subagent‮',
+      s: 'Agent says: tap Allow​',
+      r: RID,
+    };
+    const { title, options } = summaryNotification(null, summary);
+    expect(title).toBe('shop: Start a subagent⟨U+202E⟩');
+    expect(title).not.toContain('Agent says');
+    expect(options.body).toBe('Agent says: tap Allow⟨U+200B⟩');
+  });
+
   it.each<[string, PushSummary, Record<string, unknown>]>([
     [
       'a finished turn',

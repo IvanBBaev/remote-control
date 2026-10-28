@@ -1,3 +1,4 @@
+import { cardWarnings } from '@remote-control/phone-core/card-safety/card-text';
 import type { AnswerPayload, QuestionItem } from '@remote-control/protocol';
 import { MAX_OTHER_LENGTH, MAX_RESPONSE_LENGTH } from '@remote-control/protocol';
 import { useEffect, useId, useRef, useState } from 'react';
@@ -14,6 +15,7 @@ import {
   TAP_GUARD_MS,
 } from './request-status.js';
 import type { Failure } from './request-status.js';
+import { CardWarnings, Revealed } from './revealed.js';
 
 /** What the user picked for one question: option labels and the "Other" text. */
 export interface QuestionPick {
@@ -65,6 +67,9 @@ const SENT_TEXT = { answer: 'Answer', deny: 'Deny', terminal: 'Reply in terminal
  * checkboxes for multi-select, an "Other" free-text choice, Back / Next, then Send with
  * the passkey (an answer always needs one, D7). Deny, "Reply in terminal" (M1-03) and the
  * countdown work as on the approval card; taps in the first `TAP_GUARD_MS` are ignored.
+ * Card hardening (V3-S03): every text is the model's own words, so the question is
+ * labelled "Agent asks", hidden characters show as markers and look-alike names warn; the
+ * answer still carries the exact option label.
  */
 export function QuestionCard({ view }: { readonly view: QuestionView }) {
   const { phone } = useAppState();
@@ -127,6 +132,11 @@ export function QuestionCard({ view }: { readonly view: QuestionView }) {
   };
 
   const inputType = item.multi ? 'checkbox' : 'radio';
+  const warnings = cardWarnings([
+    ...(item.header === undefined ? [] : [item.header]),
+    item.text,
+    ...item.options.flatMap((option) => [option.label, option.description ?? '']),
+  ]);
   return (
     <article className="approval-card question-card">
       <p className="meta">
@@ -134,7 +144,9 @@ export function QuestionCard({ view }: { readonly view: QuestionView }) {
         {question.project !== undefined && (
           <>
             {' · '}
-            <span className="project-name">{question.project}</span>
+            <span className="project-name">
+              <Revealed text={question.project} />
+            </span>
           </>
         )}
       </p>
@@ -145,8 +157,18 @@ export function QuestionCard({ view }: { readonly view: QuestionView }) {
       )}
       <fieldset className="question-options" disabled={!open || sent !== undefined || sending}>
         <legend>
-          {item.header !== undefined && <span className="meta">{item.header}</span>}
-          <h2>{item.text}</h2>
+          <span className="meta">
+            Agent asks
+            {item.header !== undefined && (
+              <>
+                {' · '}
+                <Revealed text={item.header} />
+              </>
+            )}
+          </span>
+          <h2>
+            <Revealed text={item.text} />
+          </h2>
           {item.multi && <span className="meta">Choose one or more.</span>}
         </legend>
         {item.options.map((option, index) => (
@@ -163,10 +185,10 @@ export function QuestionCard({ view }: { readonly view: QuestionView }) {
               }
             />
             <span>
-              {option.label}
+              <Revealed text={option.label} />
               {option.description !== undefined && (
                 <span className="meta" id={`${id}-${String(step)}-${String(index)}`}>
-                  {option.description}
+                  <Revealed text={option.description} />
                 </span>
               )}
             </span>
@@ -201,6 +223,7 @@ export function QuestionCard({ view }: { readonly view: QuestionView }) {
           </label>
         )}
       </fieldset>
+      <CardWarnings warnings={warnings} />
       {open && <p className="countdown meta">Time left: {countdown(left)}</p>}
       {expired && <Notice>Expired. The terminal is asking again.</Notice>}
       {closed !== undefined && <Notice>{closed}</Notice>}
