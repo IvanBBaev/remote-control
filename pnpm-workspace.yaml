@@ -10,3 +10,21 @@ allowBuilds:
 
 # Supply-chain guard (ROADMAP §5): never install a version younger than 7 days.
 minimumReleaseAge: 10080
+
+# @bacons/xcode pulls @expo/plist 0.0.18, which still ranges @xmldom/xmldom ^0.7; the
+# 0.7 line carries high advisories fixed only in 0.8.15. 0.8 keeps the DOMParser API
+# that plist parsing uses.
+overrides:
+  '@xmldom/xmldom@<0.8.15': 0.8.15
+
+# `pnpm audit --prod` walks apps/mobile's build tooling (expo -> @expo/cli). Two
+# advisories there have no installable fix yet; both are build-time only (the Expo CLI
+# is not bundled into the app and never runs in the relay or the agent):
+# - GHSA-mrhx-c7xc-m3w5 (zod): fixed only in zod 4.6.6; @expo/cli pins zod ^3.25.76 and
+#   there is no patched 3.x. Our own zod is 4.6.7.
+# - GHSA-86w9-cpqp-85rv (node-forge): fixed in 1.4.1, published 2026-10-27; younger than
+#   minimumReleaseAge. Remove this entry and refresh the lockfile after 2026-11-03.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-mrhx-c7xc-m3w5
+    - GHSA-86w9-cpqp-85rv
