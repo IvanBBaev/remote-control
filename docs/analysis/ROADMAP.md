@@ -57,7 +57,7 @@ named, so nobody re-derives it.
 | M0-24 | Agent macOS launchd service | §4 M0-24 | `done` | 1 |
 | M0-25 | CI completion: OS matrix, coverage, pg-real, browser vectors | §4 M0-25 | `done` | 2 |
 | PUSHa | Runner-only failures fixed (waitFor budget, LF, Windows shell/paths/EBUSY, diff-view CPU time, WebKit on macOS; 15dc317) | §4 M0-25, M1-08 notes | `done` | 2 |
-| PUSHb | First push done (origin/main = a91822b); ci, e2e, pg-real, image green; agent-os Windows still red (EBUSY rmdir in fake-claude-code conformance, project-settings deepEqual in cli main.test) | §4 M0-25, M1-08 notes | `partial:90` | 0.75 |
+| PUSHb | First push done (origin/main = a91822b); agent-os Windows green since PUSHa; ci/image red on new high advisories (zod, xmldom, node-forge) fixed in d5dac2c — GitHub confirmation rides on the next push | §4 M0-25, M1-08 notes | `done d5dac2c` | 0.75 |
 | PUSHc | Branch protection on main with the green checks required | §4 M0-25, M1-08 notes | `blocked-owner` | 0.25 |
 | M0-26a | Sentry scrubbing, ops runbook (code part) | §4 M0-26 | `done` | 1 |
 | M0-26b | Railway backups + restore drill, UptimeRobot, usage alert, Sentry DSN | §4 M0-26 | `blocked-owner` | 1 |
