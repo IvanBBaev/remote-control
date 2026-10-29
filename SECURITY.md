@@ -53,6 +53,13 @@ release) is supported.
 5. **The agent has no inbound network surface.** Its hook endpoint binds to `127.0.0.1`
    only, requires a per-install token and has no "decide" API; decisions arrive only over
    the agent's outbound WebSocket session.
+6. **No text an agent or a repository supplies can hide what it is** (V3-S03). Bidi
+   overrides, zero-width and control characters are shown as visible `⟨U+XXXX⟩` markers
+   on every card, and the agent applies the same reveal to the sealed push summary
+   (project, tool label, summary line) before it seals it, so the lock-screen
+   notification, the widget and the future Live Activity show marked text without
+   running any reveal of their own. A Live Activity shows only the summary's project and
+   tool label, never the summary line or other free text.
 
 Invariants that hold in every release:
 

@@ -60,6 +60,9 @@ enum PushSummaryReader {
   static let keychainAccount = "rc.push.keys"
   static let accessGroup = "group.dev.ivanbaev.remotecontrol"
 
+  /// Shows the summary fields as sealed: the agent has already replaced every hidden or
+  /// direction-changing character with a `⟨U+XXXX⟩` marker (V3-S03b), so the extension
+  /// needs no reveal of its own.
   static func apply(to content: UNMutableNotificationContent) {
     guard
       let rc = content.userInfo["rc"] as? [String: Any],

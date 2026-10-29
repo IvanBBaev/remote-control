@@ -15,6 +15,7 @@ import {
   noticeSummaryText,
   pushSummaryLine,
   pushSummaryText,
+  revealedSummaryText,
 } from './push-summary.js';
 
 const REQUEST = '0199a1b2-c3d4-4e5f-8a6b-7c8d9e0f1a2b';
@@ -141,6 +142,61 @@ describe('pushSummaryText', () => {
       payload: { tool_name: 'Bash' },
     } as unknown as PendingRequest;
     expect(pushSummaryText(request)).toBeUndefined();
+  });
+});
+
+describe('revealed summary text (V3-S03b)', () => {
+  const RLO = '\u202e';
+  const ZWSP = '\u200b';
+
+  it('shows every hidden character as its marker, and a second reveal changes nothing', () => {
+    const text = revealedSummaryText(`echo ${RLO}txt.exe`, 120);
+    expect(text).toBe('echo ⟨U+202E⟩txt.exe');
+    expect(revealedSummaryText(text, 120)).toBe(text);
+  });
+
+  it('cuts to the cap with an ellipsis, never inside a marker', () => {
+    expect(revealedSummaryText(`abcd${RLO}efgh`, 8)).toBe('abcd…');
+    expect(revealedSummaryText(`${RLO}${RLO}`, 12)).toBe('⟨U+202E⟩…');
+    expect(Array.from(revealedSummaryText(ZWSP.repeat(100), 120))).toHaveLength(113);
+  });
+
+  it('AC: project, label and line of a pushed request carry markers, within the schema', () => {
+    const text = pushSummaryText(
+      pending({
+        tool_name: `mcp__evil${ZWSP}__deploy`,
+        tool_input: {},
+        cwd: `/w/app${RLO}${ZWSP.repeat(40)}`,
+      }),
+    );
+    const summary = decodePushSummary(text!)!;
+    expect(summary.p!.startsWith('app⟨U+202E⟩⟨U+200B⟩')).toBe(true);
+    expect(summary.p!.length).toBeLessThanOrEqual(128);
+    expect(summary.p!.endsWith('…')).toBe(true);
+    expect(summary.l).toContain('⟨U+200B⟩');
+    expect(summary.l).not.toContain(ZWSP);
+
+    const line = pushSummaryText(
+      pending({
+        tool_name: 'Bash',
+        tool_input: { command: `rm -rf ~ #${RLO}\r ls` },
+        cwd: '/w/app',
+      }),
+    );
+    expect(decodePushSummary(line!)!.s).toBe('rm -rf ~ #⟨U+202E⟩⟨U+000D⟩ ls');
+  });
+
+  it('AC: a needs-input notice line carries markers too', () => {
+    const text = noticeSummaryText(
+      {
+        hook_event_name: 'Notification',
+        notification_type: 'agent_needs_input',
+        message: `Approve ${RLO}this`,
+        cwd: '/w/app',
+      } as never,
+      'input',
+    );
+    expect(decodePushSummary(text)!.s).toBe('Approve ⟨U+202E⟩this');
   });
 });
 

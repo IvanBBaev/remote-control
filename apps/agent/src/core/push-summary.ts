@@ -1,6 +1,8 @@
 import { deriveNotificationKey, sealPushSummary, type X25519KeyPair } from '@remote-control/crypto';
 import {
   encodePushSummary,
+  MAX_TOOL_LABEL_LENGTH,
+  revealHidden,
   toolInfo,
   type PushSummary,
   type Random,
@@ -14,6 +16,9 @@ import type { PendingRequest } from './pending-store.js';
 
 /** The summary line cap: a lock screen shows about two lines anyway. */
 const MAX_LINE_LENGTH = 120;
+
+/** The project cap of the push summary schema (`p`). */
+const MAX_SUMMARY_PROJECT_LENGTH = 128;
 
 const SECRET_NAME = String.raw`[\w.-]*(?:token|secret|key|pass|pwd|auth|credential|cookie|session)[\w.-]*`;
 const SECRET_VALUE = String.raw`(?:"[^"]*"|'[^']*'|\S+)`;
@@ -114,13 +119,45 @@ export function pushSummaryLine(
   return line === undefined || line.trim() === '' ? undefined : shortLine(line);
 }
 
-/** The first non-empty line, secrets masked, cut to {@link MAX_LINE_LENGTH} code points. */
+const codePoints = (text: string): number => Array.from(text).length;
+const codeUnits = (text: string): number => text.length;
+
+/**
+ * `text` with every hidden character shown as its `⟨U+XXXX⟩` marker (V3-S03b), cut to
+ * `max` as measured by `size`. A cut ends with `…` and never splits a marker, so the
+ * Swift extension, the widget and the service worker all show the same safe text.
+ */
+export function revealedSummaryText(
+  text: string,
+  max: number,
+  size: (text: string) => number = codePoints,
+): string {
+  const revealed = revealHidden(text);
+  if (size(revealed.text) <= max) return revealed.text;
+  let kept = '';
+  for (const part of revealed.parts) {
+    const pieces = part.kind === 'text' ? Array.from(part.text) : [part.text];
+    for (const piece of pieces) {
+      if (size(kept + piece) > max - 1) return `${kept}…`;
+      kept += piece;
+    }
+  }
+  return `${kept}…`;
+}
+
+/**
+ * The first non-empty line, secrets masked, hidden characters revealed, cut to
+ * {@link MAX_LINE_LENGTH} code points (at most twice that in UTF-16, within the schema).
+ */
 function shortLine(text: string): string {
-  const masked = maskSecrets(firstLine(text));
-  const points = Array.from(masked);
-  return points.length <= MAX_LINE_LENGTH
-    ? masked
-    : `${points.slice(0, MAX_LINE_LENGTH - 1).join('')}…`;
+  return revealedSummaryText(maskSecrets(firstLine(text)), MAX_LINE_LENGTH);
+}
+
+/** The project name as the summary carries it: revealed, within the schema cap. */
+function summaryProject(project: string | undefined): string | undefined {
+  return project === undefined
+    ? undefined
+    : revealedSummaryText(project, MAX_SUMMARY_PROJECT_LENGTH, codeUnits);
 }
 
 /** The encoded summary of a pending permission request; `undefined` when it has none. */
@@ -128,12 +165,12 @@ export function pushSummaryText(request: PendingRequest): string | undefined {
   const { toolName, toolInput } = toolCall(request);
   if (toolName === '') return undefined;
   const cwd = request.payload['cwd'];
-  const project = projectName(cwd);
+  const project = summaryProject(projectName(cwd));
   const line = pushSummaryLine(toolName, toolInput, cwd);
   try {
     return encodePushSummary({
       v: 1,
-      l: toolLabel(toolName),
+      l: revealedSummaryText(toolLabel(toolName), MAX_TOOL_LABEL_LENGTH, codeUnits),
       ...(project === undefined ? {} : { p: project }),
       ...(line === undefined ? {} : { s: line }),
       r: request.id,
@@ -181,7 +218,7 @@ export function noticeKind(input: HookInput, settings: NoticeSettings): NoticeKi
  * the last assistant message may quote file contents (D5).
  */
 export function noticeSummaryText(input: HookInput, kind: NoticeKind): string {
-  const project = projectName(input['cwd']);
+  const project = summaryProject(projectName(input['cwd']));
   const message = kind === 'input' ? stringField(input, 'message') : undefined;
   return encodePushSummary({
     v: 1,

@@ -144,3 +144,5 @@ export {
   toolStep,
 } from './session-feed.js';
 export type { SessionContent } from './session-feed.js';
+export { hiddenCount, hiddenKind, marker, revealHidden } from './hidden-characters.js';
+export type { HiddenKind, RevealedPart, RevealedText } from './hidden-characters.js';
