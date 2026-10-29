@@ -1144,10 +1144,24 @@ from the App Group store; deep links into the app.
 AC: widgets render fixture data in the simulator; tap opens the right screen.
 
 #### M4-08 — TestFlight and device run
-Size S · Deps M4-06, owner Q2 + Q22 · Status todo · Sources ADR 0017
+Size S · Deps M4-06, owner Q2 + Q22, RV phase B (`review/ROADMAP-review.md`) · Status todo · Sources ADR 0017, review/SYNTHESIS.md T1
 Scope: EAS/Xcode archive, associated domains, APNs production environment, TestFlight.
 AC: `docs/verification/native-app.md` records a real request allowed from the Lock
 Screen Live Activity on the owner's iPhone.
+
+### RV — As-built review follow-ups (2026-10-29)
+An as-built review by nine senior roles (`review/01-roles.md`) at `f0281ef`. The reports
+are in `review/reports/`, the consolidated findings, owner questions (Q-RV-01…41) and new
+risks (R20–R56) are in `review/SYNTHESIS.md`. The 101 work items (149 h) are tracked in
+`review/ROADMAP-review.md`, with their status cells there:
+- **Phase A** (57 items, 74 h): before the M1 owner day (M0-02b), the first publish
+  (M1-09b) and the second-user run (M1-14b). Most urgent: RV-OPS-01 (Railway Config as
+  Code ends 2026-12-01), RV-RLY-01 (pg hub in production), RV-SEC-02 (security headers),
+  RV-AGT-01/02 (unanswerable and parallel requests) and RV-UX-01…04 (onboarding).
+- **Phase B** (22 items, 34 h): before M4-08. Native sign-in (RV-UX-06/07) is an M4-08
+  dependency.
+- **Phase C** (22 items, 41 h): hardening and modularity, sequenced against the v3 lanes;
+  RV-ARC-01 (PARALLEL §3 hotspots) first.
 
 ## 5. Conventions for the executor
 
@@ -1240,6 +1254,8 @@ unset (D10), port 4327.
 | R17 | Two phones / Remote Control race on one request | low | low | First decision wins + `resolved`; after handoff the agent never decides (M0-16) |
 | R18 | Hobby cost creep | low | low | Usage alert + hard limit (M0-26) |
 | R19 | Executor context overflow reading the corpus | medium | medium | §0 read rules; reports cited by section; WP scopes self-contained |
+
+R20–R56 (as-built review, 2026-10-29) are in `review/SYNTHESIS.md` §5.
 
 ## 8. Appendix — report work items → work packages
 
