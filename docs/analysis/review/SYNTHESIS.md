@@ -115,49 +115,49 @@ Related items, kept separate:
 ## 4. Owner questions (consolidated)
 Defaults apply until answered, as in ROADMAP §6. The report-local ID is in brackets.
 
-| ID | Question | Default | Gates |
-|---|---|---|---|
-| Q-RV-01 | Is the PWA a high-assurance client or a convenience client? [SEC 1] | Convenience; recommend the native app for Allow/Start | RV-SEC-01 |
-| Q-RV-02 | Refuse keyless pairing by default in M1? [SEC 2] | Yes, `--allow-relay-trust` escape hatch | RV-SEC-03 |
-| Q-RV-03 | APNs alert names the machine (visible to Apple) — acceptable? [SEC 3] | Yes; "generic title" setting later | — |
-| Q-RV-04 | "Applied" receipt from the agent in M1? [SEC 4] | No, post-M1 | — |
-| Q-RV-05 | Browser without a non-extractable key store: refuse or warn? [SEC 5] | Refuse | RV-SEC-04 |
-| Q-RV-06 | Production hub `RC_HUB=pg` with one replica? [RLY 1] | Yes | RV-RLY-01 |
-| Q-RV-07 | Refuse to boot without push credentials? [RLY 2] | Warn + `/health` field; fail-closed only with `RC_REQUIRE_PUSH=1` | RV-RLY-06 |
-| Q-RV-08 | Retry the other APNs environment on BadDeviceToken and rewrite it? [RLY 3] | Yes, once per subscription | RV-RLY-03 |
-| Q-RV-09 | `undeliverable` frame for offline commands? [RLY 4] | Not for M1; revisit after V3-C12 | — |
-| Q-RV-10 | Authoritative invariant numbering? [Q-AGT-1] | ROADMAP §1 (00-state already aligned) | RV-QA-09 |
-| Q-RV-11 | Gemini hold length? [Q-AGT-2] | 120 s | RV-AGT-04 |
-| Q-RV-12 | Amend ADR 0006 so `--permission-mode` is always explicit and resumes keep it? [Q-AGT-3] | Yes; until then refuse follow-ups in plan-bound folders | RV-AGT-05 |
-| Q-RV-13 | Reconnecting link: full hold or cap (e.g. 5 min)? [Q-AGT-4] | Full hold | RV-AGT-01 |
-| Q-RV-14 | Add a parallel-subagent prompt to the M0-23b run? [Q-AGT-5] | Yes, extra row in `tools/verify-claude-code.ts` | RV-AGT-02 |
-| Q-RV-15 | Native sign-in method? [Q-MOB-1, Q-UX-1] | Native passkey on the Q2 domain, as an M4-08 dependency | RV-UX-06 |
-| Q-RV-16 | Allow from a notification whose content was not decrypted? [Q-MOB-2] | No; Review/Deny only | RV-MOB-06 |
-| Q-RV-17 | First TestFlight audience? [Q-MOB-3] | Internal testers only until sign-in and deletion ship | M4-08 |
-| Q-RV-18 | Live Activity buttons? [Q-MOB-4] | Both open the app; M4-06 AC becomes "Deny reaches the agent after the app opens" | RV-MOB-08, M4-06 |
-| Q-RV-19 | Minimum iOS for the native app? [Q-MOB-5] | 18.0 (the PWA covers 17) | RV-MOB-11 |
-| Q-RV-20 | Build path for M4-08? [Q-MOB-6] | EAS Build with `development` / `preview` / `production` profiles | RV-MOB-07 |
-| Q-RV-21 | If the delayed-relay device case is NO-GO, amend D7 (local WebAuthn options)? [WEB 1] | Measure first; no ADR until NO-GO | RV-WEB-02 |
-| Q-RV-22 | PWA update: prompt or silent on next cold start? [WEB 2] | Prompt | RV-WEB-09 |
-| Q-RV-23 | HSTS `includeSubDomains` on the production domain? [WEB 3] | Yes, without `preload` | RV-SEC-02 |
-| Q-RV-24 | 160 KB gzip budget for the main chunk? [WEB 4] | Yes | RV-WEB-12 |
-| Q-RV-25 | Buy the domain before creating the Railway service? [OQ-OPS-1] | Yes; never register a passkey on `*.up.railway.app` | RV-OPS-02 |
-| Q-RV-26 | Ruleset with `enforce_admins` for `main` and tags? [OQ-OPS-2] | Keep direct pushes; protect tags; rely on the RV-OPS-04 gate | RV-OPS-04 |
-| Q-RV-27 | Admin commands: `railway ssh` or a temporary public DB URL? [OQ-OPS-3] | `railway ssh` | RV-OPS-03 |
-| Q-RV-28 | Ship `cli.mjs.map` (4.4 MB) in the tarball? [OQ-OPS-4] | Keep it | — |
-| Q-RV-29 | Staging: own project or an environment in the same project? [OQ-OPS-5] | Environment in the same project | RV-OPS-01 |
-| Q-RV-30 | Move the XCUITests into the repo? [QA 1] | Yes, after M4-08 | — |
-| Q-RV-31 | Playwright CI keeps `retries: 1`? [QA 2] | Yes | — |
-| Q-RV-32 | CPU headroom for `pnpm check`? [QA 3] | Pass at 3× load on 4 vCPU (`RC_TEST_TIME_SCALE=3`) | RV-QA-06 |
-| Q-RV-33 | Encoded-canary search covers gzip/deflate? [QA 4] | No | RV-QA-08 |
-| Q-RV-34 | `arch` pseudo-lane may hold unowned hotspots one item at a time? [Q-ARC-1] | Yes, claimed on `main` | RV-ARC-02…05 |
-| Q-RV-35 | version-gate lane may touch the agent `relay-client.ts` hello? [Q-ARC-2] | Yes, that function only | RV-ARC-01 |
-| Q-RV-36 | When do phone-core tests move into the package? [Q-ARC-3] | After V3-S13, before the first TestFlight upload | RV-ARC-09 |
-| Q-RV-37 | Lint boundary rules: error now or warn for one wave? [Q-ARC-4] | Error now (`main` passes) | RV-ARC-06 |
-| Q-RV-38 | Enrolment: keep "copy a command" or move to a device-code flow? [Q-UX-2] | Copy command for 0.1.0 | — |
-| Q-RV-39 | Canonical words "computer" and "phone"; keep the `devices` command? [Q-UX-3] | Yes | RV-UX-09 |
-| Q-RV-40 | Native list label "Agents" vs PWA "Sessions"? [Q-UX-4] | Keep both; record as intentional | RV-UX-09 |
-| Q-RV-41 | Privacy policy hosting? [Q-UX-5] | Relay domain, before any external tester | RV-UX-10 |
+| ID | Question | Default | Gates | Answer |
+|---|---|---|---|---|
+| Q-RV-01 | Is the PWA a high-assurance client or a convenience client? [SEC 1] | Convenience; recommend the native app for Allow/Start | RV-SEC-01 | Default accepted (2026-10-30) |
+| Q-RV-02 | Refuse keyless pairing by default in M1? [SEC 2] | Yes, `--allow-relay-trust` escape hatch | RV-SEC-03 | Default accepted (2026-10-30) |
+| Q-RV-03 | APNs alert names the machine (visible to Apple) — acceptable? [SEC 3] | Yes; "generic title" setting later | — | Default accepted (2026-10-30) |
+| Q-RV-04 | "Applied" receipt from the agent in M1? [SEC 4] | No, post-M1 | — | Default accepted (2026-10-30) |
+| Q-RV-05 | Browser without a non-extractable key store: refuse or warn? [SEC 5] | Refuse | RV-SEC-04 | Default accepted (2026-10-30) |
+| Q-RV-06 | Production hub `RC_HUB=pg` with one replica? [RLY 1] | Yes | RV-RLY-01 | Default accepted (2026-10-30) |
+| Q-RV-07 | Refuse to boot without push credentials? [RLY 2] | Warn + `/health` field; fail-closed only with `RC_REQUIRE_PUSH=1` | RV-RLY-06 | Default accepted (2026-10-30) |
+| Q-RV-08 | Retry the other APNs environment on BadDeviceToken and rewrite it? [RLY 3] | Yes, once per subscription | RV-RLY-03 | Default accepted (2026-10-30) |
+| Q-RV-09 | `undeliverable` frame for offline commands? [RLY 4] | Not for M1; revisit after V3-C12 | — | Default accepted (2026-10-30) |
+| Q-RV-10 | Authoritative invariant numbering? [Q-AGT-1] | ROADMAP §1 (00-state already aligned) | RV-QA-09 | Default accepted (2026-10-30) |
+| Q-RV-11 | Gemini hold length? [Q-AGT-2] | 120 s | RV-AGT-04 | Default accepted (2026-10-30) |
+| Q-RV-12 | Amend ADR 0006 so `--permission-mode` is always explicit and resumes keep it? [Q-AGT-3] | Yes; until then refuse follow-ups in plan-bound folders | RV-AGT-05 | Default accepted (2026-10-30) |
+| Q-RV-13 | Reconnecting link: full hold or cap (e.g. 5 min)? [Q-AGT-4] | Full hold | RV-AGT-01 | Default accepted (2026-10-30) |
+| Q-RV-14 | Add a parallel-subagent prompt to the M0-23b run? [Q-AGT-5] | Yes, extra row in `tools/verify-claude-code.ts` | RV-AGT-02 | Default accepted (2026-10-30) |
+| Q-RV-15 | Native sign-in method? [Q-MOB-1, Q-UX-1] | Native passkey on the Q2 domain, as an M4-08 dependency | RV-UX-06 | Default accepted (2026-10-30) |
+| Q-RV-16 | Allow from a notification whose content was not decrypted? [Q-MOB-2] | No; Review/Deny only | RV-MOB-06 | Default accepted (2026-10-30) |
+| Q-RV-17 | First TestFlight audience? [Q-MOB-3] | Internal testers only until sign-in and deletion ship | M4-08 | Default accepted (2026-10-30) |
+| Q-RV-18 | Live Activity buttons? [Q-MOB-4] | Both open the app; M4-06 AC becomes "Deny reaches the agent after the app opens" | RV-MOB-08, M4-06 | Default accepted (2026-10-30) |
+| Q-RV-19 | Minimum iOS for the native app? [Q-MOB-5] | 18.0 (the PWA covers 17) | RV-MOB-11 | Default accepted (2026-10-30) |
+| Q-RV-20 | Build path for M4-08? [Q-MOB-6] | EAS Build with `development` / `preview` / `production` profiles | RV-MOB-07 | Default accepted (2026-10-30) |
+| Q-RV-21 | If the delayed-relay device case is NO-GO, amend D7 (local WebAuthn options)? [WEB 1] | Measure first; no ADR until NO-GO | RV-WEB-02 | Default accepted (2026-10-30) |
+| Q-RV-22 | PWA update: prompt or silent on next cold start? [WEB 2] | Prompt | RV-WEB-09 | Default accepted (2026-10-30) |
+| Q-RV-23 | HSTS `includeSubDomains` on the production domain? [WEB 3] | Yes, without `preload` | RV-SEC-02 | Default accepted (2026-10-30) |
+| Q-RV-24 | 160 KB gzip budget for the main chunk? [WEB 4] | Yes | RV-WEB-12 | Default accepted (2026-10-30) |
+| Q-RV-25 | Buy the domain before creating the Railway service? [OQ-OPS-1] | Yes; never register a passkey on `*.up.railway.app` | RV-OPS-02 | Default accepted (2026-10-30); domain per ROADMAP §6 Q2 |
+| Q-RV-26 | Ruleset with `enforce_admins` for `main` and tags? [OQ-OPS-2] | Keep direct pushes; protect tags; rely on the RV-OPS-04 gate | RV-OPS-04 | Default accepted (2026-10-30); PUSHc applied with `enforce_admins=false`, so the owner's direct pushes keep working while PRs need `ci`, `agent-os`, `image` |
+| Q-RV-27 | Admin commands: `railway ssh` or a temporary public DB URL? [OQ-OPS-3] | `railway ssh` | RV-OPS-03 | Default accepted (2026-10-30) |
+| Q-RV-28 | Ship `cli.mjs.map` (4.4 MB) in the tarball? [OQ-OPS-4] | Keep it | — | Default accepted (2026-10-30) |
+| Q-RV-29 | Staging: own project or an environment in the same project? [OQ-OPS-5] | Environment in the same project | RV-OPS-01 | Default accepted (2026-10-30) |
+| Q-RV-30 | Move the XCUITests into the repo? [QA 1] | Yes, after M4-08 | — | Default accepted (2026-10-30) |
+| Q-RV-31 | Playwright CI keeps `retries: 1`? [QA 2] | Yes | — | Default accepted (2026-10-30) |
+| Q-RV-32 | CPU headroom for `pnpm check`? [QA 3] | Pass at 3× load on 4 vCPU (`RC_TEST_TIME_SCALE=3`) | RV-QA-06 | Default accepted (2026-10-30) |
+| Q-RV-33 | Encoded-canary search covers gzip/deflate? [QA 4] | No | RV-QA-08 | Default accepted (2026-10-30) |
+| Q-RV-34 | `arch` pseudo-lane may hold unowned hotspots one item at a time? [Q-ARC-1] | Yes, claimed on `main` | RV-ARC-02…05 | Default accepted (2026-10-30) |
+| Q-RV-35 | version-gate lane may touch the agent `relay-client.ts` hello? [Q-ARC-2] | Yes, that function only | RV-ARC-01 | Default accepted (2026-10-30) |
+| Q-RV-36 | When do phone-core tests move into the package? [Q-ARC-3] | After V3-S13, before the first TestFlight upload | RV-ARC-09 | Default accepted (2026-10-30) |
+| Q-RV-37 | Lint boundary rules: error now or warn for one wave? [Q-ARC-4] | Error now (`main` passes) | RV-ARC-06 | Default accepted (2026-10-30) |
+| Q-RV-38 | Enrolment: keep "copy a command" or move to a device-code flow? [Q-UX-2] | Copy command for 0.1.0 | — | Default accepted (2026-10-30) |
+| Q-RV-39 | Canonical words "computer" and "phone"; keep the `devices` command? [Q-UX-3] | Yes | RV-UX-09 | Default accepted (2026-10-30) |
+| Q-RV-40 | Native list label "Agents" vs PWA "Sessions"? [Q-UX-4] | Keep both; record as intentional | RV-UX-09 | Default accepted (2026-10-30) |
+| Q-RV-41 | Privacy policy hosting? [Q-UX-5] | Relay domain, before any external tester | RV-UX-10 | Default accepted (2026-10-30); `app.remotectl.dev/privacy` |
 
 **To answer first:**
 - Q-RV-15 and Q-RV-17: they decide the scope of M4-08.
