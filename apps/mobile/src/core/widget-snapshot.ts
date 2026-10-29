@@ -1,3 +1,5 @@
+import { revealHidden } from '@remote-control/protocol';
+
 import type { AgentSession, AgentState } from './model';
 import { deadlineOf, sortByUrgency, stateOf } from './urgency';
 
@@ -65,15 +67,18 @@ export function sessionUrl(id: string): string {
   return `remotecontrol://session/${encodeURIComponent(id)}`;
 }
 
+/** The Lock Screen shows a row without a card: hidden characters become markers (V3-S03c). */
+const shown = (text: string): string => revealHidden(text).text;
+
 function rowOf(session: AgentSession): WidgetRow {
   const state = stateOf(session);
   const expiresAt = deadlineOf(session);
   return {
     id: session.id,
-    machine: session.machine,
-    project: session.project,
+    machine: shown(session.machine),
+    project: shown(session.project),
     state,
-    label: session.approval?.toolLabel ?? STATE_LABELS[state],
+    label: shown(session.approval?.toolLabel ?? STATE_LABELS[state]),
     ...(expiresAt === undefined ? {} : { expiresAt }),
     url: sessionUrl(session.id),
   };

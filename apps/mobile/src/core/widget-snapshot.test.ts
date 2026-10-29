@@ -130,6 +130,26 @@ describe('widgetSnapshot', () => {
     expect(sessionUrl('a b/c')).toBe('remotecontrol://session/a%20b%2Fc');
   });
 
+  it('shows hidden characters in machine, project and label as markers (V3-S03c)', () => {
+    const [row] = widgetSnapshot(
+      [
+        session({
+          id: 's',
+          machine: 'Mac\u200bBook',
+          project: 'billing\u202eipa',
+          approval: { ...approval(NOW + 60_000), toolLabel: 'Run\u2066 a command' },
+        }),
+      ],
+      NOW,
+      false,
+    ).rows;
+    expect(row).toMatchObject({
+      machine: 'Mac⟨U+200B⟩Book',
+      project: 'billing⟨U+202E⟩ipa',
+      label: 'Run⟨U+2066⟩ a command',
+    });
+  });
+
   it('renders the sample inbox with its waiting sessions first', () => {
     const { sessions } = fixtureInbox(NOW);
     const snapshot = widgetSnapshot(sessions, NOW, true);

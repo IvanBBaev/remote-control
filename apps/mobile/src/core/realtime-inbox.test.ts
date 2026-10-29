@@ -198,6 +198,36 @@ describe('sessionsFromRealtime', () => {
     expect(sessions.map((s) => [s.id, s.machine])).toEqual([['s-1', 'MacBook Pro']]);
   });
 
+  it('labels an approval from its tool name, never from the request label (V3-S03c)', () => {
+    const view = approval('r-1', 's-1', NOW + 1);
+    const request = { ...view.request, toolLabel: 'Read a file', toolName: 'Bash' };
+    const [only] = sessionsFromRealtime(
+      state([machine()], [{ ...view, request } as RequestView]),
+      NOW,
+    );
+    expect(only?.approval).toMatchObject({ toolLabel: 'Run a command', toolKind: 'command' });
+  });
+
+  it('shows hidden characters in names, titles and MCP labels as markers (V3-S03c)', () => {
+    const view = approval('r-1', 's-1', NOW + 1);
+    const request = {
+      ...view.request,
+      toolName: 'mcp__git\u200bhub__push',
+      project: 'billing\u202eipa',
+    };
+    const named = machine({
+      machine: { ...machine().machine!, name: 'Mac\u2066Book' },
+      sessions: [session('s-1', { statusText: 'Deploy\u202e prod' })],
+    });
+    const [only] = sessionsFromRealtime(state([named], [{ ...view, request } as RequestView]), NOW);
+    expect(only).toMatchObject({
+      machine: 'Mac⟨U+2066⟩Book',
+      project: 'billing⟨U+202E⟩ipa',
+      title: 'Deploy⟨U+202E⟩ prod',
+    });
+    expect(only?.approval?.toolLabel).toContain('⟨U+200B⟩');
+  });
+
   it('leaves the cwd empty when the agent sent no project', () => {
     const view = approval('r-1', 's-1', NOW + 1);
     const { project: _project, ...request } = view.request as ApprovalRequest;

@@ -1,4 +1,4 @@
-import { toolInfo } from '@remote-control/protocol';
+import { revealHidden, toolInfo } from '@remote-control/protocol';
 import type { Session } from '@remote-control/protocol';
 import type {
   ApprovalView,
@@ -13,6 +13,13 @@ import type { AgentSession, PendingApproval, PendingQuestion, SessionStatus } fr
 /** What the screens list for a session the agent has not described yet. */
 const UNNAMED = 'Claude Code session';
 
+/**
+ * Text an agent or a repository supplies, with every hidden character shown as a marker
+ * (V3-S03c): the inbox, history and widget snapshot all read these fields, and the widget
+ * renders on the Lock Screen where no card-level reveal applies.
+ */
+const shown = (text: string): string => revealHidden(text).text;
+
 function statusOf(state: Session['state'] | undefined): SessionStatus {
   if (state === 'idle') return 'idle';
   if (state === 'ended') return 'done';
@@ -21,10 +28,12 @@ function statusOf(state: Session['state'] | undefined): SessionStatus {
 
 function approvalOf(view: ApprovalView): PendingApproval {
   const { request } = view;
+  // The label comes from the tool name, never from the request's own label (V3-S03c).
+  const tool = toolInfo(request.toolName);
   return {
     requestId: request.id,
-    toolLabel: request.toolLabel,
-    toolKind: toolInfo(request.toolName).kind,
+    toolLabel: shown(tool.label),
+    toolKind: tool.kind,
     detail: request.content,
     cwd: request.project ?? '',
     expiresAt: view.deadline,
@@ -56,9 +65,9 @@ function sessionOf(
   const lastTurn = session?.lastAnswer ?? session?.lastPrompt ?? undefined;
   return {
     id,
-    machine: machine.machine?.name ?? machine.name,
-    project: project ?? session?.name ?? machine.machine?.name ?? machine.name,
-    title: session?.statusText || session?.lastPrompt || UNNAMED,
+    machine: shown(machine.machine?.name ?? machine.name),
+    project: shown(project ?? session?.name ?? machine.machine?.name ?? machine.name),
+    title: shown(session?.statusText || session?.lastPrompt || UNNAMED),
     status: statusOf(session?.state),
     updatedAt: now,
     ...(approval && { approval: approvalOf(approval) }),
