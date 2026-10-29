@@ -89,17 +89,17 @@ asked), the feature is **advisory UX** and is labelled so — never sold as cont
 6. V3-P08 go/no-go record decides the label.
 
 ## Owner questions (defaults apply until answered)
-| # | Question | Default |
-|---|---|---|
-| Q-V3-1 | "No 3.0 label" as the default outcome, label only on V-G1 + accepted I1 ADR? | Yes |
-| Q-V3-2 | Amend I1 for signed standing rules (02 §5.1 bounds)? | ADR first, flag off, ≤ 7 d, ≤ 50 uses, never learned auto-allow |
-| Q-V3-3 | Business model: free hosted relay + sponsorship, paid tier after ≥ 3 written commitments? | Yes; no billing code; relay cost cap = v2 cell × 2 |
-| Q-V3-4 | Requester role (CLI gate first, MCP after V-G2) as the agent headline? | Yes |
-| Q-V3-5 | Cloud reach whose enforcement depends on the vendor sandbox? | Claude cloud only, managed settings, opt-in, labelled |
-| Q-V3-6 | Requester keys in CI/cloud env vars? | Yes: phone-fixed label, 10 req/h, one-tap revoke |
-| Q-V3-7 | Android in 3.0? Play account type? | Only on named demand; personal account |
-| Q-V3-8 | Org features (SSO/SCIM, gate agent, audit export) only with ≥ 1 paying org? | Yes |
-| Q-V3-9 | Self-host relay / relicence? | Not in 3.0; MIT stays |
+| # | Question | Default | Answer |
+|---|---|---|---|
+| Q-V3-1 | "No 3.0 label" as the default outcome, label only on V-G1 + accepted I1 ADR? | Yes | Default accepted (2026-10-30) |
+| Q-V3-2 | Amend I1 for signed standing rules (02 §5.1 bounds)? | ADR first, flag off, ≤ 7 d, ≤ 50 uses, never learned auto-allow | Default accepted (2026-10-30) |
+| Q-V3-3 | Business model: free hosted relay + sponsorship, paid tier after ≥ 3 written commitments? | Yes; no billing code; relay cost cap = v2 cell × 2 | Default accepted (2026-10-30) |
+| Q-V3-4 | Requester role (CLI gate first, MCP after V-G2) as the agent headline? | Yes | Default accepted (2026-10-30) |
+| Q-V3-5 | Cloud reach whose enforcement depends on the vendor sandbox? | Claude cloud only, managed settings, opt-in, labelled | Default accepted (2026-10-30) |
+| Q-V3-6 | Requester keys in CI/cloud env vars? | Yes: phone-fixed label, 10 req/h, one-tap revoke | Default accepted (2026-10-30) |
+| Q-V3-7 | Android in 3.0? Play account type? | Only on named demand; personal account | Default accepted (2026-10-30); no named demand yet, so Android stays gated |
+| Q-V3-8 | Org features (SSO/SCIM, gate agent, audit export) only with ≥ 1 paying org? | Yes | Default accepted (2026-10-30) |
+| Q-V3-9 | Self-host relay / relicence? | Not in 3.0; MIT stays | Default accepted (2026-10-30) |
 Further per-report questions with defaults: 01 §8, 02 §8, 03 §8, 04 §8.
 
 ## Caveats

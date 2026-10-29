@@ -22,7 +22,7 @@ claim an item by setting `doing <lane>` here on `main` before branching.
 | V3-P01 | Vendor-watch script: V-K1…V-K4 strings | 01 §7 | AB | S | gated:v2 watch script (V2-P01) |
 | V3-P02 | Local `remotectl stats` demand counters (no telemetry) | 01 §7 | AB | S | todo |
 | V3-P03 | V-G2 demand gate record (`v3/gates.md`) | 01 §7 | AB | S | todo |
-| V3-P06 | README positioning + dated comparison table | 01 §7 | AB | S | gated:owner Q-V3-5 |
+| V3-P06 | README positioning + dated comparison table | 01 §7 | AB | S | todo (Q-V3-5 answered 2026-10-30) |
 | V3-C12 | Version gate (`upgrade_required`, MIN_* versions) | 03 §7 | AB | S | todo |
 | V3-C13 | Skew CI job against the last published `remotectl` | 03 §7 | AB | S | after V3-C12 |
 
