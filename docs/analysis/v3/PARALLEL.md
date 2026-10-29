@@ -26,7 +26,7 @@ the cheapest way to stay conflict-free: put new code in a new module, not in an 
 
 | Lane | Items (in order) | Owns (exclusive) | Must not touch |
 |---|---|---|---|
-| `sec-cards` | V3-S03 → V3-S13 | new `packages/phone-core/src/card-safety/**`; card rendering: `apps/web/src/screens/{approval,question}.tsx`, `apps/mobile/src/ui/cards.tsx`; `SECURITY.md` | agent, relay, protocol |
+| `sec-cards` | V3-S03 → V3-S03b → V3-S03c → V3-S03d → V3-S13 | new `packages/phone-core/src/card-safety/**`; card rendering: `apps/web/src/screens/{approval,question}.tsx`, `apps/mobile/src/ui/cards.tsx`; `SECURITY.md`; for the S03 follow-ups also `packages/protocol/src/hidden-characters.ts` (new), `apps/agent/src/core/push-summary.ts`, `apps/mobile/targets/notification-service/**`, `apps/mobile/src/core/{realtime-inbox,inbox,widget-snapshot}.ts` | relay; agent and protocol outside the files listed |
 | `evidence` | V3-P02, V3-P03 → V3-P01, V3-P06 → V3-P08 | `apps/agent/src/cli/stats.ts` (new), `apps/agent/src/core/usage-stats.ts`, `apps/agent/src/adapters/file-stats-store.ts`; `docs/analysis/v3/gates.md` (new); `tools/vendor-watch*`; `README.md` (P06 only) | protocol, phone UI |
 | `version-gate` | V3-C12 → V3-C13 | `packages/protocol/src/negotiate-version.ts`, new `packages/protocol/src/upgrade-required.ts`; `apps/relay/src/ws/**` handshake; `.github/workflows/ci.yml` | cards, agent core |
 | `push-gateway` | V3-C01 → V3-C04, V3-C02 → V3-C16 → V3-C03 | `apps/push-gateway/**` (new app); `apps/relay/src/adapters/gateway-push-sender*.ts` (new); `docs/ops/push-gateway.md` (new) | `apps/relay/src/ports/push.ts` signature (implement it, do not change it) |
