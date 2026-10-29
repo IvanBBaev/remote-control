@@ -17,8 +17,8 @@ claim an item by setting `doing <lane>` here on `main` before branching.
 |---|---|---|---|---|---|
 | V3-S03 | Card phishing hardening (bidi, zero-width, homoglyph, "agent says", parsed titles) | 02 §7 | AB | M | done a399db6 |
 | V3-S03b | Push summary revealed by the agent: `p`, `l`, `s` carry `⟨U+XXXX⟩` markers, fitted to the schema caps (Swift extension, widget, Live Activity get safe text) | 02 §7 | AB | S | done 8f63206 |
-| V3-S03c | Native app: tool label derived from `toolName` on the phone; inbox, session titles and widget snapshot revealed | 02 §7 | AB | S | doing sec-cards |
-| V3-S03d | Mobile `cards.tsx` renders only `ApprovalCardText` (type-enforced reveal, no RN render test) | 02 §7 | AB | S | after V3-S03c |
+| V3-S03c | Native app: tool label derived from `toolName` on the phone; inbox, session titles and widget snapshot revealed | 02 §7 | AB | S | done 530c25c |
+| V3-S03d | Mobile `cards.tsx` renders only `ApprovalCardText` (type-enforced reveal, no RN render test) | 02 §7 | AB | S | todo |
 | V3-P01 | Vendor-watch script: V-K1…V-K4 strings | 01 §7 | AB | S | gated:v2 watch script (V2-P01) |
 | V3-P02 | Local `remotectl stats` demand counters (no telemetry) | 01 §7 | AB | S | todo |
 | V3-P03 | V-G2 demand gate record (`v3/gates.md`) | 01 §7 | AB | S | todo |
