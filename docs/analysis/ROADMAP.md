@@ -22,7 +22,7 @@ named, so nobody re-derives it.
 | Release target | `M1 — Second user` exit (§3): `remotectl@0.1.0` published + M1 exit record (current version `0.0.0`, no tags) |
 | Progress | **88 %** — 84.9 h of 96.5 h earned |
 | Remaining | **11.6 h** Opus 5.5 (0.4 h workable now, 11.2 h blocked) |
-| Blocked by | domain + Railway deploy (Q2); device spike on iPhone/Android; branch protection on main; npm placeholder + trusted publisher; second user named (Q13); two weeks of owner use; real-CLI runs with the claude CLI (M0-23b, then M1-04b/05b/07b); 24 h soak run |
+| Blocked by | domain + Railway deploy (Q2); device spike on iPhone/Android; npm placeholder + trusted publisher; second user named (Q13); two weeks of owner use; real-CLI runs with the claude CLI (M0-23b, then M1-04b/05b/07b); 24 h soak run |
 | Calibration | Same-session sequential WP gaps (git log 2026-10-12/13): M0-14 ~1.0 h, M0-11 ~1.1 h, M0-20 ~0.7 h, M0-19 ~3.2 h; 37 WPs closed in ~20.5 h wall across 3–4 parallel sessions. Scale: S = 1 h, M = 2 h, L = 4 h; owner-gated tails 0.5–3 h of agent work each |
 | Updated | 2026-10-17 at `a91822b` |
 
@@ -58,7 +58,7 @@ named, so nobody re-derives it.
 | M0-25 | CI completion: OS matrix, coverage, pg-real, browser vectors | §4 M0-25 | `done` | 2 |
 | PUSHa | Runner-only failures fixed (waitFor budget, LF, Windows shell/paths/EBUSY, diff-view CPU time, WebKit on macOS; 15dc317) | §4 M0-25, M1-08 notes | `done` | 2 |
 | PUSHb | First push done (origin/main = a91822b); agent-os Windows green since PUSHa; ci/image red on new high advisories (zod, xmldom, node-forge) fixed in 29ecec7 — GitHub confirmation rides on the next push | §4 M0-25, M1-08 notes | `done 29ecec7` | 0.75 |
-| PUSHc | Branch protection on main with the green checks required | §4 M0-25, M1-08 notes | `blocked-owner` | 0.25 |
+| PUSHc | Branch protection on main with the green checks required (`ci`, `agent-os`, `image`, strict, `enforce_admins=false`, applied 2026-10-30 via `gh api`) | §4 M0-25, M1-08 notes | `done` | 0.25 |
 | M0-26a | Sentry scrubbing, ops runbook (code part) | §4 M0-26 | `done` | 1 |
 | M0-26b | Railway backups + restore drill, UptimeRobot, usage alert, Sentry DSN | §4 M0-26 | `blocked-owner` | 1 |
 | M0-27a | SECURITY.md, README v0, publish settings (repo part) | §4 M0-27 | `done` | 1 |
@@ -84,7 +84,7 @@ named, so nobody re-derives it.
 | M1-14a | README final, screens doc, second-user protocol and template (repo part, 181c488) | §4 M1-14 | `done` | 1 |
 | M1-14b | Second-user run logged in `docs/verification/second-user.md` — deps M0-02b, M1-09b, Q13 | §4 M1-14, §6 Q13 | `blocked-owner` | 0.5 |
 | M1-15a | Soak harness, `pnpm soak` and CI load smoke (code part, 287eb9c) | §4 M1-15 | `done` | 1 |
-| M1-15b | 24 h soak run logged in `docs/verification/soak.md` | §4 M1-15 | `blocked-owner` | 0.5 |
+| M1-15b | 24 h soak run logged in `docs/verification/soak.md` (started 2026-10-30 on the owner's Mac) | §4 M1-15 | `doing` | 0.5 |
 | M1-EXIT | M1 exit record: two weeks, ≥ 20 approvals from outside home (templates 8bed3cf) | §4 M1 exit record, §3 M1 (4) | `blocked-owner` | 1 |
 
 ### History
@@ -1200,31 +1200,31 @@ Defaults apply until the owner answers; the executor records answers here in the
 `Answer` column (one commit, `docs/analysis/ROADMAP.md` only). Source questions are the
 specialists' §8 items this row replaces.
 
-| # | Decision | Default | Replaces |
-|---|---|---|---|
-| Q1 | Proceed despite the overlap with Claude Code Remote Control, with the kill criterion from §1 | **Proceed** | 01 Q1 |
-| Q2 | Production domain: buy now, name? Attached to Railway before M0-03 | **Buy now**; owner picks the name | 06 Q2, 05 Q2 |
-| Q3 | Hold time for a pending approval and what happens at the deadline | **30 min, then handoff to the terminal prompt**; `onExpire: deny` opt-in | 04 Q1–Q2, 03 Q1–Q2, 01 W9 |
-| Q4 | Accounts: passkeys only, no e-mail, invite codes at launch, one recovery code, cookie 7 d idle / 30 d absolute | **Yes to all** | 02 Q1, Q5, Q6; 03 Q5 |
-| Q5 | Biometric (UV) on every Allow / Always / Answer / Instruct / Start, none on Deny, no reuse window | **Yes** | 01 Q4, 02 Q3–Q4, 05 Q4 |
-| Q6 | Platform floor iOS 17+ / Chrome Android ≥ 133; no polyfill for older | **Yes** | 05 Q1 |
-| Q7 | "Always" from the phone in M1 with session scope only; settings scopes in M2 | **Yes** | 01 Q3, 04 Q5 |
-| Q8 | Pairing: 12-char typed code primary, QR in M2, 32-byte token in the QR | **Yes** | 05 Q5, 02 §5.3 |
-| Q9 | Second agent = Codex (M2), Gemini observe+deny in backlog | **Codex** | 01 Q2, 04 Q6 |
-| Q10 | Notifications carry a real encrypted summary from M1 (generic text in M0) | **Yes** | 05 Q3 |
-| Q11 | Sessions via `claude --bg` only; no `-p`/SDK child on the subscription; follow-up to foreground sessions `unsupported` | **Yes** | 04 Q3–Q4 |
-| Q12 | Railway Hobby, Amsterdam, Sentry free on relay, UptimeRobot e-mail, usage alert $8 / limit $15, no Discord | **Yes** | 06 Q3–Q5, Q9; 03 Q4 |
-| Q13 | A named second user exists before M1 starts (for the usability run) | **Owner names one** | 01 Q10 |
-| Q14 | All three OS installers in M1, Windows allowed to slip to M2 | **Yes** | 06 Q7 |
-| Q15 | npm: name `remotectl`, publish from the owner's existing npm account with 2FA, trusted publishing | **Yes** | 06 Q1, Q8 |
-| Q16 | Agent key storage: plain files at 0600 in the env-paths data dir (no OS keychain in MVP) | **Yes** | 02 Q7 |
-| Q17 | Device cap 10 per user; multi-machine from M0; allow-list editable only in the agent config file | **Yes** | 03 Q6, 01 Q7–Q8 |
-| Q18 | Phone-started session with an unanswered request behaves like a terminal one (stays in "Needs input" after handoff) | **Yes** | 01 Q9 |
-| Q19 | Push on turn finished / needs input: off by default, setting in M2 | **Off** | 01 Q5 |
-| Q20 | QA gates: thresholds enforced, OS matrix on every PR, Playwright on `main`/nightly/label, `pg-real` nightly + `main`, anonymised fixtures committed, WebKit smoke on | **Yes** | 07 Q1–Q7 |
-| Q21 | Relay supports current + previous protocol major; agent ships its version in `hello` | **Yes** | 03 Q7 |
-| Q22 | Apple Developer Program membership ($99/year) for APNs, associated domains, App Group and TestFlight (ADR 0017) | **Owner enrols** | — |
-| Q23 | Native app bundle id | **`dev.ivanbaev.remotecontrol`** | — |
+| # | Decision | Default | Replaces | Answer |
+|---|---|---|---|---|
+| Q1 | Proceed despite the overlap with Claude Code Remote Control, with the kill criterion from §1 | **Proceed** | 01 Q1 | Default accepted (2026-10-30) |
+| Q2 | Production domain: buy now, name? Attached to Railway before M0-03 | **Buy now**; owner picks the name | 06 Q2, 05 Q2 | `remotectl.dev` (2026-10-30: unregistered per RDAP; matches the npm name; `.dev` is HSTS-preloaded). Relay + PWA on `app.remotectl.dev`, `RC_RP_ID` = `RC_ORIGIN` host = `app.remotectl.dev`; purchase is the owner's step |
+| Q3 | Hold time for a pending approval and what happens at the deadline | **30 min, then handoff to the terminal prompt**; `onExpire: deny` opt-in | 04 Q1–Q2, 03 Q1–Q2, 01 W9 | Default accepted (2026-10-30) |
+| Q4 | Accounts: passkeys only, no e-mail, invite codes at launch, one recovery code, cookie 7 d idle / 30 d absolute | **Yes to all** | 02 Q1, Q5, Q6; 03 Q5 | Default accepted (2026-10-30) |
+| Q5 | Biometric (UV) on every Allow / Always / Answer / Instruct / Start, none on Deny, no reuse window | **Yes** | 01 Q4, 02 Q3–Q4, 05 Q4 | Default accepted (2026-10-30) |
+| Q6 | Platform floor iOS 17+ / Chrome Android ≥ 133; no polyfill for older | **Yes** | 05 Q1 | Default accepted (2026-10-30) |
+| Q7 | "Always" from the phone in M1 with session scope only; settings scopes in M2 | **Yes** | 01 Q3, 04 Q5 | Default accepted (2026-10-30) |
+| Q8 | Pairing: 12-char typed code primary, QR in M2, 32-byte token in the QR | **Yes** | 05 Q5, 02 §5.3 | Default accepted (2026-10-30) |
+| Q9 | Second agent = Codex (M2), Gemini observe+deny in backlog | **Codex** | 01 Q2, 04 Q6 | Default accepted (2026-10-30) |
+| Q10 | Notifications carry a real encrypted summary from M1 (generic text in M0) | **Yes** | 05 Q3 | Default accepted (2026-10-30) |
+| Q11 | Sessions via `claude --bg` only; no `-p`/SDK child on the subscription; follow-up to foreground sessions `unsupported` | **Yes** | 04 Q3–Q4 | Default accepted (2026-10-30) |
+| Q12 | Railway Hobby, Amsterdam, Sentry free on relay, UptimeRobot e-mail, usage alert $8 / limit $15, no Discord | **Yes** | 06 Q3–Q5, Q9; 03 Q4 | Default accepted (2026-10-30) |
+| Q13 | A named second user exists before M1 starts (for the usability run) | **Owner names one** | 01 Q10 | **Open — owner only** (a named person cannot be delegated) |
+| Q14 | All three OS installers in M1, Windows allowed to slip to M2 | **Yes** | 06 Q7 | Default accepted (2026-10-30) |
+| Q15 | npm: name `remotectl`, publish from the owner's existing npm account with 2FA, trusted publishing | **Yes** | 06 Q1, Q8 | Default accepted (2026-10-30) |
+| Q16 | Agent key storage: plain files at 0600 in the env-paths data dir (no OS keychain in MVP) | **Yes** | 02 Q7 | Default accepted (2026-10-30) |
+| Q17 | Device cap 10 per user; multi-machine from M0; allow-list editable only in the agent config file | **Yes** | 03 Q6, 01 Q7–Q8 | Default accepted (2026-10-30) |
+| Q18 | Phone-started session with an unanswered request behaves like a terminal one (stays in "Needs input" after handoff) | **Yes** | 01 Q9 | Default accepted (2026-10-30) |
+| Q19 | Push on turn finished / needs input: off by default, setting in M2 | **Off** | 01 Q5 | Default accepted (2026-10-30) |
+| Q20 | QA gates: thresholds enforced, OS matrix on every PR, Playwright on `main`/nightly/label, `pg-real` nightly + `main`, anonymised fixtures committed, WebKit smoke on | **Yes** | 07 Q1–Q7 | Default accepted (2026-10-30) |
+| Q21 | Relay supports current + previous protocol major; agent ships its version in `hello` | **Yes** | 03 Q7 | Default accepted (2026-10-30) |
+| Q22 | Apple Developer Program membership ($99/year) for APNs, associated domains, App Group and TestFlight (ADR 0017) | **Owner enrols** | — | **Open — owner only** (paid enrolment under the owner's identity) |
+| Q23 | Native app bundle id | **`dev.ivanbaev.remotecontrol`** | — | Default accepted (2026-10-30) |
 
 Decisions the roadmap took without an owner question (listed for visibility): no outbox
 (D4), no `@noble` fallback (D3), tsdown over tsup, `drainingSeconds` 30, env-paths over
