@@ -1,5 +1,8 @@
-import { approvalCardText, cardWarnings } from '@remote-control/phone-core/card-safety/card-text';
-import { revealHidden } from '@remote-control/phone-core/card-safety/hidden-characters';
+import {
+  approvalCardText,
+  errorCardText,
+  questionCardText,
+} from '@remote-control/phone-core/card-safety/card-text';
 import type { RevealedText } from '@remote-control/phone-core/card-safety/hidden-characters';
 import * as Haptics from 'expo-haptics';
 import type { ReactNode } from 'react';
@@ -40,13 +43,14 @@ function CardHeader({
 
 /**
  * Text from the computer as the card shows it (V3-S03): every hidden or
- * direction-changing character is a highlighted `⟨U+XXXX⟩` marker in its place.
+ * direction-changing character is a highlighted `⟨U+XXXX⟩` marker in its place. It takes
+ * only a `RevealedText` from the shared card text (V3-S03d), never a raw string, so no
+ * card can show computer text that skipped the tested reveal.
  */
-function Revealed({ text }: { text: string | RevealedText }) {
-  const revealed = typeof text === 'string' ? revealHidden(text) : text;
+function Revealed({ text }: { text: RevealedText }) {
   return (
     <>
-      {revealed.parts.map((part, index) =>
+      {text.parts.map((part, index) =>
         part.kind === 'text' ? (
           part.text
         ) : (
@@ -128,7 +132,7 @@ export function ApprovalCard({
     toolLabel: approval.toolLabel,
     toolKind: approval.toolKind,
     content: approval.detail,
-    extra: [approval.cwd],
+    folder: approval.cwd,
   });
   return (
     <Card color={colors.orange}>
@@ -146,9 +150,11 @@ export function ApprovalCard({
           <Revealed text={card.content} />
         </Text>
       </View>
-      <Text style={styles.caption}>
-        in <Revealed text={approval.cwd} />
-      </Text>
+      {card.folder && (
+        <Text style={styles.caption}>
+          in <Revealed text={card.folder} />
+        </Text>
+      )}
       <Warnings warnings={card.warnings} />
       <View style={styles.buttons}>
         <Button label="Deny" color={colors.red} onPress={() => decide('deny')} />
@@ -174,29 +180,25 @@ export function QuestionCard({
 }) {
   // V3-S03: the header and prompt are the model's words, so the title stays fixed and the
   // header is shown demoted under "Agent asks".
-  const warnings = cardWarnings([
-    question.header,
-    question.prompt,
-    ...question.options.flatMap((option) => [option.label, option.description ?? '']),
-  ]);
+  const card = questionCardText(question);
   return (
     <Card color={colors.cyan}>
       <CardHeader color={colors.cyan} title="Question" deadline={question.expiresAt} now={now} />
       <Text style={styles.caption}>
-        Agent asks · <Revealed text={question.header} />
+        Agent asks · <Revealed text={card.header} />
       </Text>
       <Text style={styles.prompt}>
-        <Revealed text={question.prompt} />
+        <Revealed text={card.prompt} />
       </Text>
-      <Warnings warnings={warnings} />
+      <Warnings warnings={card.warnings} />
       <View style={styles.options}>
-        {question.options.map((option) => (
+        {card.options.map((option) => (
           <Pressable
-            key={option.label}
+            key={option.answer}
             accessibilityRole="button"
             onPress={() => {
               haptic('answer');
-              onAnswer(option.label);
+              onAnswer(option.answer);
             }}
             style={({ pressed }) => [styles.option, pressed && styles.pressed]}
           >
@@ -219,7 +221,9 @@ export function ErrorCard({ message }: { message: string }) {
   return (
     <Card color={colors.red}>
       <Text style={[styles.title, { color: colors.red }]}>Stopped on an error</Text>
-      <Text style={styles.prompt}>{message}</Text>
+      <Text style={styles.prompt}>
+        <Revealed text={errorCardText(message)} />
+      </Text>
     </Card>
   );
 }

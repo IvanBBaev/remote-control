@@ -4,10 +4,12 @@ import { describe, expect, it } from 'vitest';
 import {
   approvalCardText,
   cardWarnings,
+  errorCardText,
   isModelAuthored,
   LOCK_SCREEN_TITLE_FIELDS,
   lockScreenLine,
   lockScreenTitle,
+  questionCardText,
   requestCardText,
 } from './card-text.js';
 import { hiddenCount, hiddenKind, marker, revealHidden } from './hidden-characters.js';
@@ -161,6 +163,46 @@ describe('approval card text', () => {
     expect(card.title).toBe('github: ⟨U+202E⟩create issue');
     expect(card.hidden).toBe(1);
     expect(card.warnings).toHaveLength(1);
+  });
+});
+
+describe('every card text is revealed (V3-S03d)', () => {
+  it('reveals the folder of an approval and scans it for warnings', () => {
+    const card = approvalCardText({
+      toolLabel: 'Run a command',
+      toolKind: 'command',
+      content: 'ls',
+      folder: `~/repo${RLO}`,
+    });
+    expect(card.folder?.text).toBe('~/repo⟨U+202E⟩');
+    expect(card.warnings).toHaveLength(1);
+    expect(requestCardText({ toolName: 'Bash', content: 'ls' }).folder).toBeUndefined();
+  });
+
+  it('reveals header, prompt and options of a question and keeps the raw answer', () => {
+    const card = questionCardText({
+      header: `Dep${ZWSP}loy`,
+      prompt: `Ship to ${RLO}prod?`,
+      options: [{ label: `Yes${PDF}`, description: `Now${ZWSP}` }, { label: 'No' }],
+    });
+    expect(card.header.text).toBe('Dep⟨U+200B⟩loy');
+    expect(card.prompt.text).toBe('Ship to ⟨U+202E⟩prod?');
+    expect(card.options).toEqual([
+      {
+        answer: `Yes${PDF}`,
+        label: revealHidden(`Yes${PDF}`),
+        description: revealHidden(`Now${ZWSP}`),
+      },
+      { answer: 'No', label: revealHidden('No'), description: undefined },
+    ]);
+    expect(card.warnings).toEqual([
+      '2 direction-changing characters, shown as ⟨U+202E⟩. The text may run differently from how it reads.',
+      '2 invisible characters, shown as ⟨U+200B⟩.',
+    ]);
+  });
+
+  it('reveals an error message', () => {
+    expect(errorCardText(`exit 1${RLO}`).text).toBe('exit 1⟨U+202E⟩');
   });
 });
 

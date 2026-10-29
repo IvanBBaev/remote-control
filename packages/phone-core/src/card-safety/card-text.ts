@@ -60,6 +60,8 @@ export interface ApprovalCardText {
   readonly content: RevealedText;
   /** `true` when the content is the model's own words: show it as "Agent says". */
   readonly agentSays: boolean;
+  /** The folder the action runs in, with markers; `undefined` when none was given. */
+  readonly folder: RevealedText | undefined;
   /** Hidden characters in the content or the title. */
   readonly hidden: number;
   readonly warnings: readonly string[];
@@ -67,24 +69,70 @@ export interface ApprovalCardText {
 
 /**
  * The safe text of an approval card from the parsed action: the tool's kind and label,
- * and the content the agent parsed from the tool input. `extra` holds more texts the
- * card shows (the folder, the "Always" rules) to scan for warnings.
+ * the content the agent parsed from the tool input and the folder it runs in. `extra`
+ * holds more texts the card shows (the "Always" rules) to scan for warnings.
  */
 export function approvalCardText(action: {
   readonly toolLabel: string;
   readonly toolKind: ToolKind;
   readonly content: string;
+  readonly folder?: string;
   readonly extra?: readonly string[];
 }): ApprovalCardText {
   const title = revealHidden(action.toolLabel);
   const content = revealHidden(action.content);
+  const folder = action.folder === undefined ? [] : [action.folder];
   return {
     title: title.text,
     content,
     agentSays: isModelAuthored(action.toolKind),
+    folder: action.folder === undefined ? undefined : revealHidden(action.folder),
     hidden: hiddenCount(title) + hiddenCount(content),
-    warnings: cardWarnings([action.toolLabel, action.content, ...(action.extra ?? [])]),
+    warnings: cardWarnings([action.toolLabel, action.content, ...folder, ...(action.extra ?? [])]),
   };
+}
+
+/** One answer of a question card: `answer` is sent back as given, `label` is shown. */
+export interface QuestionOptionText {
+  readonly answer: string;
+  readonly label: RevealedText;
+  readonly description: RevealedText | undefined;
+}
+
+/** What a question card shows, made safe to read (V3-S03d). */
+export interface QuestionCardText {
+  /** The model's short header, shown demoted under "Agent asks", never as the title. */
+  readonly header: RevealedText;
+  readonly prompt: RevealedText;
+  readonly options: readonly QuestionOptionText[];
+  readonly warnings: readonly string[];
+}
+
+/** The safe text of a question card: every text is the model's, so all of it is revealed. */
+export function questionCardText(question: {
+  readonly header: string;
+  readonly prompt: string;
+  readonly options: readonly { readonly label: string; readonly description?: string }[];
+}): QuestionCardText {
+  return {
+    header: revealHidden(question.header),
+    prompt: revealHidden(question.prompt),
+    options: question.options.map((option) => ({
+      answer: option.label,
+      label: revealHidden(option.label),
+      description: option.description === undefined ? undefined : revealHidden(option.description),
+    })),
+    warnings: cardWarnings([
+      question.header,
+      question.prompt,
+      ...question.options.flatMap((option) => [option.label, option.description ?? '']),
+    ]),
+  };
+}
+
+/** An error card's message (it can quote the agent or a tool) with markers (V3-S03d). */
+export function errorCardText(message: string): RevealedText {
+  return revealHidden(message);
 }
 
 /**
@@ -102,10 +150,8 @@ export function requestCardText(request: {
     toolLabel: label,
     toolKind: kind,
     content: request.content,
-    extra: [
-      ...(request.suggestions ?? []),
-      ...(request.project === undefined ? [] : [request.project]),
-    ],
+    ...(request.project === undefined ? {} : { folder: request.project }),
+    extra: request.suggestions ?? [],
   });
 }
 
