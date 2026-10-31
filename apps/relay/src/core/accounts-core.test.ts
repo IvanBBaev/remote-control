@@ -98,6 +98,26 @@ describe('MemoryChallengeLedger challenges', () => {
     expect(await ledger.take('newest', 110)).toEqual(login);
   });
 
+  it('drops expired entries on insert, long before the cap (soak growth)', async () => {
+    const ledger = new MemoryChallengeLedger();
+    const hash = (i: number) => ({
+      decisionHash: `h${String(i)}`,
+      userId: 'u',
+      deviceId: 'd',
+      usedUntil: i * 60_000 + 600_000,
+      verifiedUntil: i * 60_000 + 300_000,
+    });
+    for (let i = 0; i < 1_000; i += 1) {
+      const now = i * 60_000;
+      await ledger.put(`c${String(i)}`, login, now + 300_000, now);
+      expect(await ledger.markVerified(hash(i), now)).toBe(true);
+    }
+    // One request a minute: 5 min of challenges and 10 min of hashes stay live.
+    expect(ledger.size).toBe(5);
+    expect(ledger.hashCount).toBe(10);
+    expect(await ledger.usage('h999', 999 * 60_000)).toBe('used');
+  });
+
   it('copes with a zero capacity', async () => {
     const ledger = new MemoryChallengeLedger(0);
     await ledger.put('a', login, 100, 0);

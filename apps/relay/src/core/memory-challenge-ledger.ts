@@ -18,6 +18,9 @@ interface Verified {
  * restart only forces the user to tap again. Each table is capped against
  * unauthenticated option requests: a full challenge table evicts expired entries, then
  * the oldest live one; a full hash table answers `busy` until its entries expire.
+ * Every insert also drops the expired entries at the head of its table: entries go in
+ * with a fixed TTL, so insertion order is expiry order and a steady trickle of requests
+ * keeps each table at its live set instead of growing to the cap.
  */
 export class MemoryChallengeLedger implements ChallengeLedger {
   readonly #pending = new Map<string, { pending: PendingChallenge; expiresAt: number }>();
@@ -31,7 +34,13 @@ export class MemoryChallengeLedger implements ChallengeLedger {
     return this.#pending.size;
   }
 
+  /** Decision hashes still held for their replay window (tests). */
+  get hashCount(): number {
+    return this.#hashes.size;
+  }
+
   put(key: string, pending: PendingChallenge, expiresAt: number, now: number): Promise<void> {
+    dropExpiredHead(this.#pending, (entry) => entry.expiresAt, now);
     if (this.#pending.size >= this.capacity) this.#evict(now);
     this.#pending.set(key, { pending, expiresAt });
     return Promise.resolve();
@@ -53,6 +62,7 @@ export class MemoryChallengeLedger implements ChallengeLedger {
   markVerified(verified: VerifiedDecision, now: number): Promise<boolean> {
     if (this.#isUsed(verified.decisionHash, now)) return Promise.resolve(false);
     this.#hashes.delete(verified.decisionHash);
+    dropExpiredHead(this.#hashes, (entry) => entry.usedUntil, now);
     // Evicting a live hash would reopen its replay window; a full table refuses instead.
     if (!this.#room(now)) return Promise.resolve(false);
     this.#hashes.set(verified.decisionHash, {
@@ -103,5 +113,13 @@ export class MemoryChallengeLedger implements ChallengeLedger {
       const oldest = this.#pending.keys().next();
       if (oldest.done !== true) this.#pending.delete(oldest.value);
     }
+  }
+}
+
+/** Deletes entries from the head of `table` while they have expired. */
+function dropExpiredHead<V>(table: Map<string, V>, until: (entry: V) => number, now: number): void {
+  for (const [key, entry] of table) {
+    if (now < until(entry)) return;
+    table.delete(key);
   }
 }
