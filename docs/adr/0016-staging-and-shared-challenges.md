@@ -85,9 +85,8 @@ on every request.
 
 - A Railway environment `staging` in the same project, with its own Postgres and
   domain. It deploys the `staging` branch.
-- `numReplicas: 2` and `RC_HUB=pg`. `railway.json` records the replica override under
-  `environments.staging`. Config as Code stops being read on 2026-12-01, so the
-  dashboard setting is authoritative.
+- `numReplicas: 2` and `RC_HUB=pg`. Since ADR 0023, `.railway/railway.ts` declares both
+  for the `staging` environment.
 - It has its own secrets, VAPID keys and RP id. It never shares a value with production.
 - The procedure is in `docs/ops/runbook.md#staging`.
 - Locally, `RC_HUB=pg docker compose --profile replicas up` runs the same shape on

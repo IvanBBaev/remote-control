@@ -207,11 +207,10 @@ Firefox, but Safari does not store `Secure` cookies over http, so use HTTPS ther
 The image is built from the root `Dockerfile` (base pinned by digest, `pnpm deploy
 --prod`, runs as `USER node`). Service values (06 §5.1, D15): healthcheck `/health`
 with timeout 100 s, restart `ON_FAILURE` × 10, 1 replica, Serverless off,
-`overlapSeconds 20`, `drainingSeconds 30` — on SIGTERM `/health` turns 503 and the
-process exits within 25 s. `railway.json` records these values; Railway's Config as
-Code is deprecated (new services cannot opt in, files stop being read on 2026-12-01),
-so set them in the dashboard until `.railway/railway.ts` (IaC) replaces it. The
-pre-deploy `node dist/migrate.js` is added with the migrations work package.
+`overlapSeconds 20`, `drainingSeconds 30`, pre-deploy `node dist/migrate.js`. On
+SIGTERM, `/health` turns 503 and the process exits within 25 s. `.railway/railway.ts`
+records these values (ADR 0023). Apply them with `railway config plan` and then
+`railway config apply`.
 The `staging` environment runs 2 replicas with `RC_HUB=pg`, which shares the hub and
 the WebAuthn challenges through Postgres (ADR 0012, ADR 0016); see the runbook's
 Staging section.

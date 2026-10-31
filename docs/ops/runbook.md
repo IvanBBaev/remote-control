@@ -58,6 +58,15 @@ a package without a threshold, or adding a `v8`/`c8`/`istanbul` ignore pragma fa
 
 ## Deploy
 
+Service settings live in `.railway/railway.ts` (D16, ADR 0023), not in the dashboard. To
+change one:
+
+1. Edit the file and its test, `tools/railway-config.test.ts`, then merge to `main`.
+2. `railway config plan` is read-only. The plan must not delete a variable or a resource.
+3. `railway config apply`.
+
+Secrets stay in the dashboard. The file declares them `preserve()`.
+
 Pushes to `main` deploy automatically once CI is green. A deployment builds the image,
 runs `node dist/migrate.js` (pre-deploy), starts the new container, waits for
 `/health` = 200 (timeout 100 s), overlaps the old one for 20 s, then drains it (SIGTERM →
@@ -78,8 +87,8 @@ Setup (once, dashboard):
 1. Project → **New environment** `staging`, with its own Postgres service.
 2. `relay` in `staging`:
    - Settings → Source → branch `staging`;
-   - Settings → Deploy → **Replicas 2**. `railway.json` records this under
-     `environments.staging`, but Config as Code stops being read on 2026-12-01.
+   - **Replicas 2**. `.railway/railway.ts` sets both when `railway config apply` runs in
+     `staging` (ADR 0023); check them in the dashboard.
 3. Variables, all distinct from production:
    - `RC_HUB=pg`;
    - `RC_DATABASE_URL`, a reference to the staging Postgres;
