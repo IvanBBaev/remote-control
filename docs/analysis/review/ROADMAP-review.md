@@ -27,7 +27,7 @@ what a stranger or the first production deploy would hit.
 
 | ID | Item | Source | Lane | Size | Deps | Status |
 |---|---|---|---|---|---|---|
-| RV-OPS-01 | Port Railway settings to `.railway/railway.ts` + ADR (Config as Code ends 2026-12-01) | 06 F1 | — | L | before M0-02b | doing rv-ops01 |
+| RV-OPS-01 | Port Railway settings to `.railway/railway.ts` + ADR (Config as Code ends 2026-12-01) | 06 F1 | — | L | before M0-02b | done 6aa2e28 |
 | RV-OPS-03 | Fix the admin command docs (`railway ssh`, `apps/relay` path) | 06 F3 | — | S | — | todo |
 | RV-OPS-02 | Ordered day-one checklist (Q15 npm track, Q2 domain + Railway track) | 06 F2 | — | M | RV-OPS-03 | todo |
 | RV-OPS-04 | Release `gate` job: tag on `main` + required checks green | 06 F4 | — | M | — | todo |
