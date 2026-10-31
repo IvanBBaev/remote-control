@@ -5,8 +5,8 @@ A long run of the real relay, agent and a headless phone in one process, with on
 looks for memory growth, broken reconnects and duplicate decisions.
 
 **Status: pending the owner.** The soak harness (`packages/test-harness/src/soak.ts`),
-its CLI (`pnpm soak`) and a 30-round load smoke on every OS in CI are in place. The 24 h
-run below has not been made yet.
+its CLI (`pnpm soak`) and a 30-round load smoke on every OS in CI are in place. The first 24 h
+run (below) failed and is not a valid measurement (the machine slept); a rerun is due.
 
 ## What is checked
 
@@ -45,3 +45,47 @@ and Windows with `continue-on-error` and writes the outcome and the log to the j
 summary. It does not gate a merge; a red smoke is a lead for the next soak.
 
 ## Results
+
+## 2026-10-29T22:29:51.667Z — FAIL
+
+- Node v24.22.1, darwin/arm64; GC exposed: yes
+- Wall time 31.97 h, 358 rounds, one request every 60 s
+- Allowed 358/358; duplicate decisions 0; canary leaks 0
+- Phone reconnects 35; agent drops 23, agent reconnects 23
+- Hook round trip p50 31 ms, p99 34131 ms, max 58384 ms
+- RSS baseline 77.0 MB, growth 25.0 MB (limit 20 MB)
+- Verdict: RSS grew 25.0 MB (limit 20 MB)
+- Not a valid 24 h measurement: the Mac slept after about 6 h (358 rounds in 31.97 h;
+  the p99 and max latency are the sleeps). The heap grew 3.8 MB over the run; the
+  retained objects were decision hashes in the relay's in-memory challenge ledger,
+  pruned only at its 10 000-entry cap — fixed in 256e77e. Most of the RSS rise is the
+  first hour (39 → 99 MB, then flat); the verdict now warms up for an hour and compares
+  medians (ad2c948, fe17b95), and fails a run that slept.
+
+| Round | Wall h | RSS MB | Heap MB |
+| ----: | -----: | -----: | ------: |
+|    10 |   0.18 |   77.0 |    54.0 |
+|    20 |   0.46 |   38.9 |    54.4 |
+|    40 |   0.93 |   98.9 |    55.0 |
+|    50 |   1.09 |   86.0 |    55.4 |
+|    70 |   1.43 |   86.7 |    55.7 |
+|    80 |   1.59 |   94.6 |    55.9 |
+|   100 |   1.93 |  100.5 |    56.2 |
+|   110 |   2.10 |   95.8 |    56.3 |
+|   120 |   2.26 |   99.4 |    56.4 |
+|   140 |   2.60 |   90.6 |    56.6 |
+|   150 |   2.76 |   98.9 |    56.6 |
+|   170 |   3.10 |   96.6 |    56.9 |
+|   180 |   3.27 |  102.8 |    57.0 |
+|   190 |   3.43 |  106.5 |    57.0 |
+|   210 |   3.77 |  103.4 |    57.1 |
+|   220 |   3.93 |   99.8 |    57.2 |
+|   240 |   4.27 |  101.1 |    57.2 |
+|   250 |   4.43 |  109.5 |    57.3 |
+|   270 |   4.77 |  106.9 |    57.6 |
+|   280 |   4.94 |  107.4 |    57.6 |
+|   290 |   5.10 |  106.1 |    57.6 |
+|   310 |   5.44 |  109.0 |    57.7 |
+|   320 |   5.60 |   97.9 |    57.7 |
+|   340 |   5.94 |  104.4 |    57.8 |
+|   350 |   6.11 |  102.0 |    57.8 |
