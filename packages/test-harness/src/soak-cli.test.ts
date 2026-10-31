@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatSoakLog, main, parseSoakArgs, verdict, type SoakIo } from './soak-cli.js';
+import {
+  formatSoakLog,
+  main,
+  parseSoakArgs,
+  verdict,
+  warmupRounds,
+  type SoakIo,
+} from './soak-cli.js';
 import type { SoakOptions, SoakReport } from './soak.js';
 
 const MB = 1024 * 1024;
@@ -117,6 +124,24 @@ describe('verdict', () => {
       'no RSS baseline (run past the warm-up)',
     ]);
   });
+
+  it('fails a run that slept through most of its wall time', () => {
+    const slept = report({ wallMs: 115_092_000, rounds: 358, allowed: 358 });
+    expect(verdict(slept, 20, 60).reasons).toEqual([
+      '358 rounds in 31.97 h (1918 expected): the machine slept',
+    ]);
+    // Reconnect waits stretch a smoke's rounds; that is not sleep.
+    expect(verdict(report({ wallMs: 250_000, rounds: 30 }), 20, 5).pass).toBe(true);
+  });
+});
+
+describe('warmupRounds', () => {
+  it('is an hour of rounds, at most a quarter of the run', () => {
+    expect(warmupRounds(parseSoakArgs([]))).toBe(60);
+    expect(warmupRounds(parseSoakArgs(['--rounds', '30', '--interval-s', '5']))).toBe(7);
+    expect(warmupRounds(parseSoakArgs(['--hours', '0.5', '--interval-s', '30']))).toBe(15);
+    expect(warmupRounds(parseSoakArgs(['--rounds', '2']))).toBe(1);
+  });
 });
 
 describe('formatSoakLog', () => {
@@ -159,7 +184,11 @@ describe('main', () => {
 
     expect(await main(['--hours', '0.5', '--interval-s', '30'], deps)).toBe(0);
 
-    expect(out.options[0]).toMatchObject({ durationMs: 1_800_000, intervalMs: 30_000 });
+    expect(out.options[0]).toMatchObject({
+      durationMs: 1_800_000,
+      intervalMs: 30_000,
+      warmupRounds: 15,
+    });
     expect(out.options[0]).not.toHaveProperty('rounds');
     expect(out.stderr).toContain(
       'soak: round 10, 0.17 h, RSS 120.0 MB, allowed 1440, failures 0\n',

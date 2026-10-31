@@ -55,9 +55,29 @@ export function parseSoakArgs(argv: readonly string[]): SoakArgs {
   };
 }
 
-/** The AC (03 W14, ROADMAP M1-15): RSS flat, every request allowed, no duplicate, no leak. */
-export function verdict(report: SoakReport, rssLimitMb: number): Verdict {
+/**
+ * Rounds before the RSS baseline: an hour of requests, since RSS settles over the first
+ * hour (V8 and the allocator grow their pools), but at most a quarter of the run, so a
+ * short smoke still gets a baseline.
+ */
+export function warmupRounds(args: SoakArgs): number {
+  const planned = args.rounds ?? ((args.hours ?? 24) * 3_600) / args.intervalS;
+  return Math.max(1, Math.min(Math.ceil(3_600 / args.intervalS), Math.floor(planned / 4)));
+}
+
+/**
+ * The AC (03 W14, ROADMAP M1-15): RSS flat, every request allowed, no duplicate, no leak.
+ * A run that managed under half the rounds its wall time allows was asleep for the rest
+ * and measures nothing.
+ */
+export function verdict(report: SoakReport, rssLimitMb: number, intervalS = 60): Verdict {
   const reasons: string[] = [];
+  const expected = Math.floor(report.wallMs / (intervalS * 1_000));
+  if (report.rounds < expected / 2) {
+    reasons.push(
+      `${String(report.rounds)} rounds in ${hours(report.wallMs)} h (${String(expected)} expected): the machine slept`,
+    );
+  }
   if (report.failures.length > 0) reasons.push(`${String(report.failures.length)} failed round(s)`);
   if (report.duplicateDecisions > 0) {
     reasons.push(`${String(report.duplicateDecisions)} duplicate decision(s)`);
@@ -119,6 +139,7 @@ export async function main(argv: readonly string[], io: SoakIo): Promise<number>
     ...(args.rounds !== undefined && { rounds: args.rounds }),
     ...(args.hours !== undefined && { durationMs: args.hours * 3_600_000 }),
     intervalMs: args.intervalS * 1_000,
+    warmupRounds: warmupRounds(args),
     onRound(round, so) {
       const sample = so.samples.at(-1);
       if (sample?.round !== round) return;
@@ -127,7 +148,7 @@ export async function main(argv: readonly string[], io: SoakIo): Promise<number>
       );
     },
   });
-  const result = verdict(report, args.rssLimitMb);
+  const result = verdict(report, args.rssLimitMb, args.intervalS);
   const log = formatSoakLog(report, args, result);
   if (args.out === undefined) io.stdout(log);
   else await io.append(args.out, `\n${log}`);

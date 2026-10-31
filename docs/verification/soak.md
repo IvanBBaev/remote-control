@@ -15,7 +15,8 @@ run below has not been made yet.
 | `allow`      | every round's hook answers `allow` (`Allowed N/N`, no failed round)                                                                    |
 | `duplicates` | no request id gets more than one `decision_result` on the phone                                                                        |
 | `reconnect`  | every agent drop (relay close 1012, every 15 rounds) is followed by exactly one new agent socket; the phone reconnects every 10 rounds |
-| `rss`        | the median of the last 3 RSS samples is under 20 MB above the median of the first 3 from the end of warm-up (round 10)                 |
+| `rss`        | the median of the last 3 RSS samples is under 20 MB above the median of the first 3 from the end of warm-up (1 h of rounds)            |
+| `awake`      | the run made at least half the rounds its wall time allows (otherwise the machine slept and the run measures nothing)                  |
 | `privacy`    | no run canary appears in relay or agent logs or in push bodies (I1)                                                                    |
 
 Harness buffers (log lines, pushes, decrypted phone messages) are drained every round,
