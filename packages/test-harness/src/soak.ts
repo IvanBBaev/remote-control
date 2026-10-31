@@ -65,7 +65,11 @@ export interface SoakReport {
   /** Wall ms from firing the hook to its answer, per round. */
   readonly latencyMs: { readonly p50: number; readonly p99: number; readonly max: number };
   readonly samples: readonly RssSample[];
-  /** RSS at the end of warm-up; the last sample's growth is measured against it. */
+  /**
+   * Median RSS of the first {@link RSS_WINDOW} samples from the end of warm-up on; growth
+   * is the median of the last {@link RSS_WINDOW} samples minus it. Medians, because a
+   * single RSS sample swings by tens of MB with the allocator and the OS's memory pressure.
+   */
   readonly baselineRssBytes: number | null;
   readonly rssGrowthBytes: number | null;
   readonly leaks: readonly Leak[];
@@ -80,6 +84,9 @@ const DEFAULTS = {
   sampleEvery: 10,
   warmupRounds: 10,
 };
+
+/** Samples per median at each end of the run for the RSS growth. */
+export const RSS_WINDOW = 3;
 
 /** The close code the relay uses when it restarts (RFC 6455 1012): the agent reconnects. */
 const SERVICE_RESTART = 1012;
@@ -111,14 +118,15 @@ export async function runSoak(options: SoakOptions = {}): Promise<SoakReport> {
     agentOpens: 0,
     latencies: [] as number[],
     samples: [] as RssSample[],
-    baseline: null as number | null,
     leaks: [] as Leak[],
   };
   const decisions = new Map<string, number>();
   const decided = new Set<string>();
 
   const report = (): SoakReport => {
-    const last = state.samples.at(-1);
+    const warm = state.samples.filter((sample) => sample.round >= config.warmupRounds);
+    const baseline = medianRss(warm.slice(0, RSS_WINDOW));
+    const end = medianRss(warm.slice(-RSS_WINDOW));
     return {
       startedAt,
       wallMs: Math.round(performance.now() - started),
@@ -131,9 +139,8 @@ export async function runSoak(options: SoakOptions = {}): Promise<SoakReport> {
       agentReconnects: state.agentOpens,
       latencyMs: percentiles(state.latencies),
       samples: [...state.samples],
-      baselineRssBytes: state.baseline,
-      rssGrowthBytes:
-        state.baseline === null || last === undefined ? null : last.rssBytes - state.baseline,
+      baselineRssBytes: baseline,
+      rssGrowthBytes: baseline === null || end === null ? null : end - baseline,
       leaks: [...state.leaks],
       gcExposed: gc !== undefined,
     };
@@ -171,7 +178,6 @@ export async function runSoak(options: SoakOptions = {}): Promise<SoakReport> {
           rssBytes: memory.rss,
           heapUsedBytes: memory.heapUsed,
         });
-        if (state.round === config.warmupRounds) state.baseline = memory.rss;
       }
       options.onRound?.(state.round, report());
     }
@@ -291,6 +297,13 @@ async function idle(running: Scenario, intervalMs: number, tickMs: number): Prom
     running.clock.advance(Math.min(1_000, intervalMs - elapsed));
     await delay(tickMs);
   }
+}
+
+function medianRss(samples: readonly RssSample[]): number | null {
+  if (samples.length === 0) return null;
+  const sorted = samples.map((sample) => sample.rssBytes).sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
 }
 
 function every(period: number, round: number): boolean {

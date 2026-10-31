@@ -14,7 +14,7 @@ describe('soak (M1-15)', () => {
         tickMs: 5,
         phoneDropEvery: 2,
         agentDropEvery: 3,
-        sampleEvery: 2,
+        sampleEvery: 1,
         warmupRounds: 2,
         onRound: (round) => rounds.push(round),
       });
@@ -30,9 +30,12 @@ describe('soak (M1-15)', () => {
         leaks: [],
       });
       expect(rounds).toEqual([1, 2, 3, 4, 5, 6]);
-      expect(report.samples.map((sample) => sample.round)).toEqual([2, 4, 6]);
-      expect(report.baselineRssBytes).toBe(report.samples[0]!.rssBytes);
-      expect(report.rssGrowthBytes).toBe(report.samples[2]!.rssBytes - report.samples[0]!.rssBytes);
+      expect(report.samples.map((sample) => sample.round)).toEqual([1, 2, 3, 4, 5, 6]);
+      // Medians of the first and the last three samples from the end of warm-up (round 2).
+      const rss = report.samples.slice(1).map((sample) => sample.rssBytes);
+      const median = (values: number[]) => values.sort((a, b) => a - b)[1]!;
+      expect(report.baselineRssBytes).toBe(median(rss.slice(0, 3)));
+      expect(report.rssGrowthBytes).toBe(median(rss.slice(-3)) - median(rss.slice(0, 3)));
       expect(report.latencyMs.p99).toBeGreaterThan(0);
     },
   );

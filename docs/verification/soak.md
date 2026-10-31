@@ -15,7 +15,7 @@ run below has not been made yet.
 | `allow`      | every round's hook answers `allow` (`Allowed N/N`, no failed round)                                                                    |
 | `duplicates` | no request id gets more than one `decision_result` on the phone                                                                        |
 | `reconnect`  | every agent drop (relay close 1012, every 15 rounds) is followed by exactly one new agent socket; the phone reconnects every 10 rounds |
-| `rss`        | RSS growth from the end of warm-up (round 10) to the last sample is under 20 MB                                                        |
+| `rss`        | the median of the last 3 RSS samples is under 20 MB above the median of the first 3 from the end of warm-up (round 10)                 |
 | `privacy`    | no run canary appears in relay or agent logs or in push bodies (I1)                                                                    |
 
 Harness buffers (log lines, pushes, decrypted phone messages) are drained every round,
@@ -28,7 +28,9 @@ backoff and expiry run as they would in production.
 1. `pnpm install`.
 2. `NODE_OPTIONS=--expose-gc pnpm soak --hours 24 --out docs/verification/soak.md`
    (`--expose-gc` lets each RSS sample follow a full GC; the log says whether it did).
-   Keep the machine awake (`caffeinate -i` on macOS).
+   Keep the machine awake and on power: `caffeinate -dims` on macOS, lid open (closing
+   the lid or a low battery still sleeps the Mac, and a sleep shows up as hook latency
+   spikes and a skewed RSS).
 3. Progress goes to stderr every 10 rounds; at the end the run appends a log entry below
    and exits 0 on PASS, 1 on FAIL.
 
