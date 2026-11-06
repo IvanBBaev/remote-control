@@ -87,8 +87,8 @@ Setup (once, dashboard):
 1. Project → **New environment** `staging`, with its own Postgres service.
 2. `relay` in `staging`:
    - Settings → Source → branch `staging`;
-   - **Replicas 2**. `.railway/railway.ts` sets both when `railway config apply` runs in
-     `staging` (ADR 0023); check them in the dashboard.
+   - **Replicas 2**. `.railway/railway.ts` declares both (ADR 0023). Confirm them in the
+     `railway config plan` output and in the dashboard.
 3. Variables, all distinct from production:
    - `RC_HUB=pg`;
    - `RC_DATABASE_URL`, a reference to the staging Postgres;

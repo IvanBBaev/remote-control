@@ -49,7 +49,7 @@ evaluated by the Railway CLI with the `railway` npm package (`railway/iac`).
    - the config itself.
 3. The file holds no secret. `RC_DATABASE_URL` is a reference to the database. Every
    other secret or per-environment value is declared `preserve()`, so `apply` keeps the
-   value set in the dashboard and never deletes it.
+   value already set in Railway.
 4. `railway.json` is deleted now, not after the link. No service reads it, so keeping it
    would only leave two sources of truth.
 5. `railway@3.16.0` is a root dev dependency. The CLI needs it to evaluate the file, and
@@ -68,9 +68,14 @@ evaluated by the Railway CLI with the `railway` npm package (`railway/iac`).
   The dashboard is no longer the source of truth for these values.
 - A Railway DSL change can break evaluation. The test catches that on the next
   dependency bump, because Dependabot groups `railway` like any other dev dependency.
-- `apply` creates the database and both environments if they are missing. The owner
-  sets the preserved variables in the dashboard before the first deploy, as the runbook
-  and `.env.example` list them.
+- Railway's docs do not say how `apply` treats variables and resources the file does not
+  declare, or whether it creates a missing environment. They say database provisioning
+  is handled by Railway product workflows. So the first plan on day Q2 is the check. It
+  must not delete an undeclared variable, such as `RC_LOG_LEVEL` or
+  `RC_TRUST_PROXY_HOPS`.
+- The owner creates the environments and databases, as the runbook says, and sets the
+  preserved variables in the dashboard before the first deploy, as the runbook and
+  `.env.example` list them.
 
 ## Rejected
 
