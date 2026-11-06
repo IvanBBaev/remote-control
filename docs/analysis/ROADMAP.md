@@ -84,7 +84,7 @@ named, so nobody re-derives it.
 | M1-14a | README final, screens doc, second-user protocol and template (repo part, 181c488) | §4 M1-14 | `done` | 1 |
 | M1-14b | Second-user run logged in `docs/verification/second-user.md` — deps M0-02b, M1-09b, Q13 | §4 M1-14, §6 Q13 | `blocked-owner` | 0.5 |
 | M1-15a | Soak harness, `pnpm soak` and CI load smoke (code part, 287eb9c) | §4 M1-15 | `done` | 1 |
-| M1-15b | 24 h soak run logged in `docs/verification/soak.md` (run 1 FAIL 2026-10-30: Mac slept, ledger growth fixed 256e77e; rerun due, awake) | §4 M1-15 | `doing` | 0.5 |
+| M1-15b | 24 h soak run logged in `docs/verification/soak.md` (run 1 FAIL 2026-10-30: Mac slept, ledger growth fixed 256e77e; run 2 FAIL 2026-11-01: slept on battery, lid closed; run 3 due on AC, lid open) | §4 M1-15 | `doing` | 0.5 |
 | M1-EXIT | M1 exit record: two weeks, ≥ 20 approvals from outside home (templates 8bed3cf) | §4 M1 exit record, §3 M1 (4) | `blocked-owner` | 1 |
 
 ### History
