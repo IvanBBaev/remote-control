@@ -89,3 +89,27 @@ summary. It does not gate a merge; a red smoke is a lead for the next soak.
 |   320 |   5.60 |   97.9 |    57.7 |
 |   340 |   5.94 |  104.4 |    57.8 |
 |   350 |   6.11 |  102.0 |    57.8 |
+
+## 2026-10-31T07:52:12.903Z — FAIL
+
+- Node v24.22.1, darwin/arm64; GC exposed: yes
+- Wall time 26.51 h, 84 rounds, one request every 60 s
+- Allowed 84/84; duplicate decisions 0; canary leaks 0
+- Phone reconnects 8; agent drops 5, agent reconnects 5
+- Hook round trip p50 24 ms, p99 117 ms, max 117 ms
+- RSS baseline 126.4 MB, growth 0.0 MB (limit 20 MB)
+- Verdict: 84 rounds in 26.51 h (1590 expected): the machine slept
+- Cause: the Mac ran on battery with the lid closed from about 10:40 on 2026-10-31 until a
+  lid wake at 00:42 on 2026-11-01 (`pmset -g log`). `caffeinate -dims` does not prevent
+  lid-close sleep on battery. Run 3 needs AC power and the lid open.
+
+| Round | Wall h | RSS MB | Heap MB |
+| ----: | -----: | -----: | ------: |
+|    10 |   0.17 |  132.4 |    53.7 |
+|    20 |   0.33 |  129.7 |    54.1 |
+|    30 |   0.74 |  131.7 |    54.5 |
+|    40 |  14.87 |  113.5 |    54.7 |
+|    50 |  15.04 |  126.4 |    55.1 |
+|    60 |  15.21 |  126.4 |    55.2 |
+|    70 |  15.37 |  131.7 |    55.4 |
+|    80 |  17.54 |  119.8 |    55.5 |
