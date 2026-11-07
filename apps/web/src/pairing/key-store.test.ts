@@ -9,8 +9,8 @@ import type { Random } from '@remote-control/protocol';
 import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { done, MACHINES, openKeyDb, readPushKeys } from './key-db.js';
-import { createIndexedDbKeyStore } from './key-store.js';
+import { done, IDENTITY, MACHINES, openKeyDb, readPushKeys } from './key-db.js';
+import { createIndexedDbKeyStore, UnsupportedBrowserError } from './key-store.js';
 
 const seeded = (byte: number): Random => ({ bytes: (length) => new Uint8Array(length).fill(byte) });
 
@@ -24,6 +24,44 @@ const machine = (deviceId: string, pairedAt: number) => ({
 afterEach(() => {
   vi.restoreAllMocks();
 });
+
+/** The raw identity record, as IndexedDB holds it. */
+async function storedIdentity(indexedDB: IDBFactory): Promise<unknown> {
+  const db = await openKeyDb(indexedDB);
+  try {
+    return await done(db.transaction(IDENTITY, 'readonly').objectStore(IDENTITY).get('phone'));
+  } finally {
+    db.close();
+  }
+}
+
+/** Writes the raw-seed record that builds before RV-SEC-04 stored. */
+async function storeLegacySeed(indexedDB: IDBFactory, seed: Uint8Array): Promise<void> {
+  const db = await openKeyDb(indexedDB);
+  try {
+    const transaction = db.transaction(IDENTITY, 'readwrite');
+    await done(transaction.objectStore(IDENTITY).put({ seed, deviceId: 'phone-7' }, 'phone'));
+  } finally {
+    db.close();
+  }
+}
+
+/** Makes IndexedDB refuse to clone a `CryptoKey`, as some browsers do. */
+function refuseCryptoKeyClones(): void {
+  // Captured unbound on purpose: the spy calls it back with the store as `this`.
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const put = IDBObjectStore.prototype.put;
+  vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (
+    this: IDBObjectStore,
+    value: unknown,
+    key?: IDBValidKey,
+  ) {
+    if (typeof value === 'object' && value !== null && 'privateKey' in value) {
+      throw new DOMException('CryptoKey cannot be cloned', 'DataCloneError');
+    }
+    return put.call(this, value, key);
+  });
+}
 
 describe('IndexedDB key store', () => {
   it('fails to set the device id when the identity record vanished', async () => {
@@ -71,25 +109,33 @@ describe('IndexedDB key store', () => {
     expect((await reopened.identity()).deviceId).toBe('phone-1');
   });
 
-  it('falls back to the raw seed when the browser cannot store a CryptoKey', async () => {
-    // Captured unbound on purpose: the spy calls it back with the store as `this`.
-    // eslint-disable-next-line @typescript-eslint/unbound-method
-    const put = IDBObjectStore.prototype.put;
-    vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (
-      this: IDBObjectStore,
-      value: unknown,
-      key?: IDBValidKey,
-    ) {
-      if (typeof value === 'object' && value !== null && 'privateKey' in value) {
-        throw new DOMException('CryptoKey cannot be cloned', 'DataCloneError');
-      }
-      return put.call(this, value, key);
-    });
+  it('refuses a browser that cannot store a CryptoKey and stores no seed (RV-SEC-04)', async () => {
+    refuseCryptoKeyClones();
     const indexedDB = new IDBFactory();
-    const identity = await createIndexedDbKeyStore({ indexedDB, random: seeded(3) }).identity();
-    const reopened = await createIndexedDbKeyStore({ indexedDB, random: seeded(4) }).identity();
-    expect(reopened.keyPair.publicKey).toEqual(identity.keyPair.publicKey);
-    expect(reopened.keyPair.privateKey.extractable).toBe(false);
+    const store = createIndexedDbKeyStore({ indexedDB, random: seeded(3) });
+    await expect(store.identity()).rejects.toBeInstanceOf(UnsupportedBrowserError);
+    expect(await storedIdentity(indexedDB)).toBeUndefined();
+  });
+
+  it('upgrades a legacy raw-seed record to a CryptoKey, keeping the device id', async () => {
+    const indexedDB = new IDBFactory();
+    const seed = new Uint8Array(32).fill(9);
+    await storeLegacySeed(indexedDB, seed);
+    const identity = await createIndexedDbKeyStore({ indexedDB, random: seeded(4) }).identity();
+    expect(identity.deviceId).toBe('phone-7');
+    expect(identity.keyPair.publicKey).toEqual((await x25519KeyPairFromPrivateKey(seed)).publicKey);
+    const stored = await storedIdentity(indexedDB);
+    expect(stored).not.toHaveProperty('seed');
+    expect(stored).toHaveProperty('privateKey');
+  });
+
+  it('deletes a legacy raw-seed record when the browser still cannot store a CryptoKey', async () => {
+    const indexedDB = new IDBFactory();
+    await storeLegacySeed(indexedDB, new Uint8Array(32).fill(9));
+    refuseCryptoKeyClones();
+    const store = createIndexedDbKeyStore({ indexedDB, random: seeded(4) });
+    await expect(store.identity()).rejects.toBeInstanceOf(UnsupportedBrowserError);
+    expect(await storedIdentity(indexedDB)).toBeUndefined();
   });
 
   it('rethrows a storage failure that is not a clone error', async () => {

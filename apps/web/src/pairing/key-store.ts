@@ -33,16 +33,30 @@ const PHONE_KEY = 'phone';
 /**
  * The identity as stored. The private key is a non-extractable `CryptoKey`, which
  * IndexedDB stores by structured clone (05 F17): script can use it but never read its
- * bytes. A browser that cannot clone a `CryptoKey` into IndexedDB gets the raw 32-byte
- * seed instead, re-imported as a non-extractable key on every load (documented trade-off:
- * the seed is then readable by script on this origin).
+ * bytes. A browser that cannot clone a `CryptoKey` into IndexedDB is refused (RV-SEC-04):
+ * the raw seed is never stored, since script on this origin could read it.
  */
-type StoredIdentity = {
+interface StoredIdentity {
   readonly deviceId: string | null;
-} & (
-  | { readonly privateKey: CryptoKey; readonly publicKey: Uint8Array<ArrayBuffer> }
-  | { readonly seed: Uint8Array }
-);
+  readonly privateKey: CryptoKey;
+  readonly publicKey: Uint8Array<ArrayBuffer>;
+}
+
+/** The raw-seed record older builds wrote; upgraded to a `CryptoKey` on load. */
+interface LegacySeedIdentity {
+  readonly deviceId: string | null;
+  readonly seed: Uint8Array;
+}
+
+/** This browser cannot keep the phone's private key unreadable to script (RV-SEC-04). */
+export class UnsupportedBrowserError extends Error {
+  constructor() {
+    super(
+      'This browser cannot store the phone key safely. Use the remote-control app or a current browser.',
+    );
+    this.name = 'UnsupportedBrowserError';
+  }
+}
 
 export interface IndexedDbKeyStoreOptions {
   readonly indexedDB: IDBFactory;
@@ -71,6 +85,22 @@ export function createIndexedDbKeyStore({ indexedDB, random }: IndexedDbKeyStore
     await write(IDENTITY, (objects) => {
       objects.put(stored, PHONE_KEY);
     });
+  }
+
+  /**
+   * Stores the key pair as a `CryptoKey`. A browser that cannot clone one is refused, and
+   * whatever identity record exists (a legacy raw seed) is deleted rather than kept.
+   */
+  async function storeKeyPair(keyPair: X25519KeyPair, deviceId: string | null): Promise<void> {
+    try {
+      await putIdentity({ ...keyPair, deviceId });
+    } catch (error) {
+      if (!isDataCloneError(error)) throw error;
+      await write(IDENTITY, (objects) => {
+        objects.delete(PHONE_KEY);
+      });
+      throw new UnsupportedBrowserError();
+    }
   }
 
   /**
@@ -106,24 +136,22 @@ export function createIndexedDbKeyStore({ indexedDB, random }: IndexedDbKeyStore
   }
 
   async function load(): Promise<PhoneIdentity> {
-    const stored = await read<StoredIdentity>(IDENTITY, PHONE_KEY);
+    const stored = await read<StoredIdentity | LegacySeedIdentity>(IDENTITY, PHONE_KEY);
     if (stored !== undefined) {
-      const keyPair =
-        'seed' in stored
-          ? await x25519KeyPairFromPrivateKey(stored.seed)
-          : { privateKey: stored.privateKey, publicKey: new Uint8Array(stored.publicKey) };
+      let keyPair: X25519KeyPair;
+      if ('seed' in stored) {
+        keyPair = await x25519KeyPairFromPrivateKey(stored.seed);
+        await storeKeyPair(keyPair, stored.deviceId);
+      } else {
+        keyPair = { privateKey: stored.privateKey, publicKey: new Uint8Array(stored.publicKey) };
+      }
       // Best-effort: a pairing without a key only means generic pushes for it.
       await backfillPushKeys(keyPair).catch(() => undefined);
       return { keyPair, deviceId: stored.deviceId };
     }
     const seed = random.bytes(X25519_KEY_LENGTH);
     const keyPair = await x25519KeyPairFromPrivateKey(seed);
-    try {
-      await putIdentity({ ...keyPair, deviceId: null });
-    } catch (error) {
-      if (!isDataCloneError(error)) throw error;
-      await putIdentity({ seed, deviceId: null });
-    }
+    await storeKeyPair(keyPair, null);
     return { keyPair, deviceId: null };
   }
 
