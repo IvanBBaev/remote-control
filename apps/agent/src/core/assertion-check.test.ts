@@ -54,6 +54,16 @@ describe('checkAssertion', () => {
     });
   });
 
+  it.each([
+    ['a subdomain of the RP id', 'rc.test', 'https://app.rc.test'],
+    ['plain http on localhost', 'localhost', 'http://localhost:5173'],
+  ])('accepts an origin on %s', async (_, rpId, origin) => {
+    const scoped = await createTestPasskey(rpId);
+    const assertion = await scoped.assert(decision, { origin });
+    const passkeys = [{ ...scoped.paired, counter: 0 }];
+    expect(await checkAssertion({ assertion, decision, passkeys })).toMatchObject({ ok: true });
+  });
+
   it('refuses a missing assertion and an unknown credential', async () => {
     expect(await checkAssertion({ assertion: undefined, decision, passkeys: [known] })).toEqual({
       ok: false,
@@ -102,6 +112,12 @@ describe('checkAssertion', () => {
     ['wrong_challenge', { challenge: 'AAAA' }],
     ['wrong_rp', { rpId: 'evil.example' }],
     ['not_user_verified', { userVerified: false }],
+    ['origin', { origin: 'https://evil.example' }],
+    ['origin', { origin: 'https://evilrc.test' }],
+    ['origin', { origin: 'http://rc.test' }],
+    ['origin', { origin: 'https://rc.test/path' }],
+    ['origin', { origin: 'not a url' }],
+    ['cross_origin', { crossOrigin: true }],
   ] as const)('refuses a signed assertion with %s', async (reason, overrides) => {
     const assertion = await passkey.assert(decision, overrides);
     expect(await checkAssertion({ assertion, decision, passkeys: [known] })).toEqual({

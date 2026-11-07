@@ -25,6 +25,10 @@ export interface AssertionOverrides {
   readonly rpId?: string;
   /** The signature counter (default: one more than the last). */
   readonly counter?: number;
+  /** `clientDataJSON.origin` (default `https://<rpId>`). */
+  readonly origin?: string;
+  /** `clientDataJSON.crossOrigin` (default `false`). */
+  readonly crossOrigin?: boolean;
 }
 
 /** WebCrypto ECDSA gives `r || s`; WebAuthn signatures are DER `SEQUENCE { r, s }`. */
@@ -79,8 +83,8 @@ export async function createTestPasskey(rpId = TEST_RP_ID): Promise<TestPasskey>
         JSON.stringify({
           type: overrides.type ?? 'webauthn.get',
           challenge: overrides.challenge ?? (await decisionChallenge(decision)),
-          origin: `https://${rpId}`,
-          crossOrigin: false,
+          origin: overrides.origin ?? `https://${rpId}`,
+          crossOrigin: overrides.crossOrigin ?? false,
         }),
       );
       const signed = concatBytes(authData, await sha256(clientDataJSON));

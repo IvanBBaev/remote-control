@@ -16,6 +16,8 @@ export type AssertionFailure =
   | 'wrong_type'
   | 'wrong_challenge'
   | 'wrong_rp'
+  | 'origin'
+  | 'cross_origin'
   | 'not_user_verified'
   | 'bad_signature'
   | 'counter_replay';
@@ -31,7 +33,9 @@ const AUTH_DATA_MIN_LENGTH = 37;
 
 const decoder = new TextDecoder('utf-8', { fatal: true });
 
-function clientData(bytes: Uint8Array): { type?: unknown; challenge?: unknown } | undefined {
+function clientData(
+  bytes: Uint8Array,
+): { type?: unknown; challenge?: unknown; origin?: unknown; crossOrigin?: unknown } | undefined {
   try {
     const parsed: unknown = JSON.parse(decoder.decode(bytes));
     return typeof parsed === 'object' && parsed !== null ? parsed : undefined;
@@ -41,10 +45,30 @@ function clientData(bytes: Uint8Array): { type?: unknown; challenge?: unknown } 
 }
 
 /**
+ * Whether `origin` lies in the passkey's scope (WebAuthn §7.2 step 9): an https origin
+ * whose host is the RP id or a subdomain of it, since the relay lets `RC_RP_ID` be a
+ * parent domain of `RC_ORIGIN`. Plain http only for `localhost`, a secure context.
+ */
+function inScope(origin: unknown, rpId: string): boolean {
+  if (typeof origin !== 'string') return false;
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (url.origin !== origin) return false;
+  const secure =
+    url.protocol === 'https:' || (url.protocol === 'http:' && url.hostname === 'localhost');
+  return secure && (url.hostname === rpId || url.hostname.endsWith(`.${rpId}`));
+}
+
+/**
  * The agent's own check of the passkey assertion over a decision (D7 phase 2, M2-03),
  * so a relay that lies about its verification cannot make the agent act. In order: a
  * passkey the phone handed over at pairing; `clientDataJSON.type` is `webauthn.get` and
- * its `challenge` is `base64url(SHA-256(canonical decision))`; `rpIdHash` is
+ * its `challenge` is `base64url(SHA-256(canonical decision))`; its `origin` lies in the
+ * passkey's RP id scope and `crossOrigin` is not `true` (RV-SEC-05); `rpIdHash` is
  * `SHA-256(rpId)`; user presence and user verification flags set; the ES256 signature
  * over `authenticatorData || SHA-256(clientDataJSON)`; and a signature counter that
  * moved forward when either side is non-zero (WebAuthn §6.1.1; synced passkeys keep 0).
@@ -77,6 +101,8 @@ export async function checkAssertion(input: {
   if (client.challenge !== (await decisionChallenge(input.decision))) {
     return { ok: false, reason: 'wrong_challenge' };
   }
+  if (!inScope(client.origin, passkey.rpId)) return { ok: false, reason: 'origin' };
+  if (client.crossOrigin === true) return { ok: false, reason: 'cross_origin' };
   if (!bytesEqual(authData.subarray(0, 32), await sha256(utf8(passkey.rpId)))) {
     return { ok: false, reason: 'wrong_rp' };
   }
