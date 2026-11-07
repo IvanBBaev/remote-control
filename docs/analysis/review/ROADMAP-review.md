@@ -47,7 +47,7 @@ what a stranger or the first production deploy would hit.
 | RV-SEC-01 | SECURITY.md accuracy pass (PWA trust row, native/SE, APNs, legacy peers, noble) | 01 F1, F3 | sec-cards | S | coordinate V3-S13 | todo |
 | RV-SEC-02 | Security headers + CSP on every relay response incl. the PWA (absorbs RV-WEB-01) | 01 F2, 05 F1 | — | S | — | done 5617360 |
 | RV-SEC-03 | Refuse keyless pairing unless `--allow-relay-trust`; warn on legacy peers | 01 F4 | — | S | — | done 2b1204d |
-| RV-SEC-04 | Remove the readable-seed fallback in the PWA key store | 01 | — | S | — | todo |
+| RV-SEC-04 | Remove the readable-seed fallback in the PWA key store | 01 | — | S | — | doing — rv/RV-SEC-04 |
 | RV-SEC-05 | Assertion check verifies `clientDataJSON.origin` and `crossOrigin` | 01 | requester | S | V3-A03 if started | todo |
 | RV-SEC-06 | Refuse decisions with `issued_at` > now + 60 s | 01 | requester | S | V3-A03 if started | todo |
 | RV-SEC-09 | Extend redaction keys and test them | 01 | — | S | — | todo |
