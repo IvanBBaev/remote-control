@@ -9,72 +9,7 @@
     <link rel="icon" href="/spike/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/spike/icon.svg" />
     <title>remotectl device spike</title>
-    <style>
-      :root {
-        color-scheme: light dark;
-        --fg: #111827;
-        --bg: #f9fafb;
-        --muted: #6b7280;
-        --ok: #047857;
-        --bad: #b91c1c;
-        --line: #e5e7eb;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --fg: #f3f4f6;
-          --bg: #111827;
-          --muted: #9ca3af;
-          --ok: #34d399;
-          --bad: #f87171;
-          --line: #374151;
-        }
-      }
-      body {
-        margin: 0;
-        padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
-        font:
-          15px/1.45 system-ui,
-          sans-serif;
-        color: var(--fg);
-        background: var(--bg);
-      }
-      h1 {
-        font-size: 1.2rem;
-      }
-      p.note {
-        color: var(--muted);
-      }
-      button {
-        display: block;
-        width: 100%;
-        min-height: 44px;
-        margin: 8px 0;
-        font: inherit;
-        border-radius: 8px;
-        border: 1px solid var(--line);
-        background: transparent;
-        color: inherit;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 16px;
-      }
-      td {
-        padding: 6px 4px;
-        border-top: 1px solid var(--line);
-        vertical-align: top;
-        overflow-wrap: anywhere;
-      }
-      .GO {
-        color: var(--ok);
-        font-weight: 600;
-      }
-      .NO-GO {
-        color: var(--bad);
-        font-weight: 600;
-      }
-    </style>
+    <link rel="stylesheet" href="/spike/spike.css" />
   </head>
   <body>
     <h1>remotectl device spike (M0-03)</h1>

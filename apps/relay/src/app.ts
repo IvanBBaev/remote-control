@@ -30,6 +30,7 @@ import {
 import { registerPushRoutes } from './http/push-routes.js';
 import { registerStateRoute } from './http/state-route.js';
 import { registerSpikeRoutes, type SpikeRouteDeps } from './http/spike-routes.js';
+import { registerSecurityHeaders } from './http/security-headers.js';
 import { registerStaticSite } from './http/static-site.js';
 import { registerVersionRoute } from './http/version-route.js';
 import type { RelayRouter } from './core/relay-router.js';
@@ -57,6 +58,8 @@ export interface AppDeps {
   readonly tls?: { readonly cert: Buffer; readonly key: Buffer } | undefined;
   /** Reverse proxies in front of the relay whose `X-Forwarded-For` is trusted (`request.ip`). */
   readonly trustProxyHops?: number;
+  /** Send `Strict-Transport-Security`; production only. */
+  readonly hsts?: boolean | undefined;
   /** Accounts (D8); absent without a database, and then `/api/auth/*` does not exist. */
   readonly auth?: AuthDeps | undefined;
   /** The WebSocket hub (D15); needs `auth` (phones log in with the session cookie). */
@@ -127,6 +130,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const app = (deps.tls
     ? fastify({ ...common, https: deps.tls })
     : fastify(common)) as unknown as FastifyInstance;
+
+  registerSecurityHeaders(app, { origin: deps.auth?.origin, hsts: deps.hsts ?? false });
 
   // D15: once closing starts, `/health` answers 503, new upgrades get 503 and every
   // socket is closed with 1012 (clients reconnect with jitter to the next replica).

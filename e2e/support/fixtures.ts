@@ -26,6 +26,14 @@ export const test = base.extend<Fixtures>({
     await stubPushManager(context);
     await use(context);
   },
+  page: async ({ page }, use) => {
+    const violations: string[] = [];
+    page.on('console', (message) => {
+      if (message.text().includes('Content Security Policy')) violations.push(message.text());
+    });
+    await use(page);
+    expect(violations).toEqual([]);
+  },
   // Playwright reads the fixtures a fixture needs from its first parameter's pattern.
   // eslint-disable-next-line no-empty-pattern
   agents: async ({}, use, testInfo) => {

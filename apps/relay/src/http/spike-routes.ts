@@ -36,6 +36,7 @@ export const MAX_SPIKE_DELAY_SECONDS = 120;
 /** Served files: published path → file name and content type. */
 const FILES: Readonly<Record<string, readonly [string, string]>> = {
   '/spike/': ['index.html', 'text/html; charset=utf-8'],
+  '/spike/spike.css': ['spike.css', 'text/css; charset=utf-8'],
   '/spike/spike.js': ['spike.js', 'text/javascript; charset=utf-8'],
   '/spike/sw.js': ['sw.js', 'text/javascript; charset=utf-8'],
   '/spike/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json'],

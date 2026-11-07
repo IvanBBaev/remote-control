@@ -73,6 +73,7 @@ describe('spike page (M0-03)', () => {
   it.each([
     ['/spike/', 'text/html', '<title>'],
     ['/spike/requests/1', 'text/html', '<title>'],
+    ['/spike/spike.css', 'text/css', 'body'],
     ['/spike/spike.js', 'text/javascript', 'passkey-create'],
     ['/spike/sw.js', 'text/javascript', 'notificationclick'],
     ['/spike/manifest.webmanifest', 'application/manifest+json', '"scope": "/spike/"'],

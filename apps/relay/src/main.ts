@@ -80,6 +80,7 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
       key: readFileSync(config.tls.keyFile),
     },
     trustProxyHops: config.trustProxyHops,
+    hsts: config.nodeEnv === 'production',
     auth: container.accounts && { service: container.accounts, origin: config.origin },
     relay: container.relay,
     push: container.push,
