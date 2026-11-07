@@ -51,7 +51,8 @@ test('W2 — WebKit WebCrypto: pair (XXpsk0), then read a session over KK', asyn
 
   const agent = await control.startAgent('Studio Mac');
   try {
-    await pair(page, agent, 'Studio Mac');
+    // The software passkey's keys live in the harness, not in this browser (RV-SEC-03).
+    await pair(page, agent, 'Studio Mac', { allowRelayTrust: true });
     await agent.session({
       sessionId: 'session-w2',
       name: 'fix-tests',

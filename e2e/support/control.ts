@@ -40,8 +40,11 @@ export interface ControlAgent {
   readonly id: string;
   /** `remotectl login`, with the command the pairing screen shows. */
   login(command: string): Promise<void>;
-  /** Starts `remotectl pair`; resolves with the code it prints. */
-  pair(): Promise<string>;
+  /**
+   * Starts `remotectl pair` (with `--allow-relay-trust` when asked); resolves with the
+   * code it prints.
+   */
+  pair(options?: { allowRelayTrust?: boolean }): Promise<string>;
   /** Waits for `remotectl pair` to exit 0. */
   paired(): Promise<void>;
   run(): Promise<void>;
@@ -71,7 +74,8 @@ export const control = {
     return {
       id,
       login: (command) => call('POST', `${at}/login`, { command }),
-      pair: async () => (await call<{ code: string }>('POST', `${at}/pair`)).code,
+      pair: async (options = {}) =>
+        (await call<{ code: string }>('POST', `${at}/pair`, options)).code,
       paired: () => call('POST', `${at}/paired`),
       run: () => call('POST', `${at}/run`),
       fire: (hook, body) => call('POST', `${at}/fire`, { ...body, hook }),

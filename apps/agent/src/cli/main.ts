@@ -37,7 +37,7 @@ import {
 } from '../core/hooks-installer.js';
 import { loadConfig, type LoadConfigResult } from '../core/load-config.js';
 import { createPairingLock, PAIRING_LOCK_FILE } from '../core/pairing-lock.js';
-import { runPairing, type PairingOutcome } from '../core/pairing.js';
+import { isRelayTrusted, runPairing, type PairingOutcome } from '../core/pairing.js';
 import { isPaused, parseDuration, pauseAt, pauseStatusText } from '../core/pause-state.js';
 import { createPauseWatch } from '../core/pause-watch.js';
 import { createPendingStore } from '../core/pending-store.js';
@@ -87,7 +87,10 @@ Commands:
                            paired phones and waits for an answer)
   login <rc-enroll:token> [--user-id <uuid>]
                            Store the relay credentials from the enrolment token
-  pair                     Pair a phone with this agent
+  pair [--allow-relay-trust]
+                           Pair a phone with this agent (--allow-relay-trust accepts a
+                           phone without passkey keys: the relay alone checks its
+                           passkey)
   devices                  List paired phones
   devices revoke <id>      Unpair a phone: forget its key here and revoke it at the
                            relay (its sessions end, it must pair again)
@@ -554,7 +557,14 @@ async function statusCommand(args: readonly string[], c: Container): Promise<num
   out(
     `device key:      ${key === undefined ? '(not created yet)' : toBase64Url(key.keyPair.publicKey)}`,
   );
-  out(`paired devices:  ${(await c.keyStore.listPeers()).length}`);
+  const peers = await c.keyStore.listPeers();
+  out(`paired devices:  ${peers.length}`);
+  for (const peer of peers.filter(isRelayTrusted)) {
+    out(
+      `  ${peer.deviceId}  ${peer.name}: relay-trust (no passkey keys; re-pair after ` +
+        'registering a passkey on the phone)',
+    );
+  }
   out(`pause:           ${pauseStatusText(await openPause(c).read(), c.clock.now())}`);
   out(`codex hooks:     ${await agentHooksStatusText(c, loaded, 'codex')}`);
   out(`gemini hooks:    ${await agentHooksStatusText(c, loaded, 'gemini')}`);
@@ -831,6 +841,10 @@ const PAIRING_FAILURES: Readonly<Record<string, string>> = {
   expired: 'the code expired; start again',
   aborted: 'cancelled',
   relay: 'the relay refused the request',
+  keyless:
+    'the phone handed over no passkey keys, so this agent could not check its approvals ' +
+    'itself; nothing was stored. Register a passkey on the phone and pair again, or ' +
+    'pass --allow-relay-trust to rely on the relay alone',
 };
 
 function describePairing(outcome: Exclude<PairingOutcome, { status: 'paired' }>): string {
@@ -844,7 +858,7 @@ async function pairCommand(
   c: Container,
   options: RunCliOptions,
 ): Promise<number> {
-  noArguments(args);
+  const { values } = parse(args, { options: { 'allow-relay-trust': { type: 'boolean' } } });
   const url = await relayUrl(c);
   if (url === undefined) return EXIT_ERROR;
   const credentials = await c.keyStore.readRelayCredentials();
@@ -875,6 +889,7 @@ async function pairCommand(
       print: (line) => c.output.stdout(`${line}\n`),
       addPeer: (peer) => c.keyStore.addPeer(peer),
       signal: options.signal,
+      allowRelayTrust: values['allow-relay-trust'] === true,
     });
   } finally {
     await lock.release();

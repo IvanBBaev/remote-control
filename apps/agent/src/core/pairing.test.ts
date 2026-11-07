@@ -11,7 +11,7 @@ import {
   VERSION_TABLE,
   type Frame,
 } from '@remote-control/protocol';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CLAUDE_CODE_CAPABILITIES, claudeCodeAdapter } from '../adapters/claude-code/adapter.js';
 import { createFileKeyStore, PEERS_FILE } from '../adapters/file-key-store.js';
@@ -75,6 +75,8 @@ async function setup(overrides: Partial<PairingOptions> = {}, answer = true) {
       return Promise.resolve();
     },
     signal: controller.signal,
+    // The fake phone hands over no passkey keys unless given one: a relay-trust peer.
+    allowRelayTrust: true,
     ...overrides,
   };
   const outcome = runPairing(options);
@@ -83,7 +85,19 @@ async function setup(overrides: Partial<PairingOptions> = {}, answer = true) {
     await waitFor(() => lines.some((line) => line.startsWith('Pairing code: ')));
     return lines.find((line) => line.startsWith('Pairing code: '))!.slice('Pairing code: '.length);
   }
-  return { time, random, relay, deviceKey, lines, peers, questions, controller, outcome, code };
+  return {
+    time,
+    random,
+    relay,
+    api,
+    deviceKey,
+    lines,
+    peers,
+    questions,
+    controller,
+    outcome,
+    code,
+  };
 }
 
 /** A phone that joins the slot with the right code but sends a broken XXpsk0 message. */
@@ -191,7 +205,7 @@ describe('runPairing (fake relay, fake phone)', () => {
     expect(await t.outcome).toMatchObject({ status: 'paired' });
     expect(t.peers).toEqual([phone.peer(t.time.clock.now())]);
     expect(t.peers[0]!.passkeys).toEqual([{ ...passkey.paired, counter: 0 }]);
-    expect(t.lines.some((line) => line.includes('did not hand over its passkey'))).toBe(false);
+    expect(t.lines.some((line) => line.startsWith('Relay-trust pairing'))).toBe(false);
   });
 
   it("stores the native app's device key from its hello, without the passkey warning (M4-04)", async () => {
@@ -203,7 +217,7 @@ describe('runPairing (fake relay, fake phone)', () => {
     expect(await t.outcome).toMatchObject({ status: 'paired' });
     expect(t.peers[0]!.deviceKey).toEqual(deviceKey.paired);
     expect(t.peers[0]!.passkeys).toBeUndefined();
-    expect(t.lines.some((line) => line.includes('did not hand over its passkey'))).toBe(false);
+    expect(t.lines.some((line) => line.startsWith('Relay-trust pairing'))).toBe(false);
   });
 
   it('warns that a phone without passkey keys leaves the check to the relay', async () => {
@@ -213,7 +227,34 @@ describe('runPairing (fake relay, fake phone)', () => {
     await phone.pair(await t.code());
     await t.outcome;
     expect(t.peers[0]!.passkeys).toBeUndefined();
-    expect(t.lines.some((line) => line.includes('did not hand over its passkey'))).toBe(true);
+    expect(t.lines.some((line) => line.startsWith('Relay-trust pairing'))).toBe(true);
+  });
+
+  it('refuses a phone without passkey keys unless relay trust is allowed (RV-SEC-03)', async () => {
+    const t = await setup({ allowRelayTrust: false });
+    const failSlot = vi.spyOn(t.api, 'failSlot');
+    const phone = await createFakePhone(t.relay, 'Pixel', t.time.clock, t.random);
+    await phone.connect();
+    await phone.pair(await t.code());
+    expect(await t.outcome).toEqual({ status: 'failed', reason: 'keyless' });
+    expect(t.peers).toEqual([]);
+    // Refused before the fingerprint question; the slot counted a failed attempt.
+    expect(t.questions).toEqual([]);
+    expect(failSlot).toHaveBeenCalledOnce();
+    expect(await failSlot.mock.results[0]!.value).toMatchObject({
+      ok: true,
+      value: { failedAttempts: 1 },
+    });
+  });
+
+  it('pairs a phone with passkey keys when relay trust is not allowed (RV-SEC-03)', async () => {
+    const t = await setup({ allowRelayTrust: false });
+    const passkey = await createTestPasskey();
+    const phone = await createFakePhone(t.relay, 'Pixel', t.time.clock, t.random, passkey);
+    await phone.connect();
+    await phone.pair(await t.code());
+    expect(await t.outcome).toMatchObject({ status: 'paired' });
+    expect(t.peers).toHaveLength(1);
   });
 
   it('declines when the user says no and cancels the slot', async () => {

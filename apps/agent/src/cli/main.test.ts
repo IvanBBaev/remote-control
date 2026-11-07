@@ -254,7 +254,7 @@ describe('runCli', () => {
       expect(await r.login()).toBe(EXIT_OK);
       const phone = await createFakePhone(r.relay, 'Pixel', r.time.clock, r.random);
       await phone.connect();
-      const pairing = r.run(['pair']);
+      const pairing = r.run(['pair', '--allow-relay-trust']);
       await phone.pair(await r.code());
       expect(await pairing).toBe(EXIT_OK);
       expect(h.out()).toContain(`QR text:      rc1:127.0.0.1:8787:${r.relay.agent.id}:`);
@@ -340,13 +340,36 @@ describe('runCli', () => {
       expect(log).not.toContain('relay_disabled');
     });
 
+    it('pair refuses a phone without passkey keys by default; status names relay-trust peers (RV-SEC-03)', async () => {
+      const r = relayHarness();
+      await writeConfig({ relay: { url: RELAY_URL } });
+      expect(await r.login()).toBe(EXIT_OK);
+      const phone = await createFakePhone(r.relay, 'Pixel', r.time.clock, r.random);
+      await phone.connect();
+      const refused = r.run(['pair']);
+      await phone.pair(await r.code());
+      expect(await refused).toBe(EXIT_ERROR);
+      expect(h.err()).toContain('remotectl pair: the phone handed over no passkey keys');
+      expect(h.err()).toContain('--allow-relay-trust');
+      expect(await h.c.keyStore.listPeers()).toEqual([]);
+
+      const pairing = r.run(['pair', '--allow-relay-trust']);
+      const codes = () => [...h.out().matchAll(/Pairing code: (\S+)/g)].map((match) => match[1]!);
+      await waitFor(() => codes().length === 2);
+      await phone.pair(codes()[1]!);
+      expect(await pairing).toBe(EXIT_OK);
+      expect(h.out()).toContain('Relay-trust pairing (--allow-relay-trust)');
+      expect(await r.run(['status'])).toBe(EXIT_OK);
+      expect(h.out()).toMatch(new RegExp(`  ${phone.device.id}  Pixel: relay-trust \\(`));
+    });
+
     it('pair reports a declined fingerprint and stores nothing', async () => {
       const r = relayHarness(false);
       await writeConfig({ relay: { url: RELAY_URL } });
       expect(await r.login()).toBe(EXIT_OK);
       const phone = await createFakePhone(r.relay, 'Pixel', r.time.clock, r.random);
       await phone.connect();
-      const pairing = r.run(['pair']);
+      const pairing = r.run(['pair', '--allow-relay-trust']);
       await phone.pair(await r.code());
       expect(await pairing).toBe(EXIT_ERROR);
       expect(h.err()).toContain('remotectl pair: declined; nothing was stored');
@@ -362,7 +385,7 @@ describe('runCli', () => {
       expect(await r.login()).toBe(EXIT_OK);
       const phone = await createFakePhone(r.relay, 'Pixel', r.time.clock, r.random);
       await phone.connect();
-      const pairing = r.run(['pair']);
+      const pairing = r.run(['pair', '--allow-relay-trust']);
       await phone.pair(await r.code());
       expect(await pairing).toBe(EXIT_OK);
 
@@ -381,7 +404,7 @@ describe('runCli', () => {
       expect(await r.login()).toBe(EXIT_OK);
       const phone = await createFakePhone(r.relay, 'Pixel', r.time.clock, r.random);
       await phone.connect();
-      const pairing = r.run(['pair']);
+      const pairing = r.run(['pair', '--allow-relay-trust']);
       await phone.pair(await r.code());
       expect(await pairing).toBe(EXIT_OK);
 
@@ -403,7 +426,7 @@ describe('runCli', () => {
       const r = relayHarness();
       await writeConfig({ relay: { url: RELAY_URL } });
       expect(await r.login()).toBe(EXIT_OK);
-      const pairing = r.run(['pair']);
+      const pairing = r.run(['pair', '--allow-relay-trust']);
       await r.code();
       r.time.advance(5 * 60_000);
       expect(await pairing).toBe(EXIT_ERROR);

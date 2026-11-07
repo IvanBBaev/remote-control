@@ -131,7 +131,8 @@ describe('PWA pairing against the in-process relay (M0-20 AC)', () => {
       // Enrol and sign the computer in, then pair with the code it prints (D6).
       const enrolled = await phone.enroll('Studio Mac');
       await agent.login(enrolled.enrollToken, running.userId);
-      const pairing = agent.pair();
+      // This phone hands over no passkey keys, so the agent pairs it relay-trust (RV-SEC-03).
+      const pairing = agent.pair(['--allow-relay-trust']);
       const pending = await phone.pair(await pairing.code);
       expect(pending).toMatchObject({ agentDeviceId: enrolled.deviceId, name: 'Studio Mac' });
       // Both screens show the same fingerprint for the user to compare.

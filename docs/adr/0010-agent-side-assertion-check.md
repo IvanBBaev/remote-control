@@ -39,8 +39,9 @@ yet.
   passkeys); decide-once and the relay's used-challenge set cover replay there.
 - **Legacy peers.** A peer paired without passkeys (before M2-03, or a phone whose
   storage lost them) keeps the phase-1 path: the envelope `decisionHash` must match the
-  recomputed hash, i.e. the relay vouched for it. `remotectl pair` warns when the phone
-  sent no keys; re-pairing upgrades the peer.
+  recomputed hash, i.e. the relay vouched for it. Since RV-SEC-03, `remotectl pair`
+  refuses a phone that sends no keys unless run with `--allow-relay-trust`, and
+  `remotectl status` names every relay-trust peer; re-pairing upgrades the peer.
 - **No "on passkey add".** The web app has no add-passkey flow, so there is nothing to
   hook. A new passkey reaches a computer by re-pairing. When an add flow is built, it
   must deliver the new key over an existing KK session, never through the relay.

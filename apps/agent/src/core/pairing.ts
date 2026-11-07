@@ -57,6 +57,12 @@ export interface PairingOptions {
   readonly print: (line: string) => void;
   readonly addPeer: (peer: Peer) => Promise<void>;
   readonly signal: AbortSignal;
+  /**
+   * Accept a phone that hands over neither passkey keys nor a device key (RV-SEC-03).
+   * Such a peer is relay-trusted: the agent takes the relay's word that a passkey signed
+   * its decisions. Off by default; `remotectl pair --allow-relay-trust`.
+   */
+  readonly allowRelayTrust?: boolean;
 }
 
 export type PairingOutcome =
@@ -64,9 +70,20 @@ export type PairingOutcome =
   | { readonly status: 'declined' }
   | {
       readonly status: 'failed';
-      readonly reason: 'attempts' | 'expired' | 'aborted' | 'relay';
+      readonly reason: 'attempts' | 'expired' | 'aborted' | 'relay' | 'keyless';
       readonly detail?: string;
     };
+
+/**
+ * A peer that handed over neither passkey keys nor a device key: the agent takes the
+ * relay's word that its decisions were signed (01 F4, RV-SEC-03).
+ */
+export function isRelayTrusted(peer: {
+  readonly passkeys?: readonly unknown[] | undefined;
+  readonly deviceKey?: unknown;
+}): boolean {
+  return (peer.passkeys?.length ?? 0) === 0 && peer.deviceKey === undefined;
+}
 
 interface Inbox {
   push(envelope: Envelope): void;
@@ -235,6 +252,14 @@ export async function runPairing(options: PairingOptions): Promise<PairingOutcom
         }
         continue;
       }
+      const keyless = isRelayTrusted(attempt);
+      if (keyless && options.allowRelayTrust !== true) {
+        // Refused before the fingerprint prompt: the handshake is fine, but such a peer
+        // would let the relay alone approve (01 F4). The slot counts it as a failure.
+        const failed = await api.failSlot(slotId);
+        if (failed.ok && failed.value.state === 'closed') slotId = undefined;
+        return { status: 'failed', reason: 'keyless' };
+      }
       const fingerprint = await pairingFingerprint(attempt.phoneKey, options.deviceKey.publicKey);
       print(`Phone "${attempt.name}" wants to pair. Fingerprint: ${fingerprint}`);
       const yes = await options.prompt.confirm(
@@ -256,11 +281,12 @@ export async function runPairing(options: PairingOptions): Promise<PairingOutcom
         }),
         ...(attempt.deviceKey && { deviceKey: attempt.deviceKey }),
       };
-      if (attempt.passkeys.length === 0 && attempt.deviceKey === undefined) {
+      if (keyless) {
         print(
-          'The phone did not hand over its passkey keys: this agent relies on the ' +
-            "relay's passkey check for its decisions. Re-pair after registering a " +
-            'passkey on the phone to have the agent check them itself.',
+          'Relay-trust pairing (--allow-relay-trust): the phone did not hand over its ' +
+            "passkey keys, so this agent relies on the relay's passkey check for its " +
+            'decisions. Re-pair after registering a passkey on the phone to have the ' +
+            'agent check them itself.',
         );
       }
       await options.addPeer(peer);

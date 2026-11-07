@@ -95,13 +95,18 @@ export async function onboard(page: Page): Promise<void> {
  * P3's path from the pairing screen: enrol a computer, `remotectl login` with the command
  * shown, `remotectl pair`, type its code, confirm the fingerprint, then `remotectl run`.
  */
-export async function pair(page: Page, agent: ControlAgent, name: string): Promise<void> {
+export async function pair(
+  page: Page,
+  agent: ControlAgent,
+  name: string,
+  options: { allowRelayTrust?: boolean } = {},
+): Promise<void> {
   await page.getByLabel('Computer name').fill(name);
   await page.getByRole('button', { name: 'Get the login command' }).click();
   const command = page.locator('pre.command', { hasText: 'remotectl login' });
   await expect(command).toBeVisible();
   await agent.login((await command.textContent()) ?? '');
-  const code = await agent.pair();
+  const code = await agent.pair(options);
   await page.getByLabel('Pairing code').fill(code);
   await page.getByRole('button', { name: 'Pair', exact: true }).click();
   await expect(page.getByLabel('Pairing fingerprint')).not.toBeEmpty();

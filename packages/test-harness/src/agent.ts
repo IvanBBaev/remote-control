@@ -74,8 +74,8 @@ export interface HarnessAgent {
    * `remotectl login rc-enroll:<token> [--user-id <uuid>]`; throws on a non-zero exit.
    */
   login(enrollToken: string, userId?: string): Promise<void>;
-  /** `remotectl pair` in the background. */
-  pair(): PairingRun;
+  /** `remotectl pair [args…]` in the background. */
+  pair(args?: readonly string[]): PairingRun;
   /** `remotectl run` in the background, until `stop` or `close`. */
   run(): Promise<void>;
   /** Stops `remotectl run` (Ctrl-C) and waits for it to exit. */
@@ -215,8 +215,8 @@ export async function startAgent(options: StartAgentOptions): Promise<HarnessAge
       ]);
       if (code !== 0) throw new Error(`remotectl login exited ${String(code)}: ${err}`);
     },
-    pair() {
-      const done = cli(['pair']);
+    pair(args = []) {
+      const done = cli(['pair', ...args]);
       const code = eventually(() => PAIRING_CODE.test(out), 'no pairing code printed').then(
         () => PAIRING_CODE.exec(out)![1]!,
       );

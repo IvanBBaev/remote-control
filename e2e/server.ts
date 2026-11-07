@@ -166,7 +166,7 @@ async function route(method: string, path: string, body: Body): Promise<unknown>
       await agent.login(enrollToken(String(body['command'])));
       return {};
     case 'POST pair':
-      current.pairing = agent.pair();
+      current.pairing = agent.pair(body['allowRelayTrust'] === true ? ['--allow-relay-trust'] : []);
       return { code: await current.pairing.code };
     case 'POST paired': {
       const exit = await current.pairing?.done;
