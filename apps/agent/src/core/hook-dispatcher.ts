@@ -78,13 +78,23 @@ export interface HookDispatcherOptions {
    * throws counts as not paused.
    */
   readonly paused?: () => Promise<boolean>;
+  /**
+   * Whether a phone could answer a blocking hook now (RV-AGT-01): `false` with no relay
+   * link, a link the relay revoked, or no paired phone. Then the hook is handed back at
+   * once, never registered, and `onNoAnswerer` runs; no one waits ~30 min for a phone
+   * that cannot come. A link that is only reconnecting still holds: the phone may answer
+   * after it. A check that throws counts as able to answer.
+   */
+  readonly canAnswer?: () => Promise<boolean>;
+  readonly onNoAnswerer?: () => void;
 }
 
-async function isPaused(check: () => Promise<boolean>): Promise<boolean> {
+/** The check's answer, or `fallback` when it throws. */
+async function ask(check: () => Promise<boolean>, fallback: boolean): Promise<boolean> {
   try {
     return (await check()) === true;
   } catch {
-    return false;
+    return fallback;
   }
 }
 
@@ -101,7 +111,11 @@ export function createHookDispatcher(options: HookDispatcherOptions): HookHandle
     const kind = blockingKind(input, agent);
     if (kind === undefined) return { status: 204 };
     // Awaited only when a pause check is wired: without one a hook registers synchronously.
-    if (options.paused !== undefined && (await isPaused(options.paused))) return HANDOFF;
+    if (options.paused !== undefined && (await ask(options.paused, false))) return HANDOFF;
+    if (options.canAnswer !== undefined && !(await ask(options.canAnswer, true))) {
+      options.onNoAnswerer?.();
+      return HANDOFF;
+    }
     const registration = store.register({
       sessionId: input.session_id,
       kind,

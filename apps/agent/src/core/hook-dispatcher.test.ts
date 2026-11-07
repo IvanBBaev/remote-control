@@ -227,6 +227,57 @@ describe('hook dispatcher', () => {
     await expect(held).resolves.toEqual({ status: 200, body });
   });
 
+  it('hands off immediately when no phone can answer (RV-AGT-01)', async () => {
+    const store = createPendingStore({
+      clock: { now: () => 1_000 },
+      timer: idleTimer,
+      random: seededRandom(8),
+    });
+    let answerable = false;
+    let handedOff = 0;
+    const handler = createHookDispatcher({
+      store,
+      canAnswer: () => Promise.resolve(answerable),
+      onNoAnswerer: () => (handedOff += 1),
+    });
+    const context = { hookTimeoutMs: 1_800_000, signal: new AbortController().signal };
+    await expect(handler(permission, context)).resolves.toEqual({ status: 200, body: {} });
+    expect(store.list()).toEqual([]);
+    expect(handedOff).toBe(1);
+    // Feed events never ask.
+    await expect(handler({ hook_event_name: 'Stop', session_id: 's1' }, context)).resolves.toEqual({
+      status: 204,
+    });
+    expect(handedOff).toBe(1);
+
+    // A phone paired: the next hook is held again.
+    answerable = true;
+    const held = handler(permission, context);
+    await vi.waitFor(() => expect(store.list()).toHaveLength(1));
+    store.releaseAll('shutdown');
+    await expect(held).resolves.toEqual({ status: 200, body: {} });
+    expect(handedOff).toBe(1);
+  });
+
+  it('holds the request when the answerability check fails', async () => {
+    const store = createPendingStore({
+      clock: { now: () => 1_000 },
+      timer: idleTimer,
+      random: seededRandom(9),
+    });
+    const handler = createHookDispatcher({
+      store,
+      canAnswer: () => Promise.reject(new Error('EACCES')),
+    });
+    const held = handler(permission, {
+      hookTimeoutMs: 1_800_000,
+      signal: new AbortController().signal,
+    });
+    await vi.waitFor(() => expect(store.list()).toHaveLength(1));
+    store.releaseAll('shutdown');
+    await expect(held).resolves.toEqual({ status: 200, body: {} });
+  });
+
   it('hands off at once when the signal is already aborted', async () => {
     const { handler } = createHookDispatcherWithoutListener();
     const controller = new AbortController();

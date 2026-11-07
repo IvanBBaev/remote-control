@@ -250,6 +250,8 @@ async function runCommand(
   );
   const activity = createActivityTracker();
   let link: RelayLink | undefined;
+  // The relay revoked this machine: the link never reconnects, so no phone can answer.
+  let linkRevoked = false;
   /** Counts `delta`; a phone hears of it unless only a tool call was added (M2-06). */
   const count = (cwd: unknown, delta: StatDelta): void => {
     void stats.record(projectName(cwd), delta).then(() => {
@@ -334,6 +336,9 @@ async function runCommand(
   const handler = createHookDispatcher({
     store,
     paused,
+    canAnswer: async () =>
+      link !== undefined && !linkRevoked && (await c.keyStore.listPeers()).length > 0,
+    onNoAnswerer: () => log.logger.info({ event: 'hook_handoff_no_answerer' }),
     onEvent: (input, agent, context) => {
       log.logger.debug({ event: 'hook', hook: input.hook_event_name, agent });
       // `remotectl status --self-test` is a request, not a session: nothing else to track.
@@ -460,6 +465,7 @@ async function runCommand(
         return !me.ok && me.status === 401;
       },
       onRevoked: (reason) => {
+        linkRevoked = true;
         // The phones belonged to a revoked machine or a deleted account (M1-10).
         void dropAllPeers(c).catch(() => log.logger.warn({ event: 'peer_forget_failed' }));
         c.output.stderr(
@@ -559,6 +565,7 @@ async function statusCommand(args: readonly string[], c: Container): Promise<num
   );
   const peers = await c.keyStore.listPeers();
   out(`paired devices:  ${peers.length}`);
+  if (peers.length === 0) out('  hooks hand off at once: no paired phone');
   for (const peer of peers.filter(isRelayTrusted)) {
     out(
       `  ${peer.deviceId}  ${peer.name}: relay-trust (no passkey keys; re-pair after ` +

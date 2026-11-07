@@ -99,6 +99,11 @@ describe('runCli', () => {
     const c: Container = {
       ...real,
       startHookReceiver: (options) => real.startHookReceiver({ ...options, port: 0 }),
+      // A relay socket that never opens: `run` never reaches the network.
+      webSocket: (_url, _headers, handlers) => ({
+        send: () => undefined,
+        close: (code = 1000, reason = '') => handlers.onClose(code, reason),
+      }),
     };
     h = {
       c,
@@ -117,6 +122,21 @@ describe('runCli', () => {
     const path = join(h.c.paths.config, 'config.json');
     await writeFile(path, typeof value === 'string' ? value : JSON.stringify(value));
     return path;
+  }
+
+  /** A relay login and one paired phone, so `run` holds blocking hooks (RV-AGT-01). */
+  async function answerable(config: Record<string, unknown> = {}): Promise<void> {
+    await writeConfig({ ...config, relay: { url: 'wss://relay.example.com' } });
+    await h.c.keyStore.writeRelayCredentials({
+      token: 'agent-token',
+      userId: '11111111-2222-4333-8444-555555555555',
+    });
+    await h.c.keyStore.addPeer({
+      deviceId: '00000000-0000-4000-8000-000000000001',
+      name: 'Pixel',
+      publicKey: toBase64Url(new Uint8Array(32).fill(7)),
+      pairedAt: Date.UTC(2026, 9, 1),
+    });
   }
 
   describe('help and usage', () => {
@@ -665,7 +685,7 @@ describe('runCli', () => {
     });
 
     it('answers held hooks with {} on shutdown', async () => {
-      await writeConfig({});
+      await answerable();
       const controller = new AbortController();
       const running = h.run(['run'], controller.signal);
       await vi.waitFor(() => expect(h.out()).toContain('press Ctrl-C to stop'));
@@ -693,7 +713,7 @@ describe('runCli', () => {
     });
 
     it('denies at the deadline when agent.onExpire is "deny" (D10)', async () => {
-      await writeConfig({ agent: { onExpire: 'deny' } });
+      await answerable({ agent: { onExpire: 'deny' } });
       const c: Container = {
         ...h.c,
         // Every hold ends at once: the deadline path without waiting 30 minutes.
@@ -727,6 +747,39 @@ describe('runCli', () => {
       expect(await running).toBe(EXIT_OK);
       const log = await readFile(join(h.c.paths.log, 'agent.1.log'), 'utf8');
       expect(log).toContain('"outcome":"deadline"');
+    });
+
+    it.each([
+      ['with no relay config', () => writeConfig({})],
+      [
+        'with a relay login but no paired phone',
+        async () => {
+          await answerable();
+          await h.c.keyStore.removePeer('00000000-0000-4000-8000-000000000001');
+        },
+      ],
+    ])('AC: hands a PermissionRequest back at once %s (RV-AGT-01)', async (_, arrange) => {
+      await arrange();
+      const controller = new AbortController();
+      const running = h.run(['run'], controller.signal);
+      await vi.waitFor(() => expect(h.out()).toContain('press Ctrl-C to stop'));
+      const endpoint = JSON.parse(await readFile(join(h.c.paths.data, 'agent.json'), 'utf8')) as {
+        port: number;
+        token: string;
+      };
+      const started = performance.now();
+      const response = await fetch(`http://127.0.0.1:${endpoint.port}/hook`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${endpoint.token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ hook_event_name: 'PermissionRequest', session_id: 's1' }),
+      });
+      expect(await response.text()).toBe('{}');
+      expect(performance.now() - started).toBeLessThan(1_000);
+      controller.abort();
+      expect(await running).toBe(EXIT_OK);
+      const log = await readFile(join(h.c.paths.log, 'agent.1.log'), 'utf8');
+      expect(log).toContain('hook_handoff_no_answerer');
+      expect(log).not.toContain('pending_added');
     });
 
     it('exits 1 when the hook port cannot be bound', async () => {
@@ -819,7 +872,7 @@ describe('runCli', () => {
     });
 
     it('AC: a paused agent answers a held request at once with no decision', async () => {
-      await writeConfig({});
+      await answerable();
       const controller = new AbortController();
       const running = h.run(['run'], controller.signal);
       await vi.waitFor(() => expect(h.out()).toContain('press Ctrl-C to stop'));
@@ -857,7 +910,7 @@ describe('runCli', () => {
       expect(h.out()).toContain('(missing; `remotectl run` writes a default)');
       expect(h.out()).toContain(`data dir:        ${h.c.paths.data}`);
       expect(h.out()).toContain('device key:      (not created yet)');
-      expect(h.out()).toContain('paired devices:  0');
+      expect(h.out()).toContain('paired devices:  0\n  hooks hand off at once: no paired phone\n');
       expect(h.out()).toContain('service:         not installed (`remotectl install`)\n');
       expect(h.out()).toContain('update:          check disabled\n');
       expect(h.out()).toContain('local counters:  (none yet)\n');
