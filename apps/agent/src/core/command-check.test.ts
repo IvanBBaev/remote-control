@@ -56,6 +56,7 @@ describe('checkCommand', () => {
     ['already_resolved', { used: true }],
     ['wrong_kind', { payloadMatches: false }],
     ['expired', { now: NOW + 300_000 }],
+    ['future', { now: NOW - 61_000 }],
     ['wrong_peer', { from: AGENT }],
     ['wrong_peer', { agentDeviceId: PHONE }],
     ['wrong_peer', { machineMatches: false }],

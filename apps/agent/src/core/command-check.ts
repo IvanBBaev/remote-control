@@ -1,5 +1,7 @@
 import type { CanonicalDecision, DecisionRejection } from '@remote-control/protocol';
 
+import { issuedInFuture } from './decision-check.js';
+
 /** What a `start` or `instruct` message names, as far as the checks need it. */
 export type CommandTarget =
   | { readonly ok: true; readonly requestHash: string }
@@ -35,7 +37,8 @@ export type CommandCheckResult =
  * The D7 checks for a phone command that starts a session or sends a follow-up (M1-04),
  * as a pure function, in order: KK session; the decision kind matches the message and
  * the agent supports it; the request id not used before (decide-once); the signed payload
- * names what the message names; decision expiry; the peers (and for `start` the machine);
+ * names what the message names; decision expiry; an `issued_at` no more than a minute
+ * ahead (RV-SEC-06); the peers (and for `start` the machine);
  * a verified passkey assertion (both kinds need one); the target (an allow-listed
  * repository, a session that takes follow-ups); and the request hash over the prompt and
  * its folder or session. The first failing check is the reason.
@@ -49,6 +52,7 @@ export function checkCommand(input: CommandCheckInput): CommandCheckResult {
   if (input.used) return { ok: false, reason: 'already_resolved' };
   if (!input.payloadMatches) return { ok: false, reason: 'wrong_kind' };
   if (input.now >= decision.expires_at * 1000) return { ok: false, reason: 'expired' };
+  if (issuedInFuture(decision, input.now)) return { ok: false, reason: 'future' };
   if (
     decision.phone_device_id !== input.from ||
     decision.agent_device_id !== input.agentDeviceId ||

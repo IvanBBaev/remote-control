@@ -46,6 +46,15 @@ describe('checkDecision', () => {
     }
   });
 
+  it('accepts an issued_at up to a minute ahead of the agent clock', () => {
+    expect(checkDecision(input({ decision: { ...decision, issued_at: NOW / 1000 + 59 } }))).toEqual(
+      { ok: true },
+    );
+    expect(checkDecision(input({ decision: { ...decision, issued_at: NOW / 1000 + 60 } }))).toEqual(
+      { ok: true },
+    );
+  });
+
   it.each<[string, Partial<DecisionCheckInput>]>([
     ['no_session', { session: false }],
     ['unsupported', { decision: { ...decision, kind: 'instruct', payload: 'x' } }],
@@ -61,6 +70,7 @@ describe('checkDecision', () => {
         request: { kind: 'permission', requestHash: HASH, deadline: NOW + 600_000 },
       },
     ],
+    ['future', { decision: { ...decision, issued_at: NOW / 1000 + 61 } }],
     ['too_late', { now: NOW + 60_000 }],
     ['wrong_peer', { from: AGENT }],
     ['wrong_peer', { agentDeviceId: PHONE }],

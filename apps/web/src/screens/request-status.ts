@@ -34,6 +34,7 @@ const REJECTIONS: Partial<Record<string, string>> = {
   already_resolved: 'Already answered elsewhere.',
   expired: 'Too late: the request had expired.',
   too_late: 'Too late: the request had expired.',
+  future: "Your phone's clock is ahead of your computer's. Check the time settings and try again.",
   unknown_request: 'The computer no longer has this request.',
   invalid_answer: 'Your computer could not use that answer. Answer it in the terminal.',
 };
@@ -57,6 +58,7 @@ const COMMAND_REJECTIONS: Partial<Record<string, string>> = {
   unsupported: "Your computer's remotectl cannot do this yet. Update it and try again.",
   expired: 'Too late: it took too long to reach your computer. Try again.',
   too_late: 'Too late: it took too long to reach your computer. Try again.',
+  future: "Your phone's clock is ahead of your computer's. Check the time settings and try again.",
   no_session: 'Your computer lost the connection. Try again.',
 };
 

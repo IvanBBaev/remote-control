@@ -66,13 +66,22 @@ export interface DecisionCheckInput {
   readonly now: number;
 }
 
+/** How far ahead of the agent's clock a decision's `issued_at` may be (RV-SEC-06). */
+export const MAX_CLOCK_SKEW_MS = 60_000;
+
+/** The decision claims to be issued more than {@link MAX_CLOCK_SKEW_MS} from now. */
+export function issuedInFuture(decision: CanonicalDecision, now: number): boolean {
+  return decision.issued_at * 1000 > now + MAX_CLOCK_SKEW_MS;
+}
+
 export type DecisionCheckResult =
   { readonly ok: true } | { readonly ok: false; readonly reason: DecisionRejection };
 
 /**
  * The D7 checks, in order, as a pure function: KK session; supported kind; pending and
  * unresolved; a kind that fits the request (`answer` only for a question, `allow` only
- * for a permission, `always` only for one that offered session rules); request hash; decision expiry; the request's deadline (`T − 10 s`); the
+ * for a permission, `always` only for one that offered session rules); request hash; decision expiry; an `issued_at`
+ * no more than a minute ahead of the agent's clock; the request's deadline (`T − 10 s`); the
  * peer named in the decision; and, for every kind that needs a passkey, a verified
  * assertion over it (`verified`); and, for
  * `answer`, an answer that fits the questions. The first failing check is the reason.
@@ -90,6 +99,7 @@ export function checkDecision(input: DecisionCheckInput): DecisionCheckResult {
   }
   if (decision.request_hash !== request.requestHash) return { ok: false, reason: 'hash_mismatch' };
   if (input.now >= decision.expires_at * 1000) return { ok: false, reason: 'expired' };
+  if (issuedInFuture(decision, input.now)) return { ok: false, reason: 'future' };
   if (input.now >= request.deadline) return { ok: false, reason: 'too_late' };
   if (decision.phone_device_id !== input.from || decision.agent_device_id !== input.agentDeviceId) {
     return { ok: false, reason: 'wrong_peer' };

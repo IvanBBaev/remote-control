@@ -185,6 +185,7 @@ describe('AgentMessage', () => {
       'wrong_kind',
       'hash_mismatch',
       'expired',
+      'future',
       'too_late',
       'wrong_peer',
       'unverified',

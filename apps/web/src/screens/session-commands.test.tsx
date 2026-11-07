@@ -346,6 +346,7 @@ describe('commandText', () => {
     );
     expect(rejected('too_late')).toContain('Too late');
     expect(rejected('expired')).toContain('Too late');
+    expect(rejected('future')).toContain("phone's clock is ahead");
     expect(rejected('no_session')).toBe('Your computer lost the connection. Try again.');
     expect(rejected('hash_mismatch')).toBe('Your computer refused it.');
   });
