@@ -72,8 +72,15 @@ commit, in order (03 F24–F26).
   - A replica that hears anything but `hello` from a replica it does not know (it
     had dropped it as silent) announces itself to that replica directly. A failed
     publish makes the next heartbeat a full announce instead of `hb`.
-- **Configuration.** `RC_HUB=pg` (requires a database URL) selects it; the default
-  stays `local`.
+- **Configuration.** `RC_HUB=pg` (requires a database URL) selects it. Outside
+  production the default is `local`.
+- **Amended 2026-11-08 (RV-RLY-01, 02 F1):** production defaults to `pg`, and
+  `.railway/railway.ts` sets `RC_HUB=pg` in every environment. Even with one replica,
+  each deploy runs the old and the new process side by side for up to about 45 s
+  (`overlapSeconds` 20, then the drain). With a `local` hub per process, a phone that
+  reconnected to the new process could not reach an agent still on the old one, and its
+  requests fell through to "agent offline" pushes. `RC_HUB=local` stays available as a
+  rollback switch. `apps/relay/src/core/overlap.test.ts` covers both cases.
 
 ## Why this keeps D4 and I1/I2
 

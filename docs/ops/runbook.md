@@ -79,8 +79,9 @@ runs `node dist/migrate.js` (pre-deploy), starts the new container, waits for
 
 ## Staging
 
-Two relay replicas on one Postgres, to exercise `RC_HUB=pg` (ADR 0012, ADR 0016) before
-production ever runs more than one. Production stays on one replica.
+Two relay replicas on one Postgres, to exercise `RC_HUB=pg` (ADR 0012, ADR 0016) with
+real replicas. Production stays on one replica, but it runs `RC_HUB=pg` as well, because
+every deploy overlaps the old and the new process (RV-RLY-01).
 
 Setup (once, dashboard):
 

@@ -40,8 +40,8 @@ evaluated by the Railway CLI with the `railway` npm package (`railway/iac`).
    - overlap 20 s, draining 30 s;
    - region `europe-west4-drams3a`.
 
-   Production runs one replica from `main`. Staging runs two from `staging`, with
-   `RC_HUB=pg` (ADR 0016).
+   Production runs one replica from `main`. Staging runs two from `staging`. Both set
+   `RC_HUB=pg` (ADR 0016; production since RV-RLY-01).
 
 2. The watch patterns add the root inputs that F11 found missing:
    - `package.json`, `pnpm-workspace.yaml` (overrides, `minimumReleaseAge`);

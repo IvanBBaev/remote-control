@@ -60,11 +60,11 @@ describe('.railway/railway.ts', () => {
     });
   });
 
-  it('runs one replica in production on main and the in-process hub', async () => {
+  it('runs one replica in production on main and the Postgres hub (RV-RLY-01)', async () => {
     const relay = await relayIn('production');
     expect(relay.source?.branch).toBe('main');
     expect(relay.deploy?.multiRegionConfig).toEqual({ [REGION]: { numReplicas: 1 } });
-    expect(relay.variables?.['RC_HUB']).toBeUndefined();
+    expect(relay.variables?.['RC_HUB']).toEqual({ type: 'literal', value: 'pg' });
   });
 
   it('runs two replicas in staging on the staging branch with the Postgres hub', async () => {

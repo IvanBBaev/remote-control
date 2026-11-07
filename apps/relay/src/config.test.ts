@@ -180,6 +180,21 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ RC_HUB: 'redis' })).toThrow(/RC_HUB/);
   });
 
+  it('production with a database URL selects the pg hub (RV-RLY-01)', () => {
+    const base = {
+      NODE_ENV: 'production',
+      RC_RP_ID: 'rc.example.com',
+      RC_ORIGIN: 'https://rc.example.com',
+    };
+    expect(loadConfig({ ...base, RC_DATABASE_URL: 'postgres://h/db' }).hub).toBe('pg');
+    expect(loadConfig({ ...base, DATABASE_URL: 'postgres://h/db' }).hub).toBe('pg');
+    // An explicit `local` still wins, as a rollback switch.
+    expect(loadConfig({ ...base, RC_DATABASE_URL: 'postgres://h/db', RC_HUB: 'local' }).hub).toBe(
+      'local',
+    );
+    expect(loadConfig({ RC_DATABASE_URL: 'postgres://h/db' }).hub).toBe('local');
+  });
+
   it('reads the optional admin token (M1-13)', () => {
     expect(loadConfig({}).adminToken).toBeUndefined();
     const token = 'A1-'.repeat(12);

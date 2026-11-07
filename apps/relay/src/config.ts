@@ -58,7 +58,7 @@ const EnvSchema = z
     ),
     /** `1` serves the M0-03 device spike under `/spike/` (needs the VAPID keys). */
     RC_SPIKE: optional(z.enum(['0', '1'])),
-    /** `pg` shares devices across relay replicas over Postgres NOTIFY (ADR 0012). */
+    /** `pg` shares devices across relay processes over Postgres NOTIFY (ADR 0012); production default. */
     RC_HUB: optional(z.enum(['local', 'pg'])),
     /** Sentry project DSN (D16); unset disables error reporting. */
     RC_SENTRY_DSN: optional(
@@ -252,7 +252,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
         : undefined,
     spike: e.RC_SPIKE === '1',
     adminToken: e.RC_ADMIN_TOKEN,
-    hub: e.RC_HUB ?? 'local',
+    // A deploy overlaps the old and the new process (RV-RLY-01): production shares the hub.
+    hub: e.RC_HUB ?? (e.NODE_ENV === 'production' ? 'pg' : 'local'),
     sentry:
       e.RC_SENTRY_DSN === undefined ? undefined : (parseSentryDsn(e.RC_SENTRY_DSN) ?? undefined),
   };

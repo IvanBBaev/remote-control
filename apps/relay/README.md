@@ -211,6 +211,7 @@ with timeout 100 s, restart `ON_FAILURE` × 10, 1 replica, Serverless off,
 SIGTERM, `/health` turns 503 and the process exits within 25 s. `.railway/railway.ts`
 records these values (ADR 0023). Apply them with `railway config plan` and then
 `railway config apply`.
-The `staging` environment runs 2 replicas with `RC_HUB=pg`, which shares the hub and
-the WebAuthn challenges through Postgres (ADR 0012, ADR 0016); see the runbook's
-Staging section.
+Both environments run `RC_HUB=pg`, which shares the hub and the WebAuthn challenges
+through Postgres (ADR 0012, ADR 0016). Production needs it even with one replica, because
+a deploy overlaps the old and the new process (RV-RLY-01). The `staging` environment runs
+2 replicas; see the runbook's Staging section.

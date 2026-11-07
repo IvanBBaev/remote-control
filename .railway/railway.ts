@@ -25,7 +25,8 @@ export const WATCH_PATTERNS = [
 ];
 
 export default defineRailway((ctx, project) => {
-  // ADR 0016: staging runs two replicas on the Postgres hub; production runs one.
+  // ADR 0016: staging runs two replicas, production one. Both use the Postgres hub, because
+  // every deploy overlaps the old and the new process (RV-RLY-01).
   const staging = ctx.isEnvironment('staging');
   const db = postgres('postgres', { region: REGION });
 
@@ -52,7 +53,7 @@ export default defineRailway((ctx, project) => {
     replicas: { [REGION]: staging ? 2 : 1 },
     env: {
       RC_DATABASE_URL: db.env.DATABASE_URL,
-      ...(staging ? { RC_HUB: 'pg' } : {}),
+      RC_HUB: 'pg',
       RC_RP_ID: preserve(),
       RC_ORIGIN: preserve(),
       RC_VAPID_PUBLIC: preserve(),
