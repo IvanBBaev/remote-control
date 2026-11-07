@@ -18,6 +18,9 @@ Work-package ids are the report ids; the report holds scope and machine-checkabl
 | V2-P03 | README comparison refresh | 01 §7 | S | todo after V2-P01 |
 
 ## Phase B — v1 hardening found by the analyses (valid with or without 2.0)
+
+> W-S12, W-S13, W-S14, P-2 and P-5 were implemented on branch `v2-sec-hardening` (11 commits, tip `d491adf`), which was deleted unmerged on 2026-10-30. Restore it from `~/Development/_temp/branch-backups/20261030-0118/remote-control-v2sec.bundle` before starting any of them; it conflicts with `main` in 10 files as of 2026-11-06.
+
 | ID | Item | Report | Size | Status |
 |---|---|---|---|---|
 | W-S12 | Relay never sees `request_id` / `request_hash` test | 02 §7 | S | todo |
