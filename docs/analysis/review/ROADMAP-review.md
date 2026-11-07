@@ -70,7 +70,7 @@ what a stranger or the first production deploy would hit.
 | RV-WEB-09 | Prompted service-worker update instead of unconditional `skipWaiting` | 05 F9 | — | M | RV-WEB-08 | todo |
 | RV-WEB-10 | Backoff jitter and relay-time outbox expiry | 05 F10 | — | S | — | todo |
 | RV-WEB-11 | State hygiene: `paired`, ack-after-decrypt, prune resolved views | 05 | — | S | — | todo |
-| RV-UX-01 | Drop `npx` from every phone instruction | 09 F2 | — | S | — | todo |
+| RV-UX-01 | Drop `npx` from every phone instruction | 09 F2 | — | S | — | doing — rv/RV-UX-01 |
 | RV-UX-02 | `remotectl login --relay <url>` writes the relay URL | 09 F3 | hotspot | M | — | todo |
 | RV-UX-03 | Phone shows the full login command with relay origin + Copy/Share | 09 | — | S | RV-UX-01, RV-UX-02 | todo |
 | RV-UX-04 | Login success lists hooks, install, pair and self-test | 09 | — | S | RV-UX-02 | todo |
