@@ -38,7 +38,7 @@ what a stranger or the first production deploy would hit.
 | RV-OPS-09 | Declare the optional SDK peer correctly | 06 | — | S | — | todo |
 | RV-OPS-10 | npm version gate ≥ 11.5.1 | 06 | — | S | — | todo |
 | RV-OPS-12 | Align `m0-exit.md` criterion 3 with ADR 0002 | 06 | — | S | — | todo |
-| RV-RLY-01 | Production runs `RC_HUB=pg`; two-process overlap test | 02 F1 | — | M | ADR 0016; before M0-02b | todo |
+| RV-RLY-01 | Production runs `RC_HUB=pg`; two-process overlap test | 02 F1 | — | M | ADR 0016; before M0-02b | doing — rv/RV-RLY-01 |
 | RV-RLY-02 | Expand/contract migration rule + CI guard | 02 | — | S | — | todo |
 | RV-RLY-04 | WebSocket-path and push failures to Sentry | 02 F3 | — | S | M0-26b (DSN) | todo |
 | RV-RLY-06 | Production push-config visibility (`/health` field) | 02 | — | S | — | todo |
