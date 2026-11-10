@@ -9,14 +9,14 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@electric-sql/pglite": "0.5.8",
+    "@electric-sql/pglite": "0.5.15",
     "@remote-control/crypto": "workspace:*",
     "@remote-control/fake-claude-code": "workspace:*",
     "@remote-control/log": "workspace:*",
     "@remote-control/protocol": "workspace:*",
     "@remote-control/relay": "workspace:*",
     "remotectl": "workspace:*",
-    "ws": "8.22.0"
+    "ws": "8.22.1"
   },
   "devDependencies": {
     "@types/ws": "8.18.2"
