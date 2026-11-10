@@ -12,6 +12,6 @@
     "@remote-control/crypto": "workspace:*",
     "@remote-control/protocol": "workspace:*",
     "@simplewebauthn/browser": "14.0.0",
-    "zustand": "5.0.15"
+    "zustand": "5.0.16"
   }
 }
